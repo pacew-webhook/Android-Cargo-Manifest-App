@@ -15,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
@@ -38,6 +39,7 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
+    val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
     var awbNo by remember { mutableStateOf("") }
@@ -50,7 +52,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
 
-    // Hitung otomatis saat pcsQty dan weight keduanya diisi
+    // Perkalian Otomatis (Pcs/Qty * Weight)
     val calculatedSubTotal = remember(pcsQty, weight) {
         val qtyVal = pcsQty.toDoubleOrNull()
         val weightVal = weight.toDoubleOrNull()
@@ -63,7 +65,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
         }
     }
 
-    // Jika ada hasil hitungan otomatis, gunakan itu. Jika tidak, gunakan input manual dari user.
+    // Jika ada hasil otomatis gunakan itu, jika kosong dapat diinput manual
     val finalSubTotal = calculatedSubTotal ?: subTotalInput
 
     Scaffold(
@@ -138,7 +140,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         OutlinedTextField(
                             value = finalSubTotal,
                             onValueChange = {
-                                // Hanya mengizinkan ketik manual jika perkalian otomatis tidak aktif
                                 if (calculatedSubTotal == null) {
                                     subTotalInput = it
                                 }
@@ -183,15 +184,35 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
 
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                
+                // Header Tabel + Tombol Export Excel & Hapus Semua
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Tabel Data Tersimpan (${cargoList.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    if (cargoList.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.clearAll() }) {
-                            Text("Hapus Semua", color = Color.Red)
+                    Text("Tabel Data (${cargoList.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        if (cargoList.isNotEmpty()) {
+                            // Tombol Export Excel (Hijau)
+                            Button(
+                                onClick = { viewModel.exportToExcel(context) },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21A366)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                            ) {
+                                Text("Export Excel", color = Color.White, fontSize = 12.sp)
+                            }
+
+                            TextButton(
+                                onClick = { viewModel.clearAll() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Text("Hapus Semua", color = Color.Red, fontSize = 12.sp)
+                            }
                         }
                     }
                 }
