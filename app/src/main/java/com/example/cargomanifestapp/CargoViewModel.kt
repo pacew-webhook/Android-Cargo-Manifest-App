@@ -35,13 +35,13 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         weight: String,
         subTotal: String,
         description: String,
-        customer: String
+        customer: String,
+        noPag: String // <--- PARAMETER BARU
     ) {
         viewModelScope.launch {
             val cleanCustomer = customer.trim().uppercase()
             val cleanDescription = description.trim().uppercase()
 
-            // AKUMULASI HANYA JIKA CUSTOMER DAN DESCRIPTION-NYA KEDUA-DUANYA SAMA
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
@@ -49,7 +49,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
 
             if (existingItem != null) {
-                // JIKA CUSTOMER & DESCRIPTION SAMA -> AKUMULASIKAN PCS DAN SUBTOTAL
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -68,11 +67,11 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal
+                    subTotal = updatedSubTotal,
+                    noPag = if (noPag.isNotBlank()) noPag.trim().uppercase() else existingItem.noPag
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // JIKA DESKRIPSI BERBEDA (MISAL SENG BDG PINANG) -> BUAT BARIS BARU
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -82,7 +81,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         weight = weight.trim(),
                         subTotal = subTotal.trim(),
                         description = cleanDescription,
-                        customer = cleanCustomer
+                        customer = cleanCustomer,
+                        noPag = noPag.trim().uppercase()
                     )
                 )
             }
@@ -128,68 +128,65 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 }
 
                 val workbook = XSSFWorkbook(inputStream)
-                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-                val firstItem = list.first()
+                
+                // --- PENGISIAN SHEET MANIFEST ATAU SHEET STOWING CHECKLIST ---
+                for (sheetIndex in 0 until workbook.numberOfSheets) {
+                    val sheet = workbook.getSheetAt(sheetIndex)
+                    val firstItem = list.first()
 
-                // 1. AWB NO -> Baris 3 Excel, Kolom G (Row Index 2, Cell Index 6)
-                val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
-                val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
-                if (firstItem.awbNo.isNotEmpty()) {
-                    awbCell.setCellValue(firstItem.awbNo.uppercase())
-                }
-
-                // 2. FLIGHT NO -> Baris 9 Excel, Kolom G (Row Index 8, Cell Index 6)
-                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
-                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
-                if (firstItem.flightNo.isNotEmpty()) {
-                    flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
-                }
-
-                // 3. TABEL DATA BARANG -> Mulai Baris 14 Excel (Row Index 13)
-                val startRowIndex = 13
-                for (i in list.indices) {
-                    val item = list[i]
-                    val rowIndex = startRowIndex + i
-                    val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-
-                    // Kolom A (0): No
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
-
-                    // Kolom B (1): PTI
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
-
-                    // Kolom C (2): Pcs/Cly
-                    val pcsVal = item.pcsQty.toDoubleOrNull()
-                    val cellPcs = row.getCell(2) ?: row.createCell(2)
-                    if (pcsVal != null) {
-                        cellPcs.setCellValue(pcsVal)
-                    } else {
-                        cellPcs.setCellValue("")
+                    // Header Flight / AWB
+                    val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
+                    val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
+                    if (firstItem.awbNo.isNotEmpty()) {
+                        awbCell.setCellValue(firstItem.awbNo.uppercase())
                     }
 
-                    // Kolom D (3): Weight Pcs/Cly Wt (Kosong jika tidak diisi)
-                    val weightVal = item.weight.toDoubleOrNull()
-                    val cellWeight = row.getCell(3) ?: row.createCell(3)
-                    if (weightVal != null) {
-                        cellWeight.setCellValue(weightVal)
-                    } else {
-                        cellWeight.setCellValue("")
+                    val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
+                    val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
+                    if (firstItem.flightNo.isNotEmpty()) {
+                        flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
                     }
 
-                    // Kolom E (4): Sub Total
-                    val subTotalVal = item.subTotal.toDoubleOrNull()
-                    val cellSubTotal = row.getCell(4) ?: row.createCell(4)
-                    if (subTotalVal != null) {
-                        cellSubTotal.setCellValue(subTotalVal)
-                    } else {
-                        cellSubTotal.setCellValue("")
+                    // Baris Data Mulai dari index 13 (Baris 14 Excel)
+                    val startRowIndex = 13
+                    for (i in list.indices) {
+                        val item = list[i]
+                        val rowIndex = startRowIndex + i
+                        val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+
+                        // Kolom A (0): No
+                        (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+
+                        // PENGISIAN KHUSUS SHEET STOWING CHEKLIST (KOLOM I ATAU B DENGAN INDEX Disesuaikan)
+                        // Jika sheet memiliki kolom NO PAG di Kolom B (index 1):
+                        val pagCell = row.getCell(1) ?: row.createCell(1)
+                        if (sheet.sheetName.contains("STOWING", ignoreCase = true)) {
+                            pagCell.setCellValue(item.noPag.uppercase())
+                        } else {
+                            pagCell.setCellValue(item.pti.uppercase())
+                        }
+
+                        // Kolom C (2): Pcs/Cly
+                        val pcsVal = item.pcsQty.toDoubleOrNull()
+                        val cellPcs = row.getCell(2) ?: row.createCell(2)
+                        if (pcsVal != null) cellPcs.setCellValue(pcsVal) else cellPcs.setCellValue("")
+
+                        // Kolom D (3): Weight Pcs
+                        val weightVal = item.weight.toDoubleOrNull()
+                        val cellWeight = row.getCell(3) ?: row.createCell(3)
+                        if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
+
+                        // Kolom E (4): Sub Total / Gross
+                        val subTotalVal = item.subTotal.toDoubleOrNull()
+                        val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                        if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
+
+                        // Kolom F (5): Description
+                        (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
+
+                        // Kolom G (6): Customer
+                        (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                     }
-
-                    // Kolom F (5): Description
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
-
-                    // Kolom G (6): Customer
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
                 workbook.setForceFormulaRecalculation(true)
