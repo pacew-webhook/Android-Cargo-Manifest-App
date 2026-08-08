@@ -182,7 +182,7 @@ fun MainScreen(viewModel: CargoViewModel) {
             }
 
             Spacer(modifier = Modifier.height(8.dp))
-            Divider()
+            HorizontalDivider()
             Spacer(modifier = Modifier.height(4.dp))
 
             LazyColumn(
@@ -240,29 +240,38 @@ fun MainScreen(viewModel: CargoViewModel) {
         }
     }
 
-    if (showDeleteDialog && itemToDelete != null) {
-        AlertDialog(
-            onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Konfirmasi Hapus") },
-            text = { Text("Apakah Anda yakin ingin menghapus data kargo ${itemToDelete?.pti}?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        itemToDelete?.let { viewModel.deleteCargo(it) }
+    if (showDeleteDialog) {
+        val currentItem = itemToDelete
+        if (currentItem != null) {
+            AlertDialog(
+                onDismissRequest = { 
+                    showDeleteDialog = false
+                    itemToDelete = null
+                },
+                title = { Text("Konfirmasi Hapus") },
+                text = { Text("Apakah Anda yakin ingin menghapus data kargo ${currentItem.pti}?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteCargo(currentItem)
+                            showDeleteDialog = false
+                            itemToDelete = null
+                            Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Hapus", color = Color.Red)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { 
                         showDeleteDialog = false
                         itemToDelete = null
-                        Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Batal")
                     }
-                ) {
-                    Text("Hapus", color = Color.Red)
                 }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
+            )
+        }
     }
 
     if (showClearAllDialog) {
