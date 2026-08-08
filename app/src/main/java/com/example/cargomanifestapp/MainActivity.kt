@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -130,7 +131,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it },
-                        label = { Text("Description (mis: SAYURAN)") },
+                        label = { Text("Description") },
                         modifier = Modifier.fillMaxWidth()
                     )
 
@@ -233,7 +234,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
 }
 
 @Composable
-fun TableCell(text: String, width: androidx.compose.ui.unit.Dp, isHeader: Boolean = false) {
+fun TableCell(text: String, width: Dp, isHeader: Boolean = false) {
     Text(
         text = text,
         modifier = Modifier.width(width),
