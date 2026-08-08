@@ -38,11 +38,15 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         customer: String
     ) {
         viewModelScope.launch {
-            val cleanPti = pti.trim().uppercase()
-            val existingItem = cargoList.value.find { it.pti.equals(cleanPti, ignoreCase = true) }
+            val cleanCustomer = customer.trim().uppercase()
+            
+            // PENCARIAN BERDASARKAN CUSTOMER
+            val existingItem = cargoList.value.find { 
+                it.customer.equals(cleanCustomer, ignoreCase = true) && cleanCustomer.isNotEmpty()
+            }
 
             if (existingItem != null) {
-                // JIKA PTI SUDAH ADA -> JUMLAHKAN / AKUMULASIKAN DATA PCS DAN SUBTOTAL
+                // JIKA NAMA CUSTOMER SUDAH ADA -> AKUMULASIKAN PCS DAN SUBTOTAL
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -59,25 +63,25 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val updatedItem = existingItem.copy(
                     awbNo = if (awbNo.isNotBlank()) awbNo.trim().uppercase() else existingItem.awbNo,
                     flightNo = if (flightNo.isNotBlank()) flightNo.trim().uppercase() else existingItem.flightNo,
+                    pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
                     subTotal = updatedSubTotal,
-                    description = if (description.isNotBlank()) description.trim().uppercase() else existingItem.description,
-                    customer = if (customer.isNotBlank()) customer.trim().uppercase() else existingItem.customer
+                    description = if (description.isNotBlank()) description.trim().uppercase() else existingItem.description
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // JIKA PTI BELUM ADA -> BUAT BARIS BARU
+                // JIKA CUSTOMER BELUM ADA -> BUAT BARIS BARU
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
                         flightNo = flightNo.trim().uppercase(),
-                        pti = cleanPti,
+                        pti = pti.trim().uppercase(),
                         pcsQty = pcsQty.trim(),
                         weight = weight.trim(),
                         subTotal = subTotal.trim(),
                         description = description.trim().uppercase(),
-                        customer = customer.trim().uppercase()
+                        customer = cleanCustomer
                     )
                 )
             }
