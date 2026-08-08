@@ -41,14 +41,18 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         viewModelScope.launch {
             val cleanCustomer = customer.trim().uppercase()
             val cleanDescription = description.trim().uppercase()
+            val cleanNoPag = noPag.trim().uppercase()
 
+            // LOGIKA PERBAIKAN: Mengecek kesamaan berdasarkan Customer + Description + No PAG
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
+                it.noPag.equals(cleanNoPag, ignoreCase = true) &&
                 cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
+                // Jika data sama persis (Customer, Desc, No PAG), gabungkan jumlahnya
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -67,11 +71,11 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal,
-                    noPag = if (noPag.isNotBlank()) noPag.trim().uppercase() else existingItem.noPag
+                    subTotal = updatedSubTotal
                 )
                 cargoDao.update(updatedItem)
             } else {
+                // Jika ada salah satu yang berbeda (misal No PAG beda), buat baris baru
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -82,7 +86,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         subTotal = subTotal.trim(),
                         description = cleanDescription,
                         customer = cleanCustomer,
-                        noPag = noPag.trim().uppercase()
+                        noPag = cleanNoPag
                     )
                 )
             }
@@ -90,21 +94,15 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
     }
 
     fun updateCargo(cargoItem: CargoItem) {
-        viewModelScope.launch {
-            cargoDao.update(cargoItem)
-        }
+        viewModelScope.launch { cargoDao.update(cargoItem) }
     }
 
     fun deleteCargo(cargoItem: CargoItem) {
-        viewModelScope.launch {
-            cargoDao.delete(cargoItem)
-        }
+        viewModelScope.launch { cargoDao.delete(cargoItem) }
     }
 
     fun clearAll() {
-        viewModelScope.launch {
-            cargoDao.deleteAll()
-        }
+        viewModelScope.launch { cargoDao.deleteAll() }
     }
 
     fun exportToExcel(context: Context) {
@@ -112,154 +110,79 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val list = cargoList.value
             if (list.isEmpty()) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Data tabel masih kosong!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Data masih kosong!", Toast.LENGTH_SHORT).show()
                 }
                 return@launch
             }
 
             try {
-                val inputStream: InputStream = try {
-                    context.assets.open("template_manifest.xlsx")
-                } catch (e: Exception) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "File template_manifest.xlsx tidak ditemukan di assets!", Toast.LENGTH_LONG).show()
-                    }
-                    return@launch
-                }
-
+                val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
                 val workbook = XSSFWorkbook(inputStream)
-                
-                // Ambil sheet "Manifest" secara spesifik atau fallback ke sheet pertama
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // Header Flight / AWB
-                val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
-                val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
-                if (firstItem.awbNo.isNotEmpty()) {
-                    awbCell.setCellValue(firstItem.awbNo.uppercase())
-                }
+                // Header
+                sheet.getRow(2)?.getCell(6)?.setCellValue(firstItem.awbNo.uppercase())
+                sheet.getRow(8)?.getCell(6)?.setCellValue(": ${firstItem.flightNo.uppercase()}")
 
-                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
-                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
-                if (firstItem.flightNo.isNotEmpty()) {
-                    flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
-                }
-
-                val startRowIndex = 13 // Baris ke-14 di Excel (Index 13)
-
-                // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
+                val startRowIndex = 13
+                
+                // Isi Manifest (Tabel Kiri)
                 for (i in list.indices) {
                     val item = list[i]
-                    val rowIndex = startRowIndex + i
-                    val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-
-                    // Kolom A (Index 0): No Urut
+                    val row = sheet.getRow(startRowIndex + i) ?: sheet.createRow(startRowIndex + i)
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
-                    // Kolom B (Index 1): PTI
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
-                    // Kolom C (Index 2): Pcs/Qty
-                    val pcsVal = item.pcsQty.toDoubleOrNull()
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(pcsVal ?: 0.0)
-                    // Kolom D (Index 3): Weight Net
-                    val weightVal = item.weight.toDoubleOrNull()
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(weightVal ?: 0.0)
-                    // Kolom E (Index 4): Weight SubTotal
-                    val subTotalVal = item.subTotal.toDoubleOrNull()
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(subTotalVal ?: 0.0)
-                    // Kolom F (Index 5): Description Manifest
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
-                    // Kolom G (Index 6): Costumers
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
-                // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) DENGAN GROUPING ---
+                // Isi Stowing Checklist (Tabel Kanan)
                 val groupedData = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
-                var totalWeightStowingNet = 0.0
-                var totalWeightStowingGross = 0.0
+                var totalNet = 0.0
+                var totalGross = 0.0
 
                 for ((noPag, items) in groupedData) {
                     val row = sheet.getRow(stowingRowIdx) ?: sheet.createRow(stowingRowIdx)
-
-                    // Menggabungkan deskripsi dengan pemisah " + "
                     val combinedDesc = items.joinToString(" + ") { it.description }
-                    
-                    // Menggabungkan customer dengan pemisah " + " (tanpa duplikat nama yang sama)
-                    val combinedCustomer = items.map { it.customer }.distinct().joinToString(" + ")
-                    
-                    // Menghitung total berat untuk NO PAG tersebut
+                    val combinedCust = items.map { it.customer }.distinct().joinToString(" + ")
                     val totalWeightPerPag = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-                    totalWeightStowingNet += totalWeightPerPag
-                    totalWeightStowingGross += totalWeightPerPag
+                    
+                    totalNet += totalWeightPerPag
+                    totalGross += totalWeightPerPag
 
-                    // Kolom H (Index 7): No Stowing
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((stowingRowIdx - startRowIndex + 1).toDouble())
-                    
-                    // Kolom I (Index 8): No PAG
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(noPag.uppercase())
-                    
-                    // Kolom J (Index 9): Description Stowing (Gabungan dengan " + ")
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc.uppercase())
-                    
-                    // Kolom K (Index 10): WEIGHT (Kg) - Net
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag)
-                    
-                    // Kolom L (Index 11): WEIGHT (Kg) - Gross
-                    (row.getCell(11) ?: row.createCell(11)).setCellValue(totalWeightPerPag)
-
-                    // Kolom M (Index 12): COSTUMERS di Stowing Checklist
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(combinedCustomer.uppercase())
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag) // Net
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(totalWeightPerPag) // Gross
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(combinedCust.uppercase()) // Customer
 
                     stowingRowIdx++
                 }
 
-                // --- 3. ISI GRAND TOTAL WEIGHT STOWING ---
+                // Total Weight
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
-                
-                // Total Net di Kolom K (Index 10)
-                (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalWeightStowingNet)
-                
-                // Total Gross di Kolom L (Index 11)
-                (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalWeightStowingGross)
-
-                workbook.setForceFormulaRecalculation(true)
-                inputStream.close()
+                (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalNet)
+                (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalGross)
 
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
-                val outputStream = FileOutputStream(file)
-                workbook.write(outputStream)
-                outputStream.close()
+                workbook.write(FileOutputStream(file))
                 workbook.close()
 
-                val uri: Uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    file
-                )
-
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(
-                        uri,
-                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-
-                withContext(Dispatchers.Main) {
-                    try {
-                        context.startActivity(intent)
-                    } catch (e: Exception) {
-                        Toast.makeText(context, "Export Berhasil! File tersimpan.", Toast.LENGTH_LONG).show()
-                    }
-                }
+                withContext(Dispatchers.Main) { context.startActivity(intent) }
 
             } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                }
+                withContext(Dispatchers.Main) { Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show() }
             }
         }
     }
