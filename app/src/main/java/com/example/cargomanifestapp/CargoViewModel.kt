@@ -129,7 +129,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
                 val workbook = XSSFWorkbook(inputStream)
                 
-                // Perulangan untuk mengisi semua sheet di dalam file Excel
+                // Karena tabel Stowing dan Manifest ada di sheet "Manifest", kita fokuskan pengisian ke sheet tersebut
                 for (sheetIndex in 0 until workbook.numberOfSheets) {
                     val sheet = workbook.getSheetAt(sheetIndex)
                     val firstItem = list.first()
@@ -154,60 +154,50 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         val rowIndex = startRowIndex + i
                         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                        val isStowing = sheet.sheetName.contains("STOWING", ignoreCase = true) || 
-                                        sheet.sheetName.contains("CHECKLIST", ignoreCase = true)
+                        // --- 1. TABEL MANIFEST (Sebelah Kiri) ---
+                        // No Urut (Kolom A / Index 0)
+                        (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                        if (isStowing) {
-                            // --- KHUSUS SHEET STOWING CHECKLIST ---
-                            // 1. Kolom A (Index 0): No Urut
-                            (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+                        // PTI (Kolom B / Index 1)
+                        val ptiCell = row.getCell(1) ?: row.createCell(1)
+                        ptiCell.setCellValue(item.pti.uppercase())
 
-                            // 2. Kolom I (Index 8): NO PAG
-                            val pagCell = row.getCell(8) ?: row.createCell(8)
-                            pagCell.setCellValue(item.noPag.uppercase())
+                        // Pcs / Qty (Kolom C / Index 2) -> Diperbaiki agar terinput
+                        val pcsVal = item.pcsQty.toDoubleOrNull()
+                        val pcsCell = row.getCell(2) ?: row.createCell(2)
+                        if (pcsVal != null) pcsCell.setCellValue(pcsVal) else pcsCell.setCellValue("")
 
-                            // 3. Kolom Description (Index 5)
-                            val descCell = row.getCell(5) ?: row.createCell(5)
-                            descCell.setCellValue(item.description.uppercase())
+                        // Weight Net (Kolom D / Index 3)
+                        val weightVal = item.weight.toDoubleOrNull()
+                        val cellWeight = row.getCell(3) ?: row.createCell(3)
+                        if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
 
-                            // 4. Kolom Weight Net & Gross (Index 3 & 4)
-                            val weightVal = item.weight.toDoubleOrNull()
-                            val cellWeight = row.getCell(3) ?: row.createCell(3)
-                            if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
+                        // Weight SubTotal (Kolom E / Index 4)
+                        val subTotalVal = item.subTotal.toDoubleOrNull()
+                        val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                        if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
 
-                            val subTotalVal = item.subTotal.toDoubleOrNull()
-                            val cellSubTotal = row.getCell(4) ?: row.createCell(4)
-                            if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
+                        // Description Manifest (Kolom F / Index 5)
+                        val descCell = row.getCell(5) ?: row.createCell(5)
+                        descCell.setCellValue(item.description.uppercase())
 
-                            // 5. Kolom Customer (Index 6)
-                            val custCell = row.getCell(6) ?: row.createCell(6)
-                            custCell.setCellValue(item.customer.uppercase())
+                        // Customers (Kolom G / Index 6)
+                        val custCell = row.getCell(6) ?: row.createCell(6)
+                        custCell.setCellValue(item.customer.uppercase())
 
-                        } else {
-                            // --- SHEET MANIFEST BIASA ---
-                            (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                            // Kolom PTI di Index 1
-                            val ptiCell = row.getCell(1) ?: row.createCell(1)
-                            ptiCell.setCellValue(item.pti.uppercase())
+                        // --- 2. TABEL STOWING CHECKLIST (Sebelah Kanan di Sheet yang sama) ---
+                        // Berdasarkan gambar, tabel stowing berada di sebelah kanan:
+                        // No Stowing (Kolom H / Index 7) -> Opsional/Nomor Urut Stowing
+                        (row.getCell(7) ?: row.createCell(7)).setCellValue((i + 1).toDouble())
 
-                            // Description
-                            val descCell = row.getCell(5) ?: row.createCell(5)
-                            descCell.setCellValue(item.description.uppercase())
+                        // No PAG (Kolom I / Index 8)
+                        val pagCell = row.getCell(8) ?: row.createCell(8)
+                        pagCell.setCellValue(item.noPag.uppercase())
 
-                            // Weight
-                            val weightVal = item.weight.toDoubleOrNull()
-                            val cellWeight = row.getCell(3) ?: row.createCell(3)
-                            if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
-
-                            val subTotalVal = item.subTotal.toDoubleOrNull()
-                            val cellSubTotal = row.getCell(4) ?: row.createCell(4)
-                            if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
-
-                            // Customer
-                            val custCell = row.getCell(6) ?: row.createCell(6)
-                            custCell.setCellValue(item.customer.uppercase())
-                        }
+                        // Description Stowing (Kolom J / Index 9)
+                        val stowingDescCell = row.getCell(9) ?: row.createCell(9)
+                        stowingDescCell.setCellValue(item.description.uppercase())
                     }
                 }
 
