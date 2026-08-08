@@ -6,8 +6,6 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
@@ -70,46 +68,44 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
 
                 val firstItem = list.first()
 
-                // Styles untuk data tabel
-                val dataStyle = workbook.createCellStyle().apply {
-                    alignment = HorizontalAlignment.CENTER
-                    verticalAlignment = VerticalAlignment.CENTER
-                    val font = workbook.createFont().apply {
-                        fontName = "Arial"
-                        fontHeightInPoints = 10.toShort() // DIPERBAIKI: fontHeightInPoints
-                    }
-                    setFont(font)
-                }
+                // Buat Font secara eksplisit menggunakan variabel terpisah (menghindari error plus/Short)
+                val mainFont = workbook.createFont()
+                mainFont.fontName = "Arial"
+                val fontSize: Short = 16
+                mainFont.fontHeightInPoints = fontSize
 
-                val leftStyle = workbook.createCellStyle().apply {
-                    alignment = HorizontalAlignment.LEFT
-                    verticalAlignment = VerticalAlignment.CENTER
-                    val font = workbook.createFont().apply {
-                        fontName = "Arial"
-                        fontHeightInPoints = 10.toShort() // DIPERBAIKI: fontHeightInPoints
-                    }
-                    setFont(font)
-                }
+                // Style Center
+                val dataStyle = workbook.createCellStyle()
+                dataStyle.alignment = HorizontalAlignment.CENTER
+                dataStyle.verticalAlignment = VerticalAlignment.CENTER
+                dataStyle.setFont(mainFont)
 
-                // 1. ISI FLIGHT NO & AWB NO SESUAI TEMPLATE
-                // FLIGHT NO -> Row 9 (Index 8), Column G (Index 6)
+                // Style Left
+                val leftStyle = workbook.createCellStyle()
+                leftStyle.alignment = HorizontalAlignment.LEFT
+                leftStyle.verticalAlignment = VerticalAlignment.CENTER
+                leftStyle.setFont(mainFont)
+
+                // 1. ISI HEADER (FLIGHT NO & AWB NO)
+                // Flight No -> Row 9 (Index 8), Column G (Index 6)
                 val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
                 val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 flightCell.setCellValue(": ${firstItem.flightNo}")
 
-                // AWB NO -> Row 4 (Index 3), Column G (Index 6)
+                // AWB No -> Row 4 (Index 3), Column G (Index 6)
                 val awbRow = sheet.getRow(3) ?: sheet.createRow(3)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 awbCell.setCellValue(firstItem.awbNo)
 
                 // 2. ISI TABEL DATA BARANG (Mulai Baris 14 / Index 13)
                 val startRow = 13
-                list.forEachIndexed { index, item ->
-                    val row = sheet.getRow(startRow + index) ?: sheet.createRow(startRow + index)
+                for (i in list.indices) {
+                    val item = list[i]
+                    val row = sheet.getRow(startRow + i) ?: sheet.createRow(startRow + i)
 
                     // No
                     val cellNo = row.getCell(0) ?: row.createCell(0)
-                    cellNo.setCellValue((index + 1).toDouble())
+                    cellNo.setCellValue((i + 1).toDouble())
                     cellNo.cellStyle = dataStyle
 
                     // PTI
@@ -119,17 +115,20 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
 
                     // Pcs/Cly
                     val cellPcs = row.getCell(2) ?: row.createCell(2)
-                    cellPcs.setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
+                    cellPcs.setCellValue(pcsVal)
                     cellPcs.cellStyle = dataStyle
 
                     // Weight Pcs/Cly
                     val cellWt = row.getCell(3) ?: row.createCell(3)
-                    cellWt.setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    val wtVal = item.weight.toDoubleOrNull() ?: 0.0
+                    cellWt.setCellValue(wtVal)
                     cellWt.cellStyle = dataStyle
 
                     // Weight Sub Total
                     val cellSub = row.getCell(4) ?: row.createCell(4)
-                    cellSub.setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
+                    cellSub.setCellValue(subVal)
                     cellSub.cellStyle = dataStyle
 
                     // Description
