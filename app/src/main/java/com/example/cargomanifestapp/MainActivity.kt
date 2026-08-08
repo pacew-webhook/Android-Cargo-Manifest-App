@@ -21,15 +21,32 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Inisialisasi Database dan Dao
+        val database = CargoDatabase.getDatabase(this)
+        val cargoDao = database.cargoDao()
+
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    CargoManifestScreen()
+                    // Masukkan ViewModelFactory dengan Dao
+                    val viewModel: CargoViewModel = viewModel(
+                        factory = object : ViewModelProvider.Factory {
+                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                @Suppress("UNCHECKED_CAST")
+                                return CargoViewModel(cargoDao) as T
+                            }
+                        }
+                    )
+
+                    CargoManifestScreen(viewModel = viewModel)
                 }
             }
         }
@@ -38,7 +55,7 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
+fun CargoManifestScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
@@ -182,7 +199,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
             }
 
             item {
-                Divider(modifier = Modifier.padding(vertical = 8.dp))
+                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -242,7 +259,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                     if (cargoList.isEmpty()) {
                         Text("Database kosong.", modifier = Modifier.padding(16.dp), color = Color.Gray)
                     } else {
-                        // Menggunakan for-loop biasa agar aman dari scope Composable
                         for (index in cargoList.indices) {
                             val item = cargoList[index]
                             Row(
