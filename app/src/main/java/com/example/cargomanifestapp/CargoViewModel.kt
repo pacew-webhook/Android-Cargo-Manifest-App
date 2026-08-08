@@ -27,7 +27,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             initialValue = emptyList()
         )
 
-    // Fungsi insert: Semua teks otomatis diubah jadi KAPITAL (.uppercase())
+    // Input data otomatis diubah jadi KAPITAL
     fun addCargo(
         awbNo: String,
         flightNo: String,
@@ -90,21 +90,21 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // 1. AWB NO -> Baris 3, Kolom G (Row Index 2, Cell Index 6)
+                // 1. AWB NO -> Baris 3 Excel, Kolom G (Row Index 2, Cell Index 6)
                 val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 if (firstItem.awbNo.isNotEmpty()) {
                     awbCell.setCellValue(firstItem.awbNo.uppercase())
                 }
 
-                // 2. FLIGHT NO -> Baris 10, Kolom G (Row Index 9, Cell Index 6)
-                val flightRow = sheet.getRow(9) ?: sheet.createRow(9)
+                // 2. FLIGHT NO -> Baris 9 Excel, Kolom G (Row Index 8, Cell Index 6)
+                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
                 val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 if (firstItem.flightNo.isNotEmpty()) {
                     flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
                 }
 
-                // 3. TABEL DATA BARANG -> Mulai Baris 14 (Row Index 13)
+                // 3. TABEL DATA BARANG -> Mulai Baris 14 Excel (Row Index 13)
                 val startRowIndex = 13
                 for (i in list.indices) {
                     val item = list[i]
@@ -114,7 +114,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom A (0): No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                    // Kolom B (1): PTI
+                    // Kolom B (1): PTI (HURUF KAPITAL)
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
                     // Kolom C (2): Pcs/Cly
@@ -126,10 +126,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom E (4): Sub Total
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
 
-                    // Kolom F (5): Description
+                    // Kolom F (5): Description (HURUF KAPITAL)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
 
-                    // Kolom G (6): Costumers
+                    // Kolom G (6): Costumers (HURUF KAPITAL)
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
@@ -161,7 +161,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     try {
                         context.startActivity(intent)
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Export Berhasil! File tersimpan, namun tidak ada aplikasi pembaca Excel.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export Berhasil! File tersimpan.", Toast.LENGTH_LONG).show()
                     }
                 }
 
