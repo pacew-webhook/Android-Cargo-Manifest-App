@@ -43,15 +43,16 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // LOGIKA: Gabungkan data jika CUSTOMER dan DESCRIPTION sama
+            // Di database, kita cek berdasarkan Customer + Description + No PAG
+            // Agar jika beda No PAG, tersimpan sebagai baris terpisah untuk Stowing Checklist
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
+                it.noPag.equals(cleanNoPag, ignoreCase = true) &&
                 cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
-                // Jika data ditemukan, tambahkan PcsQty dan SubTotal
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -70,12 +71,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal,
-                    noPag = if (cleanNoPag.isNotBlank()) cleanNoPag else existingItem.noPag // Perbarui noPag jika diisi
+                    subTotal = updatedSubTotal
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika data Customer & Description belum ada, buat baris baru
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -126,28 +125,41 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 sheet.getRow(8)?.getCell(6)?.setCellValue(": ${firstItem.flightNo.uppercase()}")
 
                 val startRowIndex = 13
-                
-                // 1. Isi Manifest Cargo (Tabel Kiri)
-                for (i in list.indices) {
-                    val item = list[i]
-                    val row = sheet.getRow(startRowIndex + i) ?: sheet.createRow(startRowIndex + i)
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
+
+                // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
+                // Menggabungkan item yang memiliki Customer & Description yang sama (meskipun beda No PAG)
+                val manifestGrouped = list.groupBy { Pair(it.customer, it.description) }
+                var manifestIdx = 0
+
+                for ((_, groupItems) in manifestGrouped) {
+                    val sampleItem = groupItems.first()
+                    val totalPcs = groupItems.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 }
+                    val totalWeight = groupItems.sumOf { it.weight.toDoubleOrNull() ?: 0.0 }
+                    val totalSub = groupItems.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
+
+                    val row = sheet.getRow(startRowIndex + manifestIdx) ?: sheet.createRow(startRowIndex + manifestIdx)
+                    
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((manifestIdx + 1).toDouble())
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(sampleItem.pti.uppercase())
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(totalPcs)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(totalWeight)
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(totalSub)
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(sampleItem.description.uppercase())
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(sampleItem.customer.uppercase())
+
+                    manifestIdx++
                 }
 
-                // 2. Isi Stowing Checklist (Tabel Kanan) - Di-group berdasarkan No PAG
-                val groupedData = list.groupBy { it.noPag }
+                // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) ---
+                // Dikelompokkan murni berdasarkan No PAG, sehingga beda PAG akan menjadi baris terpisah
+                val groupedByPag = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
                 var totalGross = 0.0
 
-                for ((noPag, items) in groupedData) {
+                for ((noPag, items) in groupedByPag) {
                     val row = sheet.getRow(stowingRowIdx) ?: sheet.createRow(stowingRowIdx)
+                    
                     val combinedDesc = items.joinToString(" + ") { it.description }
                     val combinedCust = items.map { it.customer }.distinct().joinToString(" + ")
                     val totalWeightPerPag = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
@@ -165,7 +177,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     stowingRowIdx++
                 }
 
-                // 3. Total Weight
+                // --- 3. ISI TOTAL WEIGHT ---
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
                 (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalNet)
                 (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalGross)
