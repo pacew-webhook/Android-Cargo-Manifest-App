@@ -46,9 +46,26 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
-    var subTotal by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
+
+    // Logika perhitungan perkalian otomatis (Pcs/Qty * Weight)
+    val subTotalCalculated = remember(pcsQty, weight) {
+        val qtyVal = pcsQty.toDoubleOrNull()
+        val weightVal = weight.toDoubleOrNull()
+
+        if (qtyVal != null && weightVal != null) {
+            val total = qtyVal * weightVal
+            // Jika hasil desimal bulat (.0), tampilkan sebagai angka bulat
+            if (total % 1.0 == 0.0) {
+                total.toLong().toString()
+            } else {
+                total.toString()
+            }
+        } else {
+            ""
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -120,10 +137,11 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
-                            value = subTotal,
-                            onValueChange = { subTotal = it },
+                            value = subTotalCalculated,
+                            onValueChange = { /* Read only, terhitung otomatis */ },
                             label = { Text("Sub Total (Kg)") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            readOnly = true, // Dikunci agar hanya diisi oleh hasil perkalian otomatis
+                            enabled = false,
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -146,9 +164,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         onClick = {
                             if (description.isNotEmpty()) {
                                 viewModel.addCargo(
-                                    awbNo, flightNo, pti, pcsQty, weight, subTotal, description, customer
+                                    awbNo, flightNo, pti, pcsQty, weight, subTotalCalculated, description, customer
                                 )
-                                pti = ""; pcsQty = ""; weight = ""; subTotal = ""; description = ""; customer = ""
+                                pti = ""; pcsQty = ""; weight = ""; description = ""; customer = ""
                             }
                         },
                         modifier = Modifier
@@ -191,7 +209,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                             .padding(8.dp)
                     ) {
                         TableCell("No", width = 40.dp, isHeader = true)
-                        TableCell("PTI", width = 60.dp, isHeader = true)
+                        TableCell("PTI", width = 80.dp, isHeader = true)
                         TableCell("Pcs/Qty", width = 70.dp, isHeader = true)
                         TableCell("Weight", width = 70.dp, isHeader = true)
                         TableCell("Sub Total", width = 80.dp, isHeader = true)
@@ -211,7 +229,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 TableCell("${index + 1}", width = 40.dp)
-                                TableCell(item.pti, width = 60.dp)
+                                TableCell(item.pti, width = 80.dp)
                                 TableCell(item.pcsQty, width = 70.dp)
                                 TableCell(item.weight, width = 70.dp)
                                 TableCell(item.subTotal, width = 80.dp)
