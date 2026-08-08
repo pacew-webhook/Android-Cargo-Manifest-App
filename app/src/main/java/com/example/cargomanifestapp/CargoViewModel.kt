@@ -2,6 +2,7 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
@@ -9,8 +10,6 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -21,29 +20,7 @@ import java.io.InputStream
 
 class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
-    // Tampilan UI: Menggabungkan data dengan Customer & Description yang sama
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
-        .map { list ->
-            list.groupBy { Pair(it.customer.uppercase(), it.description.uppercase()) }
-                .map { (_, groupItems) ->
-                    val first = groupItems.first()
-                    val totalPcs = groupItems.sumOf { it.pcsQty.toIntOrNull() ?: 0 }
-                    val totalSub = groupItems.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-                    
-                    // Bersihkan No PAG dari duplikat agar tampil rapi di UI
-                    val combinedPag = groupItems.flatMap { it.noPag.split(",") }
-                        .map { it.trim() }
-                        .filter { it.isNotEmpty() }
-                        .distinct()
-                        .joinToString(", ")
-
-                    first.copy(
-                        pcsQty = totalPcs.toString(),
-                        subTotal = if (totalSub % 1.0 == 0.0) totalSub.toLong().toString() else totalSub.toString(),
-                        noPag = combinedPag
-                    )
-                }
-        }
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -66,28 +43,40 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            val rawList = cargoDao.getAllCargo().first()
-            
-            // Cek apakah item dengan Customer, Description, DAN No PAG persis sama sudah ada
-            val existingItem = rawList.find { 
+            // Cek data berdasarkan Customer + Description + No PAG
+            // Jika No PAG berbeda, akan tersimpan sebagai baris terpisah di aplikasi & Stowing Checklist
+            val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
-                it.noPag.equals(cleanNoPag, ignoreCase = true)
+                it.noPag.equals(cleanNoPag, ignoreCase = true) &&
+                cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
-                // Jika No PAG dan barangnya sama persis, baru lakukan akumulasi jumlah
-                val updatedPcs = ((existingItem.pcsQty.toIntOrNull() ?: 0) + (pcsQty.toIntOrNull() ?: 0)).toString()
-                val updatedSub = ((existingItem.subTotal.toDoubleOrNull() ?: 0.0) + (subTotal.toDoubleOrNull() ?: 0.0)).toString()
+                // Jika No PAG dan barangnya sama persis, jumlahnya dijumlahkan (akumulasi)
+                val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
+                val newPcs = pcsQty.trim().toIntOrNull() ?: 0
+                val updatedPcs = (currentPcs + newPcs).toString()
+
+                val currentSubTotal = existingItem.subTotal.toDoubleOrNull() ?: 0.0
+                val newSubTotal = subTotal.trim().toDoubleOrNull() ?: 0.0
+                val updatedSubTotal = if ((currentSubTotal + newSubTotal) % 1.0 == 0.0) {
+                    (currentSubTotal + newSubTotal).toLong().toString()
+                } else {
+                    (currentSubTotal + newSubTotal).toString()
+                }
 
                 val updatedItem = existingItem.copy(
+                    awbNo = if (awbNo.isNotBlank()) awbNo.trim().uppercase() else existingItem.awbNo,
+                    flightNo = if (flightNo.isNotBlank()) flightNo.trim().uppercase() else existingItem.flightNo,
+                    pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
-                    subTotal = updatedSub,
-                    weight = weight.trim().ifEmpty { existingItem.weight }
+                    weight = weight.trim().ifEmpty { existingItem.weight },
+                    subTotal = updatedSubTotal
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika No PAG berbeda, masukkan sebagai baris baru di database
+                // Jika No PAG berbeda, buat baris baru agar masuk ke Stowing Checklist sesuai No PAG masing-masing
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -105,23 +94,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         }
     }
 
-    // Fungsi khusus Update Data (Murni menimpa data tanpa menjumlahkan ulang)
     fun updateCargo(cargoItem: CargoItem) {
-        viewModelScope.launch {
-            cargoDao.update(
-                cargoItem.copy(
-                    awbNo = cargoItem.awbNo.trim().uppercase(),
-                    flightNo = cargoItem.flightNo.trim().uppercase(),
-                    pti = cargoItem.pti.trim().uppercase(),
-                    description = cargoItem.description.trim().uppercase(),
-                    customer = cargoItem.customer.trim().uppercase(),
-                    noPag = cargoItem.noPag.trim().uppercase(),
-                    pcsQty = cargoItem.pcsQty.trim(),
-                    weight = cargoItem.weight.trim(),
-                    subTotal = cargoItem.subTotal.trim()
-                )
-            )
-        }
+        viewModelScope.launch { cargoDao.update(cargoItem) }
     }
 
     fun deleteCargo(cargoItem: CargoItem) {
@@ -134,9 +108,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
     fun exportToExcel(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val rawList = cargoDao.getAllCargo().first()
-
-            if (rawList.isEmpty()) {
+            val list = cargoList.value
+            if (list.isEmpty()) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(context, "Data masih kosong!", Toast.LENGTH_SHORT).show()
                 }
@@ -147,15 +120,17 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
                 val workbook = XSSFWorkbook(inputStream)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-                val firstItem = rawList.first()
+                val firstItem = list.first()
 
+                // Header Flight / AWB
                 sheet.getRow(2)?.getCell(6)?.setCellValue(firstItem.awbNo.uppercase())
                 sheet.getRow(8)?.getCell(6)?.setCellValue(": ${firstItem.flightNo.uppercase()}")
 
                 val startRowIndex = 13
 
-                // --- 1. TABEL MANIFEST (KIRI) ---
-                val manifestGrouped = rawList.groupBy { Pair(it.customer.uppercase(), it.description.uppercase()) }
+                // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
+                // Digabung berdasarkan Customer & Description (tanpa memandang No PAG)
+                val manifestGrouped = list.groupBy { Pair(it.customer, it.description) }
                 var manifestIdx = 0
 
                 for ((_, groupItems) in manifestGrouped) {
@@ -177,8 +152,9 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     manifestIdx++
                 }
 
-                // --- 2. TABEL STOWING CHECKLIST (KANAN) ---
-                val groupedByPag = rawList.groupBy { it.noPag.uppercase() }
+                // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) ---
+                // Dikelompokkan murni berdasarkan No PAG (Beda No PAG otomatis menjadi baris terpisah)
+                val groupedByPag = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
                 var totalGross = 0.0
@@ -194,16 +170,16 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     totalGross += totalWeightPerPag
 
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((stowingRowIdx - startRowIndex + 1).toDouble())
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(noPag)
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(noPag.uppercase())
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc.uppercase())
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag)
-                    (row.getCell(11) ?: row.createCell(11)).setCellValue(totalWeightPerPag)
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(combinedCust.uppercase())
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag) // Net
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(totalWeightPerPag) // Gross
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(combinedCust.uppercase()) // Customer
 
                     stowingRowIdx++
                 }
 
-                // --- 3. TOTAL WEIGHT ---
+                // --- 3. ISI TOTAL WEIGHT ---
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
                 (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalNet)
                 (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalGross)
