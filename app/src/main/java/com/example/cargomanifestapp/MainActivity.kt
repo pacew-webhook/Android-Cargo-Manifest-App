@@ -10,8 +10,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -39,14 +37,11 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
-    // Collect Data dari Room Database
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // Form State Header
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // Form State Item
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -57,7 +52,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Manifest Cargo (Database Saved)", fontWeight = FontWeight.Bold) },
+                title = { Text("Manifest Cargo App", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer
                 )
@@ -71,7 +66,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ================= 1. FORM HEADER =================
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -97,7 +91,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                 }
             }
 
-            // ================= 2. FORM INPUT BARANG =================
             item {
                 Text("Input Data Barang", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -151,11 +144,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                     Button(
                         onClick = {
                             if (description.isNotEmpty()) {
-                                // Simpan Permanen ke Database melalui ViewModel
                                 viewModel.addCargo(
                                     awbNo, flightNo, pti, pcsQty, weight, subTotal, description, customer
                                 )
-                                // Reset Input Form
                                 pti = ""; pcsQty = ""; weight = ""; subTotal = ""; description = ""; customer = ""
                             }
                         },
@@ -168,7 +159,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                 }
             }
 
-            // ================= 3. REKAPAN TABEL DARI DATABASE =================
             item {
                 HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                 Row(
@@ -194,7 +184,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         .horizontalScroll(horizontalScrollState)
                         .background(Color.White, shape = RoundedCornerShape(4.dp))
                 ) {
-                    // Header Tabel
                     Row(
                         modifier = Modifier
                             .background(MaterialTheme.colorScheme.primary)
@@ -207,10 +196,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         TableCell("Sub Total", width = 80.dp, isHeader = true)
                         TableCell("Description", width = 140.dp, isHeader = true)
                         TableCell("Customer", width = 120.dp, isHeader = true)
-                        TableCell("Aksi", width = 50.dp, isHeader = true)
+                        TableCell("Aksi", width = 60.dp, isHeader = true)
                     }
 
-                    // Isi Tabel dari Database
                     if (cargoList.isEmpty()) {
                         Text("Database kosong.", modifier = Modifier.padding(16.dp), color = Color.Gray)
                     } else {
@@ -228,11 +216,12 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                                 TableCell(item.subTotal, width = 80.dp)
                                 TableCell(item.description, width = 140.dp)
                                 TableCell(item.customer, width = 120.dp)
-                                IconButton(
+                                TextButton(
                                     onClick = { viewModel.deleteCargo(item) },
-                                    modifier = Modifier.size(24.dp)
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.width(60.dp)
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
+                                    Text("Hapus", color = Color.Red, fontSize = 11.sp)
                                 }
                             }
                         }
