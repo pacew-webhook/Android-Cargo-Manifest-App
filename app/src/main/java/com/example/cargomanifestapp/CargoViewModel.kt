@@ -1,12 +1,11 @@
 package com.example.cargomanifestapp
 
-import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -19,9 +18,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
-class CargoViewModel(application: Application) : AndroidViewModel(application) {
-
-    private val cargoDao = CargoDatabase.getDatabase(application).cargoDao()
+class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .stateIn(
@@ -140,7 +137,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     if (weightVal != null) {
                         cellWeight.setCellValue(weightVal)
                     } else {
-                        cellWeight.setCellValue("") // Dibiarkan Kosong
+                        cellWeight.setCellValue("")
                     }
 
                     // Kolom E (4): Sub Total
