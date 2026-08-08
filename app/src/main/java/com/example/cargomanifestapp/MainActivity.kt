@@ -67,10 +67,16 @@ fun CargoScreen(viewModel: CargoViewModel) {
     var subTotal by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
-    var noPag by remember { mutableStateOf("") } // <-- State Baru untuk No PAG
+    var noPag by remember { mutableStateOf("") }
 
     // State Edit Mode
     var editingItem by remember { mutableStateOf<CargoItem?>(null) }
+
+    // --- STATE UNTUK DIALOG KONFIRMASI HAPUS ---
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
+
+    var showClearAllDialog by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -127,7 +133,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                     )
                     Spacer(modifier = Modifier.height(6.dp))
 
-                    // Row 1: PTI & Pcs/Qty
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = pti,
@@ -146,7 +151,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Row 2: Weight & Sub Total
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = weight,
@@ -166,7 +170,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Description
                     OutlinedTextField(
                         value = description,
                         onValueChange = { description = it.uppercase() },
@@ -176,7 +179,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Customer & No PAG dalam 1 baris
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = customer,
@@ -194,12 +196,10 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Tombol Simpan / Update
                     Button(
                         onClick = {
                             if (pti.isNotBlank() && pcsQty.isNotBlank()) {
                                 if (editingItem == null) {
-                                    // Pemanggilan addCargo() versi terbaru
                                     viewModel.addCargo(
                                         awbNo = awbNo,
                                         flightNo = flightNo,
@@ -209,7 +209,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                         subTotal = subTotal,
                                         description = description,
                                         customer = customer,
-                                        noPag = noPag // <-- Mengirim No PAG
+                                        noPag = noPag
                                     )
                                     Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -224,20 +224,19 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                             subTotal = subTotal,
                                             description = description.uppercase(),
                                             customer = customer.uppercase(),
-                                            noPag = noPag.uppercase() // <-- Update No PAG
+                                            noPag = noPag.uppercase()
                                         )
                                     )
                                     editingItem = null
                                     Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
                                 }
 
-                                // Reset Input Form setelah Simpan/Update
                                 pcsQty = ""
                                 weight = ""
                                 subTotal = ""
                                 description = ""
                                 customer = ""
-                                noPag = "" // <-- Reset Field No PAG
+                                noPag = ""
 
                             } else {
                                 Toast.makeText(context, "PTI dan Pcs/Qty wajib diisi!", Toast.LENGTH_SHORT).show()
@@ -272,14 +271,14 @@ fun CargoScreen(viewModel: CargoViewModel) {
                             ) {
                                 Text("Export Excel", color = Color.White)
                             }
-                            TextButton(onClick = { viewModel.clearAll() }) {
+                            // Tombol Hapus Semua memunculkan dialog
+                            TextButton(onClick = { showClearAllDialog = true }) {
                                 Text("Hapus Semua", color = Color.Red)
                             }
                         }
                     }
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Header Tabel
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -295,7 +294,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                     }
                 }
 
-                // Baris Isi Tabel
                 items(cargoList.indices.toList()) { index ->
                     val item = cargoList[index]
                     Row(
@@ -310,7 +308,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         Text(item.pcsQty, modifier = Modifier.weight(0.5f))
                         Text(item.subTotal, modifier = Modifier.weight(0.8f))
 
-                        // Tombol Aksi (Edit & Hapus)
                         Row(modifier = Modifier.weight(1.0f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             TextButton(
                                 onClick = {
@@ -323,15 +320,19 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     subTotal = item.subTotal
                                     description = item.description
                                     customer = item.customer
-                                    noPag = item.noPag // <-- Isi No PAG saat Klik Edit
+                                    noPag = item.noPag
                                 },
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Text("Edit", color = Color(0xFF2196F3), fontSize = 12.sp)
                             }
 
+                            // Tombol Hapus per baris memunculkan dialog konfirmasi
                             TextButton(
-                                onClick = { viewModel.deleteCargo(item) },
+                                onClick = {
+                                    itemToDelete = item
+                                    showDeleteDialog = true
+                                },
                                 contentPadding = PaddingValues(0.dp)
                             ) {
                                 Text("Hapus", color = Color.Red, fontSize = 12.sp)
@@ -341,5 +342,63 @@ fun CargoScreen(viewModel: CargoViewModel) {
                 }
             }
         }
+    }
+
+    // --- DIALOG KONFIRMASI HAPUS PER BARIS ---
+    if (showDeleteDialog && itemToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            title = { Text("Konfirmasi Hapus") },
+            text = { Text("Apakah Anda yakin ingin menghapus data PTI ${itemToDelete?.pti}?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        itemToDelete?.let { viewModel.deleteCargo(it) }
+                        showDeleteDialog = false
+                        itemToDelete = null
+                        Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Ya", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteDialog = false
+                        itemToDelete = null
+                    }
+                ) {
+                    Text("Tidak")
+                }
+            }
+        )
+    }
+
+    // --- DIALOG KONFIRMASI HAPUS SEMUA ---
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text("Peringatan") },
+            text = { Text("Apakah Anda yakin ingin menghapus SELURUH data yang ada di tabel?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAll()
+                        showClearAllDialog = false
+                        Toast.makeText(context, "Semua data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Ya, Hapus Semua", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearAllDialog = false }
+                ) {
+                    Text("Tidak")
+                }
+            }
+        )
     }
 }
