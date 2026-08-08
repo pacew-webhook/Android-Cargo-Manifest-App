@@ -27,6 +27,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             initialValue = emptyList()
         )
 
+    // Fungsi insert: Semua teks otomatis diubah jadi KAPITAL (.uppercase())
     fun addCargo(
         awbNo: String,
         flightNo: String,
@@ -40,14 +41,14 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         viewModelScope.launch {
             cargoDao.insert(
                 CargoItem(
-                    awbNo = awbNo,
-                    flightNo = flightNo,
-                    pti = pti,
-                    pcsQty = pcsQty,
-                    weight = weight,
-                    subTotal = subTotal,
-                    description = description,
-                    customer = customer
+                    awbNo = awbNo.trim().uppercase(),
+                    flightNo = flightNo.trim().uppercase(),
+                    pti = pti.trim().uppercase(),
+                    pcsQty = pcsQty.trim(),
+                    weight = weight.trim(),
+                    subTotal = subTotal.trim(),
+                    description = description.trim().uppercase(),
+                    customer = customer.trim().uppercase()
                 )
             )
         }
@@ -93,15 +94,14 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 if (firstItem.awbNo.isNotEmpty()) {
-                    awbCell.setCellValue(firstItem.awbNo)
+                    awbCell.setCellValue(firstItem.awbNo.uppercase())
                 }
 
                 // 2. FLIGHT NO -> Baris 10, Kolom G (Row Index 9, Cell Index 6)
-                // Ditambahkan spasi ": " di depan agar rapi sejajar dengan tanda titik dua Excel
                 val flightRow = sheet.getRow(9) ?: sheet.createRow(9)
                 val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 if (firstItem.flightNo.isNotEmpty()) {
-                    flightCell.setCellValue(": ${firstItem.flightNo}")
+                    flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
                 }
 
                 // 3. TABEL DATA BARANG -> Mulai Baris 14 (Row Index 13)
@@ -115,7 +115,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
                     // Kolom B (1): PTI
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
                     // Kolom C (2): Pcs/Cly
                     (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
@@ -127,10 +127,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
 
                     // Kolom F (5): Description
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
 
                     // Kolom G (6): Costumers
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
                 workbook.setForceFormulaRecalculation(true)
