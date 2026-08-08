@@ -14,26 +14,34 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
 
     val cargoList = repository.allCargo
 
-    fun addCargo(awbNo: String, flightNo: String, pti: String, pcsQty: String, weight: String, subTotal: String, description: String, customer: String) {
+    fun addCargo(
+        awbNo: String,
+        flightNo: String,
+        pti: String,
+        pcsQty: String,
+        weight: String,
+        subTotal: String,
+        description: String,
+        customer: String
+    ) {
         viewModelScope.launch {
-            repository.insert(CargoItem(
-                awbNo = awbNo,
-                flightNo = flightNo,
-                pti = pti,
-                pcsQty = pcsQty,
-                weight = weight,
-                subTotal = subTotal,
-                description = description,
-                customer = customer
-            ))
+            repository.insert(
+                CargoItem(
+                    awbNo = awbNo,
+                    flightNo = flightNo,
+                    pti = pti,
+                    pcsQty = pcsQty,
+                    weight = weight,
+                    subTotal = subTotal,
+                    description = description,
+                    customer = customer
+                )
+            )
         }
     }
 
@@ -55,21 +63,20 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
             if (list.isEmpty()) return@launch
 
             try {
-                // Read template from assets
+                // Membaca template dari folder assets
                 val inputStream: InputStream = context.assets.open("template.xlsx")
                 val workbook = XSSFWorkbook(inputStream)
                 val sheet = workbook.getSheetAt(0)
 
-                // Header data (ambil dari item pertama)
                 val firstItem = list.first()
 
-                // Styles
+                // Styles untuk data tabel
                 val dataStyle = workbook.createCellStyle().apply {
                     alignment = HorizontalAlignment.CENTER
                     verticalAlignment = VerticalAlignment.CENTER
                     val font = workbook.createFont().apply {
                         fontName = "Arial"
-                        fontSize = 10.toShort()
+                        fontHeightInPoints = 10.toShort() // DIPERBAIKI: fontHeightInPoints
                     }
                     setFont(font)
                 }
@@ -79,20 +86,20 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
                     verticalAlignment = VerticalAlignment.CENTER
                     val font = workbook.createFont().apply {
                         fontName = "Arial"
-                        fontSize = 10.toShort()
+                        fontHeightInPoints = 10.toShort() // DIPERBAIKI: fontHeightInPoints
                     }
                     setFont(font)
                 }
 
                 // 1. ISI FLIGHT NO & AWB NO SESUAI TEMPLATE
-                // Baris ke-9 (Index 8), Kolom G (Index 6) -> FLIGHT NO
-                var flightRow = sheet.getRow(8) ?: sheet.createRow(8)
-                var flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
+                // FLIGHT NO -> Row 9 (Index 8), Column G (Index 6)
+                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
+                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 flightCell.setCellValue(": ${firstItem.flightNo}")
 
-                // AWB NO (Baris 4, Kolom G)
-                var awbRow = sheet.getRow(3) ?: sheet.createRow(3)
-                var awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
+                // AWB NO -> Row 4 (Index 3), Column G (Index 6)
+                val awbRow = sheet.getRow(3) ?: sheet.createRow(3)
+                val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 awbCell.setCellValue(firstItem.awbNo)
 
                 // 2. ISI TABEL DATA BARANG (Mulai Baris 14 / Index 13)
@@ -138,7 +145,7 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
 
                 inputStream.close()
 
-                // Simpan & Buka File
+                // Simpan & Buka File Excel
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -152,7 +159,10 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
                 )
 
                 val intent = Intent(Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    setDataAndType(
+                        uri,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
                 context.startActivity(intent)
