@@ -39,14 +39,17 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
     ) {
         viewModelScope.launch {
             val cleanCustomer = customer.trim().uppercase()
-            
-            // PENCARIAN BERDASARKAN CUSTOMER
+            val cleanDescription = description.trim().uppercase()
+
+            // AKUMULASI HANYA JIKA CUSTOMER DAN DESCRIPTION-NYA KEDUA-DUANYA SAMA
             val existingItem = cargoList.value.find { 
-                it.customer.equals(cleanCustomer, ignoreCase = true) && cleanCustomer.isNotEmpty()
+                it.customer.equals(cleanCustomer, ignoreCase = true) && 
+                it.description.equals(cleanDescription, ignoreCase = true) &&
+                cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
-                // JIKA NAMA CUSTOMER SUDAH ADA -> AKUMULASIKAN PCS DAN SUBTOTAL
+                // JIKA CUSTOMER & DESCRIPTION SAMA -> AKUMULASIKAN PCS DAN SUBTOTAL
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -59,19 +62,17 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (currentSubTotal + newSubTotal).toString()
                 }
 
-                // Update item yang sudah ada di database
                 val updatedItem = existingItem.copy(
                     awbNo = if (awbNo.isNotBlank()) awbNo.trim().uppercase() else existingItem.awbNo,
                     flightNo = if (flightNo.isNotBlank()) flightNo.trim().uppercase() else existingItem.flightNo,
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal,
-                    description = if (description.isNotBlank()) description.trim().uppercase() else existingItem.description
+                    subTotal = updatedSubTotal
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // JIKA CUSTOMER BELUM ADA -> BUAT BARIS BARU
+                // JIKA DESKRIPSI BERBEDA (MISAL SENG BDG PINANG) -> BUAT BARIS BARU
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -80,7 +81,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         pcsQty = pcsQty.trim(),
                         weight = weight.trim(),
                         subTotal = subTotal.trim(),
-                        description = description.trim().uppercase(),
+                        description = cleanDescription,
                         customer = cleanCustomer
                     )
                 )
