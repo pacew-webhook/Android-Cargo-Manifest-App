@@ -4,15 +4,11 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,10 +19,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class MainActivity : ComponentActivity() {
-
-    private val viewModel: CargoViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,7 +34,18 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    CargoScreen(viewModel = viewModel)
+                    val context = LocalContext.current
+                    val database = remember { CargoDatabase.getDatabase(context.applicationContext) }
+                    val cargoViewModel: CargoViewModel = viewModel(
+                        factory = object : ViewModelProvider.Factory {
+                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
+                                @Suppress("UNCHECKED_CAST")
+                                return CargoViewModel(database.cargoDao()) as T
+                            }
+                        }
+                    )
+
+                    CargoScreen(viewModel = cargoViewModel)
                 }
             }
         }
@@ -182,7 +190,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         onClick = {
                             if (pti.isNotBlank() && pcsQty.isNotBlank()) {
                                 if (editingItem == null) {
-                                    // BUKAN MODE EDIT -> TAMBAH BARU
                                     viewModel.addCargo(
                                         awbNo = awbNo,
                                         flightNo = flightNo,
@@ -195,7 +202,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     )
                                     Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    // MODE EDIT -> UPDATE DATA EXISTING
                                     val current = editingItem!!
                                     viewModel.updateCargo(
                                         current.copy(
@@ -213,7 +219,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
                                 }
 
-                                // Reset form rincian barang
                                 pcsQty = ""
                                 weight = ""
                                 subTotal = ""
@@ -269,33 +274,33 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("No", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.4f))
-                        Text("PTI", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.3f))
-                        Text("Pcs", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.7f))
+                        Text("PTI", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
+                        Text("Pcs", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
                         Text("Weight", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
-                        Text("SubTotal", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                        Text("Aksi", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
+                        Text("SubTotal", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.9f))
+                        Text("Aksi", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.1f))
                     }
                 }
 
-                // Baris Isi Tabel dengan Tombol Edit & Hapus
+                // Baris Isi Tabel dengan Tombol Teks Edit & Hapus
                 items(cargoList.indices.toList()) { index ->
                     val item = cargoList[index]
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(if (index % 2 == 0) Color(0xFFF2F0F4) else Color.White)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                            .padding(horizontal = 8.dp, vertical = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("${index + 1}", modifier = Modifier.weight(0.4f))
-                        Text(item.pti, modifier = Modifier.weight(1.3f))
-                        Text(item.pcsQty, modifier = Modifier.weight(0.7f))
+                        Text(item.pti, modifier = Modifier.weight(1.2f))
+                        Text(item.pcsQty, modifier = Modifier.weight(0.6f))
                         Text(item.weight, modifier = Modifier.weight(0.8f))
-                        Text(item.subTotal, modifier = Modifier.weight(1f))
+                        Text(item.subTotal, modifier = Modifier.weight(0.9f))
 
-                        // Tombol Aksi (Edit & Hapus)
-                        Row(modifier = Modifier.weight(0.8f)) {
-                            IconButton(
+                        // Tombol Aksi Teks (Edit & Hapus)
+                        Row(modifier = Modifier.weight(1.1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                            TextButton(
                                 onClick = {
                                     editingItem = item
                                     awbNo = item.awbNo
@@ -307,23 +312,16 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     description = item.description
                                     customer = item.customer
                                 },
-                                modifier = Modifier.size(28.dp)
+                                contentPadding = PaddingValues(0.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Edit,
-                                    contentDescription = "Edit",
-                                    tint = Color(0xFF2196F3)
-                                )
+                                Text("Edit", color = Color(0xFF2196F3), fontSize = 12.sp)
                             }
-                            IconButton(
+
+                            TextButton(
                                 onClick = { viewModel.deleteCargo(item) },
-                                modifier = Modifier.size(28.dp)
+                                contentPadding = PaddingValues(0.dp)
                             ) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Hapus",
-                                    tint = Color.Red
-                                )
+                                Text("Hapus", color = Color.Red, fontSize = 12.sp)
                             }
                         }
                     }
