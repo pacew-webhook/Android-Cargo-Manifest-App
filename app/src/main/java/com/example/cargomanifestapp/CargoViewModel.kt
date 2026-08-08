@@ -76,7 +76,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
 
             try {
-                // 1. Disesuaikan persis dengan nama file di assets Anda: template_manifest.xlsx
                 val inputStream: InputStream = try {
                     context.assets.open("template_manifest.xlsx")
                 } catch (e: Exception) {
@@ -87,26 +86,25 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 }
 
                 val workbook = XSSFWorkbook(inputStream)
-                
-                // 2. Ambil Sheet bernama "Manifest" (fallback ke sheet index 0)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // 3. Header AWB No -> Baris 3, Kolom G (Row Index 2, Cell Index 6)
+                // 1. AWB NO -> Baris 3, Kolom G (Row Index 2, Cell Index 6)
                 val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 if (firstItem.awbNo.isNotEmpty()) {
                     awbCell.setCellValue(firstItem.awbNo)
                 }
 
-                // 4. Header Flight No -> Baris 10, Kolom E (Row Index 9, Cell Index 4)
+                // 2. FLIGHT NO -> Baris 10, Kolom G (Row Index 9, Cell Index 6)
+                // Ditambahkan spasi ": " di depan agar rapi sejajar dengan tanda titik dua Excel
                 val flightRow = sheet.getRow(9) ?: sheet.createRow(9)
-                val flightCell = flightRow.getCell(4) ?: flightRow.createCell(4)
+                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 if (firstItem.flightNo.isNotEmpty()) {
-                    flightCell.setCellValue(firstItem.flightNo)
+                    flightCell.setCellValue(": ${firstItem.flightNo}")
                 }
 
-                // 5. Isi Tabel Data Barang (Mulai Baris 14 -> Row Index 13)
+                // 3. TABEL DATA BARANG -> Mulai Baris 14 (Row Index 13)
                 val startRowIndex = 13
                 for (i in list.indices) {
                     val item = list[i]
@@ -138,14 +136,12 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 workbook.setForceFormulaRecalculation(true)
                 inputStream.close()
 
-                // 6. Simpan Hasil Ekspor ke File Temporer
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
-                // 7. Buka File Hasil Ekspor
                 val uri: Uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
@@ -165,7 +161,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     try {
                         context.startActivity(intent)
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Export Berhasil! File tersimpan, namun tidak ada aplikasi pembaca Excel di HP Anda.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export Berhasil! File tersimpan, namun tidak ada aplikasi pembaca Excel.", Toast.LENGTH_LONG).show()
                     }
                 }
 
