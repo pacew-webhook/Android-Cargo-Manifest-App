@@ -38,18 +38,49 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         customer: String
     ) {
         viewModelScope.launch {
-            cargoDao.insert(
-                CargoItem(
-                    awbNo = awbNo.trim().uppercase(),
-                    flightNo = flightNo.trim().uppercase(),
-                    pti = pti.trim().uppercase(),
-                    pcsQty = pcsQty.trim(),
-                    weight = weight.trim(),
-                    subTotal = subTotal.trim(),
-                    description = description.trim().uppercase(),
-                    customer = customer.trim().uppercase()
+            val cleanPti = pti.trim().uppercase()
+            val existingItem = cargoList.value.find { it.pti.equals(cleanPti, ignoreCase = true) }
+
+            if (existingItem != null) {
+                // JIKA PTI SUDAH ADA -> JUMLAHKAN / AKUMULASIKAN DATA PCS DAN SUBTOTAL
+                val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
+                val newPcs = pcsQty.trim().toIntOrNull() ?: 0
+                val updatedPcs = (currentPcs + newPcs).toString()
+
+                val currentSubTotal = existingItem.subTotal.toDoubleOrNull() ?: 0.0
+                val newSubTotal = subTotal.trim().toDoubleOrNull() ?: 0.0
+                val updatedSubTotal = if ((currentSubTotal + newSubTotal) % 1.0 == 0.0) {
+                    (currentSubTotal + newSubTotal).toLong().toString()
+                } else {
+                    (currentSubTotal + newSubTotal).toString()
+                }
+
+                // Update item yang sudah ada di database
+                val updatedItem = existingItem.copy(
+                    awbNo = if (awbNo.isNotBlank()) awbNo.trim().uppercase() else existingItem.awbNo,
+                    flightNo = if (flightNo.isNotBlank()) flightNo.trim().uppercase() else existingItem.flightNo,
+                    pcsQty = updatedPcs,
+                    weight = weight.trim().ifEmpty { existingItem.weight },
+                    subTotal = updatedSubTotal,
+                    description = if (description.isNotBlank()) description.trim().uppercase() else existingItem.description,
+                    customer = if (customer.isNotBlank()) customer.trim().uppercase() else existingItem.customer
                 )
-            )
+                cargoDao.update(updatedItem)
+            } else {
+                // JIKA PTI BELUM ADA -> BUAT BARIS BARU
+                cargoDao.insert(
+                    CargoItem(
+                        awbNo = awbNo.trim().uppercase(),
+                        flightNo = flightNo.trim().uppercase(),
+                        pti = cleanPti,
+                        pcsQty = pcsQty.trim(),
+                        weight = weight.trim(),
+                        subTotal = subTotal.trim(),
+                        description = description.trim().uppercase(),
+                        customer = customer.trim().uppercase()
+                    )
+                )
+            }
         }
     }
 
@@ -119,7 +150,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom A (0): No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                    // Kolom B (1): PTI (HURUF KAPITAL)
+                    // Kolom B (1): PTI
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
                     // Kolom C (2): Pcs/Cly
@@ -131,7 +162,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         cellPcs.setCellValue("")
                     }
 
-                    // Kolom D (3): Weight Pcs/Cly Wt (TIDAK ADA ANGKA 0 JIKA KOSONG)
+                    // Kolom D (3): Weight Pcs/Cly Wt (Kosong jika tidak diisi)
                     val weightVal = item.weight.toDoubleOrNull()
                     val cellWeight = row.getCell(3) ?: row.createCell(3)
                     if (weightVal != null) {
@@ -149,10 +180,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         cellSubTotal.setCellValue("")
                     }
 
-                    // Kolom F (5): Description (HURUF KAPITAL)
+                    // Kolom F (5): Description
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
 
-                    // Kolom G (6): Costumers (HURUF KAPITAL)
+                    // Kolom G (6): Customer
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
