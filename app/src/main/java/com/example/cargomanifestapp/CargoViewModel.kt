@@ -43,17 +43,16 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // Database menyimpan berdasarkan kombinasi Customer + Description + No PAG
-            // Ini memastikan jika No PAG berbeda, akan tersimpan sebagai entri terpisah untuk Stowing Checklist
+            // LOGIKA: Cek data lama HANYA berdasarkan Customer dan Description
+            // Jadi jika menginput Customer & Desc yang sama, tidak buat baris baru di aplikasi
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
-                it.noPag.equals(cleanNoPag, ignoreCase = true) &&
                 cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
-                // Jika No PAG dan datanya sama, akumulasikan jumlahnya
+                // Jika item sudah ada, jumlah Pcs & SubTotal ditambahkan (akumulasi)
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -72,11 +71,12 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal
+                    subTotal = updatedSubTotal,
+                    noPag = if (cleanNoPag.isNotBlank()) cleanNoPag else existingItem.noPag // Mengikuti No PAG terbaru atau tetap
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika No PAG berbeda (meskipun customer/deskripsi sama), buat baris baru agar masuk ke No PAG tersebut
+                // Jika belum ada sama sekali, buat baris baru di aplikasi
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -129,31 +129,20 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val startRowIndex = 13
 
                 // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
-                // Digabung berdasarkan Customer & Description (mengabaikan perbedaan No PAG)
-                val manifestGrouped = list.groupBy { Pair(it.customer, it.description) }
-                var manifestIdx = 0
-
-                for ((_, groupItems) in manifestGrouped) {
-                    val sampleItem = groupItems.first()
-                    val totalPcs = groupItems.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 }
-                    val totalWeight = groupItems.sumOf { it.weight.toDoubleOrNull() ?: 0.0 }
-                    val totalSub = groupItems.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-
-                    val row = sheet.getRow(startRowIndex + manifestIdx) ?: sheet.createRow(startRowIndex + manifestIdx)
+                for (i in list.indices) {
+                    val item = list[i]
+                    val row = sheet.getRow(startRowIndex + i) ?: sheet.createRow(startRowIndex + i)
                     
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((manifestIdx + 1).toDouble())
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(sampleItem.pti.uppercase())
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(totalPcs)
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(totalWeight)
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(totalSub)
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(sampleItem.description.uppercase())
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(sampleItem.customer.uppercase())
-
-                    manifestIdx++
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
                 // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) ---
-                // Dikelompokkan murni berdasarkan No PAG (berbeda No PAG akan menjadi baris terpisah)
                 val groupedByPag = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
@@ -181,8 +170,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
                 // --- 3. ISI TOTAL WEIGHT ---
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
-                (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalNet)
-                (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalGross)
+                (totalRow.getCell(10) ?: rowCreateCellCheck(totalRow, 10)).setCellValue(totalNet)
+                (totalRow.getCell(11) ?: rowCreateCellCheck(totalRow, 11)).setCellValue(totalGross)
 
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 workbook.write(FileOutputStream(file))
@@ -200,4 +189,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
         }
     }
+
+    private fun rowCreateCellCheck(row: org.apache.poi.ss.usermodel.Row, index: Int) =
+        row.getCell(index) ?: row.createCell(index)
 }
