@@ -1,4 +1,3 @@
-
 package com.example.cargomanifestapp
 
 import android.widget.Toast
@@ -9,6 +8,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -17,14 +17,13 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
-    val cargoList by viewModel.cargoList.collectAsState()
+    val cargoList by viewModel.cargoList.collectAsState(initial = emptyList())
 
-    // State untuk Form Input / Edit
-    var awbNo by remember { mutableStateOf("") }
-    var flightNo by remember { mutableStateOf("") }
+    // State untuk Form Input
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -33,161 +32,109 @@ fun MainScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State untuk Mode Edit & ID Item yang sedang diedit
+    // State untuk mode edit dan dialog
     var isEditing by remember { mutableStateOf(false) }
-    var selectedItemId by remember { mutableStateOf<Int?>(null) }
-
-    // State untuk Dialog Konfirmasi Hapus Per Baris
+    var selectedItemId by remember { mutableStateOf<Long?>(null) }
+    
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
-
-    // State untuk Dialog Konfirmasi Hapus Semua
+    var itemToDelete by remember { mutableStateOf<CargoEntity?>(null) }
+    
     var showClearAllDialog by remember { mutableStateOf(false) }
 
-    // Fungsi untuk mengosongkan form
-    fun clearForm() {
-        pti = ""
-        pcsQty = ""
-        weight = ""
-        subTotal = ""
-        description = ""
-        customer = ""
-        noPag = ""
-        isEditing = false
-        selectedItemId = null
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFFF3EDF7))
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Manifest Cargo App",
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 12.dp)
-        )
-
-        // Header Penerbangan
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
-        ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Header Penerbangan", fontWeight = FontWeight.Bold, modifier = Modifier.padding(bottom = 8.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = awbNo,
-                        onValueChange = { awbNo = it },
-                        label = { Text("AWB No") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = flightNo,
-                        onValueChange = { flightNo = it },
-                        label = { Text("Flight No") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Cargo Manifest App") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            )
         }
-
-        // Form Input / Edit Data Barang
-        Card(
+    ) { paddingValues ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White)
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text(
-                    text = if (isEditing) "Edit Data Barang" else "Input Data Barang",
-                    fontWeight = FontWeight.Bold,
-                    color = if (isEditing) Color.Blue else Color.Black,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+            // Form Input Section
+            Text(
+                text = if (isEditing) "Edit Data Kargo" else "Tambah Data Kargo",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = pti,
-                        onValueChange = { pti = it },
-                        label = { Text("PTI") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = pcsQty,
-                        onValueChange = { pcsQty = it },
-                        label = { Text("Pcs / Qty") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            OutlinedTextField(
+                value = pti,
+                onValueChange = { pti = it },
+                label = { Text("PTI") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = weight,
-                        onValueChange = { weight = it },
-                        label = { Text("Pcs/Qty Wt") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = subTotal,
-                        onValueChange = { subTotal = it },
-                        label = { Text("Sub Total (Kg)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth()
+                    value = pcsQty,
+                    onValueChange = { pcsQty = it },
+                    label = { Text("Pcs / Qty") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
                 )
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = { weight = it },
+                    label = { Text("Weight (Kg)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                Spacer(modifier = Modifier.height(8.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = subTotal,
+                    onValueChange = { subTotal = it },
+                    label = { Text("Sub Total") },
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = noPag,
+                    onValueChange = { noPag = it },
+                    label = { Text("No PAG") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
 
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = customer,
-                        onValueChange = { customer = it },
-                        label = { Text("Customer") },
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = noPag,
-                        onValueChange = { noPag = it },
-                        label = { Text("NO PAG") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                Spacer(modifier = Modifier.height(12.dp))
+            OutlinedTextField(
+                value = customer,
+                onValueChange = { customer = it },
+                label = { Text("Customer") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-                // Tombol Simpan / Update Data
+            // Tombol Aksi Form (Simpan/Update & Ekspor/Hapus Semua)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 Button(
                     onClick = {
-                        if (pti.isBlank() || customer.isBlank()) {
-                            Toast.makeText(context, "PTI dan Customer wajib diisi!", Toast.LENGTH_SHORT).show()
+                        if (pti.isBlank() || pcsQty.isBlank()) {
+                            Toast.makeText(context, "PTI dan Pcs/Qty harus diisi!", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
 
                         if (isEditing && selectedItemId != null) {
-                            // Proses Update Data (Murni tanpa menjumlahkan)
-                            val updatedItem = CargoItem(
+                            val updatedItem = CargoEntity(
                                 id = selectedItemId!!,
-                                awbNo = awbNo,
-                                flightNo = flightNo,
                                 pti = pti,
                                 pcsQty = pcsQty,
                                 weight = weight,
@@ -198,88 +145,100 @@ fun MainScreen(viewModel: CargoViewModel) {
                             )
                             viewModel.updateCargo(updatedItem)
                             Toast.makeText(context, "Data berhasil diperbarui", Toast.LENGTH_SHORT).show()
+                            isEditing = false
+                            selectedItemId = null
                         } else {
-                            // Proses Tambah Data Baru
-                            viewModel.addCargo(awbNo, flightNo, pti, pcsQty, weight, subTotal, description, customer, noPag)
-                            Toast.makeText(context, "Data berhasil disimpan", Toast.LENGTH_SHORT).show()
+                            val newItem = CargoEntity(
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            viewModel.insertCargo(newItem)
+                            Toast.makeText(context, "Data berhasil ditambahkan", Toast.LENGTH_SHORT).show()
                         }
-                        clearForm()
-                    },
-                    modifier = Modifier.fillMaxWidth()
+
+                        // Reset form
+                        pti = ""
+                        pcsQty = ""
+                        weight = ""
+                        subTotal = ""
+                        description = ""
+                        customer = ""
+                        noPag = ""
+                    }
                 ) {
-                    Text(if (isEditing) "Update Data" else "Simpan Ke Database")
+                    Text(if (isEditing) "Update Data" else "Simpan Data")
+                }
+
+                Row {
+                    TextButton(onClick = {
+                        Toast.makeText(context, "Fitur Ekspor Excel dipanggil", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Export Excel")
+                    }
+
+                    TextButton(onClick = { showClearAllDialog = true }) {
+                        Text("Hapus Semua", color = Color.Red)
+                    }
                 }
             }
-        }
 
-        // Tombol Aksi Tabel & Tabel Data
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
-        ) {
-            Text("Tabel Data (${cargoList.size})", fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(8.dp))
+            Divider()
+            Spacer(modifier = Modifier.height(4.dp))
 
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = { viewModel.exportToExcel(context) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3))
-                ) {
-                    Text("Export Excel")
-                }
-
-                TextButton(onClick = { showClearAllDialog = true }) {
-                    Text("Hapus Semua", color = Color.Red)
-                }
-            }
-        }
-
-        // Daftar Tabel Data
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            itemsIndexed(cargoList) { index, item ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+            // Daftar Tabel Data
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(cargoList) { index, item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
                     ) {
-                        Text("${index + 1}", modifier = Modifier.weight(0.5f))
-                        Text(item.pti, modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
-                        Text(item.pcsQty, modifier = Modifier.weight(1f))
-                        Text(item.subTotal, modifier = Modifier.weight(1f))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${index + 1}", modifier = Modifier.weight(0.5f))
+                            Text(item.pti, modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
+                            Text(item.pcsQty, modifier = Modifier.weight(1f))
+                            Text(item.subTotal, modifier = Modifier.weight(1f))
 
-                        Row(modifier = Modifier.weight(1.5f), horizontalArrangement = Arrangement.End) {
-                            TextButton(onClick = {
-                                // Masukkan data ke form untuk diedit
-                                isEditing = true
-                                selectedItemId = item.id
-                                pti = item.pti
-                                pcsQty = item.pcsQty
-                                weight = item.weight
-                                subTotal = item.subTotal
-                                description = item.description
-                                customer = item.customer
-                                noPag = item.noPag
-                            }) {
-                                Text("Edit", color = Color.Blue)
-                            }
+                            Row(
+                                modifier = Modifier.weight(1.5f),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = {
+                                    isEditing = true
+                                    selectedItemId = item.id
+                                    pti = item.pti
+                                    pcsQty = item.pcsQty
+                                    weight = item.weight
+                                    subTotal = item.subTotal
+                                    description = item.description
+                                    customer = item.customer
+                                    noPag = item.noPag
+                                }) {
+                                    Text("Edit")
+                                }
 
-                            TextButton(onClick = {
-                                // Panggil dialog konfirmasi hapus per baris
-                                itemToDelete = item
-                                showDeleteDialog = true
-                            }) {
-                                Text("Hapus", color = Color.Red)
+                                TextButton(onClick = {
+                                    itemToDelete = item
+                                    showDeleteDialog = true
+                                }) {
+                                    Text("Hapus", color = Color.Red)
+                                }
                             }
                         }
                     }
@@ -288,12 +247,12 @@ fun MainScreen(viewModel: CargoViewModel) {
         }
     }
 
-    // --- POP-UP DIALOG KONFIRMASI HAPUS PER BARIS ---
+    // Dialog Konfirmasi Hapus Item Satuan
     if (showDeleteDialog && itemToDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             title = { Text("Konfirmasi Hapus") },
-            text = { Text("Apakah Anda yakin ingin menghapus data PTI ${itemToDelete?.pti} (${itemToDelete?.customer})?") },
+            text = { Text("Apakah Anda yakin ingin menghapus data kargo ${itemToDelete?.pti}?") },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -303,44 +262,37 @@ fun MainScreen(viewModel: CargoViewModel) {
                         Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
                     }
                 ) {
-                    Text("Ya", color = Color.Red)
+                    Text("Hapus", color = Color.Red)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        showDeleteDialog = false
-                        itemToDelete = null
-                    }
-                ) {
-                    Text("Tidak")
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Batal")
                 }
             }
         )
     }
 
-    // --- POP-UP DIALOG KONFIRMASI HAPUS SEMUA ---
+    // Dialog Konfirmasi Hapus Semua Data
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
-            title = { Text("Peringatan") },
-            text = { Text("Apakah Anda yakin ingin menghapus SELURUH data yang ada di tabel?") },
+            title = { Text("Konfirmasi Hapus Semua") },
+            text = { Text("Apakah Anda yakin ingin menghapus SELURUH data manifest?") },
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.clearAll()
+                        viewModel.clearAllCargo()
                         showClearAllDialog = false
-                        Toast.makeText(context, "Semua data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Semua data berhasil dibersihkan", Toast.LENGTH_SHORT).show()
                     }
                 ) {
-                    Text("Ya, Hapus Semua", color = Color.Red)
+                    Text("Hapus Semua", color = Color.Red)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = { showClearAllDialog = false }
-                ) {
-                    Text("Tidak")
+                TextButton(onClick = { showClearAllDialog = false }) {
+                    Text("Batal")
                 }
             }
         )
