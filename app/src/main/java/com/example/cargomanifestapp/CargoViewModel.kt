@@ -1,11 +1,12 @@
 package com.example.cargomanifestapp
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +19,9 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 
-class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
+class CargoViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val cargoDao = CargoDatabase.getDatabase(application).cargoDao()
 
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .stateIn(
@@ -50,6 +53,12 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     customer = customer.trim().uppercase()
                 )
             )
+        }
+    }
+
+    fun updateCargo(cargoItem: CargoItem) {
+        viewModelScope.launch {
+            cargoDao.update(cargoItem)
         }
     }
 
@@ -117,13 +126,31 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
                     // Kolom C (2): Pcs/Cly
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    val pcsVal = item.pcsQty.toDoubleOrNull()
+                    val cellPcs = row.getCell(2) ?: row.createCell(2)
+                    if (pcsVal != null) {
+                        cellPcs.setCellValue(pcsVal)
+                    } else {
+                        cellPcs.setCellValue("")
+                    }
 
-                    // Kolom D (3): Weight Pcs/Cly Wt
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    // Kolom D (3): Weight Pcs/Cly Wt (TIDAK ADA ANGKA 0 JIKA KOSONG)
+                    val weightVal = item.weight.toDoubleOrNull()
+                    val cellWeight = row.getCell(3) ?: row.createCell(3)
+                    if (weightVal != null) {
+                        cellWeight.setCellValue(weightVal)
+                    } else {
+                        cellWeight.setCellValue("") // Dibiarkan Kosong
+                    }
 
                     // Kolom E (4): Sub Total
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    val subTotalVal = item.subTotal.toDoubleOrNull()
+                    val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                    if (subTotalVal != null) {
+                        cellSubTotal.setCellValue(subTotalVal)
+                    } else {
+                        cellSubTotal.setCellValue("")
+                    }
 
                     // Kolom F (5): Description (HURUF KAPITAL)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
