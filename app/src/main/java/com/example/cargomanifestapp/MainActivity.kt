@@ -58,7 +58,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // State Input
+    // State Input Form
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
     var pti by remember { mutableStateOf("") }
@@ -67,8 +67,9 @@ fun CargoScreen(viewModel: CargoViewModel) {
     var subTotal by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
+    var noPag by remember { mutableStateOf("") } // <-- State Baru untuk No PAG
 
-    // Mode Edit State
+    // State Edit Mode
     var editingItem by remember { mutableStateOf<CargoItem?>(null) }
 
     Scaffold(
@@ -175,13 +176,21 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Customer
-                    OutlinedTextField(
-                        value = customer,
-                        onValueChange = { customer = it.uppercase() },
-                        label = { Text("Customer") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                    // Customer & No PAG dalam 1 baris
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = customer,
+                            onValueChange = { customer = it.uppercase() },
+                            label = { Text("Customer") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = noPag,
+                            onValueChange = { noPag = it.uppercase() },
+                            label = { Text("NO PAG") },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(12.dp))
 
@@ -190,6 +199,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         onClick = {
                             if (pti.isNotBlank() && pcsQty.isNotBlank()) {
                                 if (editingItem == null) {
+                                    // Pemanggilan addCargo() versi terbaru
                                     viewModel.addCargo(
                                         awbNo = awbNo,
                                         flightNo = flightNo,
@@ -198,7 +208,8 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                         weight = weight,
                                         subTotal = subTotal,
                                         description = description,
-                                        customer = customer
+                                        customer = customer,
+                                        noPag = noPag // <-- Mengirim No PAG
                                     )
                                     Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -212,18 +223,21 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                             weight = weight,
                                             subTotal = subTotal,
                                             description = description.uppercase(),
-                                            customer = customer.uppercase()
+                                            customer = customer.uppercase(),
+                                            noPag = noPag.uppercase() // <-- Update No PAG
                                         )
                                     )
                                     editingItem = null
                                     Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
                                 }
 
+                                // Reset Input Form setelah Simpan/Update
                                 pcsQty = ""
                                 weight = ""
                                 subTotal = ""
                                 description = ""
                                 customer = ""
+                                noPag = "" // <-- Reset Field No PAG
 
                             } else {
                                 Toast.makeText(context, "PTI dan Pcs/Qty wajib diisi!", Toast.LENGTH_SHORT).show()
@@ -274,15 +288,14 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("No", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.4f))
-                        Text("PTI", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.2f))
-                        Text("Pcs", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.6f))
-                        Text("Weight", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
-                        Text("SubTotal", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.9f))
-                        Text("Aksi", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.1f))
+                        Text("PTI", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.0f))
+                        Text("Pcs", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.5f))
+                        Text("SubTotal", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(0.8f))
+                        Text("Aksi", color = Color.White, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.0f))
                     }
                 }
 
-                // Baris Isi Tabel dengan Tombol Teks Edit & Hapus
+                // Baris Isi Tabel
                 items(cargoList.indices.toList()) { index ->
                     val item = cargoList[index]
                     Row(
@@ -293,13 +306,12 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("${index + 1}", modifier = Modifier.weight(0.4f))
-                        Text(item.pti, modifier = Modifier.weight(1.2f))
-                        Text(item.pcsQty, modifier = Modifier.weight(0.6f))
-                        Text(item.weight, modifier = Modifier.weight(0.8f))
-                        Text(item.subTotal, modifier = Modifier.weight(0.9f))
+                        Text(item.pti, modifier = Modifier.weight(1.0f))
+                        Text(item.pcsQty, modifier = Modifier.weight(0.5f))
+                        Text(item.subTotal, modifier = Modifier.weight(0.8f))
 
-                        // Tombol Aksi Teks (Edit & Hapus)
-                        Row(modifier = Modifier.weight(1.1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // Tombol Aksi (Edit & Hapus)
+                        Row(modifier = Modifier.weight(1.0f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                             TextButton(
                                 onClick = {
                                     editingItem = item
@@ -311,6 +323,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     subTotal = item.subTotal
                                     description = item.description
                                     customer = item.customer
+                                    noPag = item.noPag // <-- Isi No PAG saat Klik Edit
                                 },
                                 contentPadding = PaddingValues(0.dp)
                             ) {
