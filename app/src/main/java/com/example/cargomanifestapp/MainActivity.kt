@@ -46,26 +46,25 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
+    var subTotalInput by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
 
-    // Logika perhitungan perkalian otomatis (Pcs/Qty * Weight)
-    val subTotalCalculated = remember(pcsQty, weight) {
+    // Hitung otomatis saat pcsQty dan weight keduanya diisi
+    val calculatedSubTotal = remember(pcsQty, weight) {
         val qtyVal = pcsQty.toDoubleOrNull()
         val weightVal = weight.toDoubleOrNull()
 
         if (qtyVal != null && weightVal != null) {
             val total = qtyVal * weightVal
-            // Jika hasil desimal bulat (.0), tampilkan sebagai angka bulat
-            if (total % 1.0 == 0.0) {
-                total.toLong().toString()
-            } else {
-                total.toString()
-            }
+            if (total % 1.0 == 0.0) total.toLong().toString() else total.toString()
         } else {
-            ""
+            null
         }
     }
+
+    // Jika ada hasil hitungan otomatis, gunakan itu. Jika tidak, gunakan input manual dari user.
+    val finalSubTotal = calculatedSubTotal ?: subTotalInput
 
     Scaffold(
         topBar = {
@@ -137,11 +136,15 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
-                            value = subTotalCalculated,
-                            onValueChange = { /* Read only, terhitung otomatis */ },
+                            value = finalSubTotal,
+                            onValueChange = {
+                                // Hanya mengizinkan ketik manual jika perkalian otomatis tidak aktif
+                                if (calculatedSubTotal == null) {
+                                    subTotalInput = it
+                                }
+                            },
                             label = { Text("Sub Total (Kg)") },
-                            readOnly = true, // Dikunci agar hanya diisi oleh hasil perkalian otomatis
-                            enabled = false,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -164,9 +167,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         onClick = {
                             if (description.isNotEmpty()) {
                                 viewModel.addCargo(
-                                    awbNo, flightNo, pti, pcsQty, weight, subTotalCalculated, description, customer
+                                    awbNo, flightNo, pti, pcsQty, weight, finalSubTotal, description, customer
                                 )
-                                pti = ""; pcsQty = ""; weight = ""; description = ""; customer = ""
+                                pti = ""; pcsQty = ""; weight = ""; subTotalInput = ""; description = ""; customer = ""
                             }
                         },
                         modifier = Modifier
