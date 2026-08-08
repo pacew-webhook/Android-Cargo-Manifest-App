@@ -1,7 +1,6 @@
 package com.example.cargomanifestapp
 
 import android.widget.Toast
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,7 +22,6 @@ fun MainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState(initial = emptyList())
 
-    // State untuk Form Input
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -32,7 +30,6 @@ fun MainScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State untuk mode edit dan dialog
     var isEditing by remember { mutableStateOf(false) }
     var selectedItemId by remember { mutableStateOf<Long?>(null) }
     
@@ -59,7 +56,6 @@ fun MainScreen(viewModel: CargoViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Form Input Section
             Text(
                 text = if (isEditing) "Edit Data Kargo" else "Tambah Data Kargo",
                 fontWeight = FontWeight.Bold,
@@ -119,7 +115,6 @@ fun MainScreen(viewModel: CargoViewModel) {
                 modifier = Modifier.fillMaxWidth()
             )
 
-            // Tombol Aksi Form (Simpan/Update & Ekspor/Hapus Semua)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -161,7 +156,6 @@ fun MainScreen(viewModel: CargoViewModel) {
                             Toast.makeText(context, "Data berhasil ditambahkan", Toast.LENGTH_SHORT).show()
                         }
 
-                        // Reset form
                         pti = ""
                         pcsQty = ""
                         weight = ""
@@ -191,7 +185,6 @@ fun MainScreen(viewModel: CargoViewModel) {
             Divider()
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Daftar Tabel Data
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -247,7 +240,6 @@ fun MainScreen(viewModel: CargoViewModel) {
         }
     }
 
-    // Dialog Konfirmasi Hapus Item Satuan
     if (showDeleteDialog && itemToDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -256,10 +248,7 @@ fun MainScreen(viewModel: CargoViewModel) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        val currentItem = itemToDelete
-                        if (currentItem != null) {
-                            viewModel.deleteCargo(currentItem)
-                        }
+                        itemToDelete?.let { viewModel.deleteCargo(it) }
                         showDeleteDialog = false
                         itemToDelete = null
                         Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
@@ -276,7 +265,6 @@ fun MainScreen(viewModel: CargoViewModel) {
         )
     }
 
-    // Dialog Konfirmasi Hapus Semua Data
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
