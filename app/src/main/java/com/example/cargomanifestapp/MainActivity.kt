@@ -26,7 +26,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Membuat ViewModel secara manual menggunakan ViewModelProvider standar Android
         val database = CargoDatabase.getDatabase(applicationContext)
         val factory = CargoViewModelFactory(database.cargoDao())
         val cargoViewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
