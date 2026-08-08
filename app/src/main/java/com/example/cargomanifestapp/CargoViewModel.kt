@@ -129,7 +129,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
                 val workbook = XSSFWorkbook(inputStream)
                 
-                // Perulangan untuk mengisi semua sheet yang ada di workbook
+                // Perulangan untuk mengisi semua sheet di dalam file Excel
                 for (sheetIndex in 0 until workbook.numberOfSheets) {
                     val sheet = workbook.getSheetAt(sheetIndex)
                     val firstItem = list.first()
@@ -157,12 +157,22 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         // 1. Kolom A (Index 0): No Urut
                         (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                        // 2. Kolom B (Index 1): NO PAG
-                        val pagCell = row.getCell(1) ?: row.createCell(1)
-                        pagCell.setCellValue(item.noPag.uppercase())
+                        // 2. Kolom ke-2 (Index 1): Berdasarkan Jenis Sheet
+                        val cellIndex1 = row.getCell(1) ?: row.createCell(1)
+                        val isStowing = sheet.sheetName.contains("STOWING", ignoreCase = true) || 
+                                        sheet.sheetName.contains("CHECKLIST", ignoreCase = true)
 
-                        // 3. Kolom C (Index 5): Description
-                        val descCell = row.getCell(5) ?: row.createCell(5)
+                        if (isStowing) {
+                            // Sheet Stowing: Kolom ke-2 diisi NO PAG
+                            cellIndex1.setCellValue(item.noPag.uppercase())
+                        } else {
+                            // Sheet Manifest: Kolom ke-2 diisi PTI
+                            cellIndex1.setCellValue(item.pti.uppercase())
+                        }
+
+                        // 3. Kolom Description (Menyesuaikan letak kolom berdasarkan sheet)
+                        val descIndex = if (isStowing) 2 else 5
+                        val descCell = row.getCell(descIndex) ?: row.createCell(descIndex)
                         descCell.setCellValue(item.description.uppercase())
 
                         // 4. Kolom Weight Net & Gross (Index 3 & 4)
@@ -174,7 +184,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         val cellSubTotal = row.getCell(4) ?: row.createCell(4)
                         if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
 
-                        // 5. Kolom Customer (Index 6)
+                        // 5. Kolom Customer / Costumers (Index 6)
                         val custCell = row.getCell(6) ?: row.createCell(6)
                         custCell.setCellValue(item.customer.uppercase())
                     }
