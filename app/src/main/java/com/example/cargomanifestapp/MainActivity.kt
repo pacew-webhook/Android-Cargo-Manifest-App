@@ -4,7 +4,8 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.lifecycle.ViewModelProvider
-import com.example.cargomanifestapp.ui.theme.CargoManifestAppTheme
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -16,8 +17,11 @@ class MainActivity : ComponentActivity() {
         )[CargoViewModel::class.java]
 
         setContent {
-            CargoManifestAppTheme {
-                MainScreen(viewModel = viewModel)
+            // Menggunakan MaterialTheme standar agar tidak terjadi unresolved reference pada theme custom
+            MaterialTheme {
+                Surface {
+                    MainScreen(viewModel = viewModel)
+                }
             }
         }
     }
