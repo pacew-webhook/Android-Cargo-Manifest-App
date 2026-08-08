@@ -36,7 +36,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         subTotal: String,
         description: String,
         customer: String,
-        noPag: String // <--- PARAMETER BARU
+        noPag: String
     ) {
         viewModelScope.launch {
             val cleanCustomer = customer.trim().uppercase()
@@ -129,7 +129,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
                 val workbook = XSSFWorkbook(inputStream)
                 
-                // --- PENGISIAN SHEET MANIFEST ATAU SHEET STOWING CHECKLIST ---
+                // Perulangan untuk mengisi semua sheet yang ada di workbook
                 for (sheetIndex in 0 until workbook.numberOfSheets) {
                     val sheet = workbook.getSheetAt(sheetIndex)
                     val firstItem = list.first()
@@ -147,45 +147,36 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
                     }
 
-                    // Baris Data Mulai dari index 13 (Baris 14 Excel)
+                    // Baris Data Mulai dari index 13 (Baris ke-14 di Excel)
                     val startRowIndex = 13
                     for (i in list.indices) {
                         val item = list[i]
                         val rowIndex = startRowIndex + i
                         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                        // Kolom A (0): No
+                        // 1. Kolom A (Index 0): No Urut
                         (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                        // PENGISIAN KHUSUS SHEET STOWING CHEKLIST (KOLOM I ATAU B DENGAN INDEX Disesuaikan)
-                        // Jika sheet memiliki kolom NO PAG di Kolom B (index 1):
+                        // 2. Kolom B (Index 1): NO PAG
                         val pagCell = row.getCell(1) ?: row.createCell(1)
-                        if (sheet.sheetName.contains("STOWING", ignoreCase = true)) {
-                            pagCell.setCellValue(item.noPag.uppercase())
-                        } else {
-                            pagCell.setCellValue(item.pti.uppercase())
-                        }
+                        pagCell.setCellValue(item.noPag.uppercase())
 
-                        // Kolom C (2): Pcs/Cly
-                        val pcsVal = item.pcsQty.toDoubleOrNull()
-                        val cellPcs = row.getCell(2) ?: row.createCell(2)
-                        if (pcsVal != null) cellPcs.setCellValue(pcsVal) else cellPcs.setCellValue("")
+                        // 3. Kolom C (Index 5): Description
+                        val descCell = row.getCell(5) ?: row.createCell(5)
+                        descCell.setCellValue(item.description.uppercase())
 
-                        // Kolom D (3): Weight Pcs
+                        // 4. Kolom Weight Net & Gross (Index 3 & 4)
                         val weightVal = item.weight.toDoubleOrNull()
                         val cellWeight = row.getCell(3) ?: row.createCell(3)
                         if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
 
-                        // Kolom E (4): Sub Total / Gross
                         val subTotalVal = item.subTotal.toDoubleOrNull()
                         val cellSubTotal = row.getCell(4) ?: row.createCell(4)
                         if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
 
-                        // Kolom F (5): Description
-                        (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
-
-                        // Kolom G (6): Customer
-                        (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
+                        // 5. Kolom Customer (Index 6)
+                        val custCell = row.getCell(6) ?: row.createCell(6)
+                        custCell.setCellValue(item.customer.uppercase())
                     }
                 }
 
