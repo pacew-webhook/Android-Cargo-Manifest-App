@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.cargomanifestapp"
-        minSdk = 26 // DINAUKAN KE SDK 26 SESUAI PETUNJUK ERROR
+        minSdk = 26
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -31,7 +31,6 @@ android {
         }
     }
     compileOptions {
-        // Mengaktifkan desugaring Java 8+ untuk kompatibilitas Apache POI
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
@@ -43,7 +42,8 @@ android {
         compose = true
     }
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.1"
+        // Ditingkatkan dari 1.5.1 ke 1.5.8 agar cocok dengan Kotlin 1.9.22
+        kotlinCompilerExtensionVersion = "1.5.8"
     }
     packaging {
         resources {
@@ -60,7 +60,7 @@ android {
 }
 
 dependencies {
-    // --- Library Desugaring untuk Apache POI ---
+    // --- Desugaring untuk Apache POI ---
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // --- Core Android & Jetpack Compose ---
