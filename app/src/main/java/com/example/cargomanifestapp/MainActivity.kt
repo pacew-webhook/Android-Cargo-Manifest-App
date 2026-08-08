@@ -23,6 +23,11 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 
+// IMPORT TAMBAHAN UNTUK MEMASTIKAN KELAS TERDETEKSI
+import com.example.cargomanifestapp.CargoViewModel
+import com.example.cargomanifestapp.CargoDatabase
+import com.example.cargomanifestapp.CargoItem
+
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -72,10 +77,9 @@ fun CargoScreen(viewModel: CargoViewModel) {
     // State Edit Mode
     var editingItem by remember { mutableStateOf<CargoItem?>(null) }
 
-    // --- STATE UNTUK DIALOG KONFIRMASI HAPUS ---
+    // State Dialog Konfirmasi Hapus
     var showDeleteDialog by remember { mutableStateOf(false) }
     var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
-
     var showClearAllDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -271,7 +275,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                             ) {
                                 Text("Export Excel", color = Color.White)
                             }
-                            // Tombol Hapus Semua memunculkan dialog
                             TextButton(onClick = { showClearAllDialog = true }) {
                                 Text("Hapus Semua", color = Color.Red)
                             }
@@ -327,7 +330,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                 Text("Edit", color = Color(0xFF2196F3), fontSize = 12.sp)
                             }
 
-                            // Tombol Hapus per baris memunculkan dialog konfirmasi
                             TextButton(
                                 onClick = {
                                     itemToDelete = item
@@ -344,7 +346,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
         }
     }
 
-    // --- DIALOG KONFIRMASI HAPUS PER BARIS ---
+    // DIALOG KONFIRMASI HAPUS PER BARIS
     if (showDeleteDialog && itemToDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -375,7 +377,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
         )
     }
 
-    // --- DIALOG KONFIRMASI HAPUS SEMUA ---
+    // DIALOG KONFIRMASI HAPUS SEMUA
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
