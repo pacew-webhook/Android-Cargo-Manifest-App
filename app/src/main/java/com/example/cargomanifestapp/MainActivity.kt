@@ -19,12 +19,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Membuat ViewModel secara manual menggunakan ViewModelProvider standar Android
+        val database = CargoDatabase.getDatabase(applicationContext)
+        val factory = CargoViewModelFactory(database.cargoDao())
+        val cargoViewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
         setContent {
             MaterialTheme {
@@ -32,14 +37,6 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    val context = LocalContext.current
-                    val database = remember { CargoDatabase.getDatabase(context.applicationContext) }
-                    
-                    // Menggunakan Factory terpisah agar aman dari error reference
-                    val cargoViewModel: CargoViewModel = viewModel(
-                        factory = CargoViewModelFactory(database.cargoDao())
-                    )
-
                     CargoScreen(viewModel = cargoViewModel)
                 }
             }
