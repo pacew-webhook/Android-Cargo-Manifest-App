@@ -176,7 +176,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) DENGAN GROUPING ---
                 val groupedData = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
-                var totalWeightStowing = 0.0
+                var totalWeightStowingNet = 0.0
+                var totalWeightStowingGross = 0.0
 
                 for ((noPag, items) in groupedData) {
                     val row = sheet.getRow(stowingRowIdx) ?: sheet.createRow(stowingRowIdx)
@@ -184,9 +185,13 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Menggabungkan deskripsi dengan pemisah " + "
                     val combinedDesc = items.joinToString(" + ") { it.description }
                     
-                    // Menghitung total berat untuk NO PAG tersebut (berdasarkan SubTotal)
+                    // Menggabungkan customer dengan pemisah " + " (tanpa duplikat nama yang sama)
+                    val combinedCustomer = items.map { it.customer }.distinct().joinToString(" + ")
+                    
+                    // Menghitung total berat untuk NO PAG tersebut
                     val totalWeightPerPag = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-                    totalWeightStowing += totalWeightPerPag
+                    totalWeightStowingNet += totalWeightPerPag
+                    totalWeightStowingGross += totalWeightPerPag
 
                     // Kolom H (Index 7): No Stowing
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((stowingRowIdx - startRowIndex + 1).toDouble())
@@ -194,26 +199,29 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom I (Index 8): No PAG
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(noPag.uppercase())
                     
-                    // Kolom J (Index 9): Description Stowing (Gabungan)
+                    // Kolom J (Index 9): Description Stowing (Gabungan dengan " + ")
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc.uppercase())
                     
-                    // Kolom K (Index 10): WEIGHT (Kg) - Net (Mengisi total berat per baris)
+                    // Kolom K (Index 10): WEIGHT (Kg) - Net
                     (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag)
+                    
+                    // Kolom L (Index 11): WEIGHT (Kg) - Gross
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(totalWeightPerPag)
+
+                    // Kolom M (Index 12): COSTUMERS di Stowing Checklist
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(combinedCustomer.uppercase())
 
                     stowingRowIdx++
                 }
 
                 // --- 3. ISI GRAND TOTAL WEIGHT STOWING ---
-                // Menulis Total Keseluruhan ke baris "TOTAL WEIGHT" (Berdasarkan template ada di baris 37 / Index 36)
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
                 
-                // Mengisi di kolom K (Index 10) yaitu kolom Net untuk Total Weight
-                val totalNetCell = totalRow.getCell(10) ?: totalRow.createCell(10)
-                totalNetCell.setCellValue(totalWeightStowing)
-
-                // Jika kolom Gross (Index 11) di tabel Stowing juga perlu diisi Total (biasanya Net dan Gross sama di Cargo aplikasi Anda)
-                // val totalGrossCell = totalRow.getCell(11) ?: totalRow.createCell(11)
-                // totalGrossCell.setCellValue(totalWeightStowing)
+                // Total Net di Kolom K (Index 10)
+                (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalWeightStowingNet)
+                
+                // Total Gross di Kolom L (Index 11)
+                (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalWeightStowingGross)
 
                 workbook.setForceFormulaRecalculation(true)
                 inputStream.close()
