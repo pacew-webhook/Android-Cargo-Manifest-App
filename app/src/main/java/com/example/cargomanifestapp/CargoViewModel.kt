@@ -7,7 +7,6 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
-import org.apache.poi.ss.usermodel.*
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -61,30 +60,12 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
             if (list.isEmpty()) return@launch
 
             try {
-                // Membaca template dari folder assets
+                // Membaca file template dari assets
                 val inputStream: InputStream = context.assets.open("template.xlsx")
                 val workbook = XSSFWorkbook(inputStream)
                 val sheet = workbook.getSheetAt(0)
 
                 val firstItem = list.first()
-
-                // Buat Font secara eksplisit menggunakan variabel terpisah (menghindari error plus/Short)
-                val mainFont = workbook.createFont()
-                mainFont.fontName = "Arial"
-                val fontSize: Short = 16
-                mainFont.fontHeightInPoints = fontSize
-
-                // Style Center
-                val dataStyle = workbook.createCellStyle()
-                dataStyle.alignment = HorizontalAlignment.CENTER
-                dataStyle.verticalAlignment = VerticalAlignment.CENTER
-                dataStyle.setFont(mainFont)
-
-                // Style Left
-                val leftStyle = workbook.createCellStyle()
-                leftStyle.alignment = HorizontalAlignment.LEFT
-                leftStyle.verticalAlignment = VerticalAlignment.CENTER
-                leftStyle.setFont(mainFont)
 
                 // 1. ISI HEADER (FLIGHT NO & AWB NO)
                 // Flight No -> Row 9 (Index 8), Column G (Index 6)
@@ -99,58 +80,56 @@ class CargoViewModel(private val repository: CargoRepository) : ViewModel() {
 
                 // 2. ISI TABEL DATA BARANG (Mulai Baris 14 / Index 13)
                 val startRow = 13
-                for (i in list.indices) {
+                val size = list.size
+
+                for (i in 0 until size) {
                     val item = list[i]
-                    val row = sheet.getRow(startRow + i) ?: sheet.createRow(startRow + i)
+                    val rowIndex = startRow + i
+                    val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                    // No
+                    // No (Kolom A / Index 0)
                     val cellNo = row.getCell(0) ?: row.createCell(0)
-                    cellNo.setCellValue((i + 1).toDouble())
-                    cellNo.cellStyle = dataStyle
+                    val noValue = (i + 1).toDouble()
+                    cellNo.setCellValue(noValue)
 
-                    // PTI
+                    // PTI (Kolom B / Index 1)
                     val cellPti = row.getCell(1) ?: row.createCell(1)
                     cellPti.setCellValue(item.pti)
-                    cellPti.cellStyle = dataStyle
 
-                    // Pcs/Cly
+                    // Pcs/Cly (Kolom C / Index 2)
                     val cellPcs = row.getCell(2) ?: row.createCell(2)
-                    val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
-                    cellPcs.setCellValue(pcsVal)
-                    cellPcs.cellStyle = dataStyle
+                    cellPcs.setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
 
-                    // Weight Pcs/Cly
+                    // Weight Pcs/Cly (Kolom D / Index 3)
                     val cellWt = row.getCell(3) ?: row.createCell(3)
-                    val wtVal = item.weight.toDoubleOrNull() ?: 0.0
-                    cellWt.setCellValue(wtVal)
-                    cellWt.cellStyle = dataStyle
+                    cellWt.setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
 
-                    // Weight Sub Total
+                    // Weight Sub Total (Kolom E / Index 4)
                     val cellSub = row.getCell(4) ?: row.createCell(4)
-                    val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
-                    cellSub.setCellValue(subVal)
-                    cellSub.cellStyle = dataStyle
+                    cellSub.setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
 
-                    // Description
+                    // Description (Kolom F / Index 5)
                     val cellDesc = row.getCell(5) ?: row.createCell(5)
                     cellDesc.setCellValue(item.description)
-                    cellDesc.cellStyle = leftStyle
 
-                    // Customer
+                    // Customer (Kolom G / Index 6)
                     val cellCust = row.getCell(6) ?: row.createCell(6)
                     cellCust.setCellValue(item.customer)
-                    cellCust.cellStyle = leftStyle
                 }
+
+                // Paksa recalculate formula agar TOTAL WEIGHT terhitung otomatis
+                workbook.setForceFormulaRecalculation(true)
 
                 inputStream.close()
 
-                // Simpan & Buka File Excel
+                // Simpan File ke Cache
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
+                // Buka File Excel via Intent
                 val uri: Uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
