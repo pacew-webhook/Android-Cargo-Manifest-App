@@ -34,4 +34,10 @@ jobs:
 
     - name: Build APK with Gradle Wrapper
       run: ./gradlew assembleDebug --stacktrace
-      
+
+    - name: Upload APK Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: CargoManifest-Debug-APK
+        path: app/build/outputs/apk/**/*.apk
+        
