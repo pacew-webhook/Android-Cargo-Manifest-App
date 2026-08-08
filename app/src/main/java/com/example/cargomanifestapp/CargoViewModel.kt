@@ -9,13 +9,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
-    private val dao = AppDatabase.getDatabase(application).cargoDao()
 
-    // Mengambil data secara real-time dari database
-    val cargoList: StateFlow<List<CargoEntity>> = dao.getAllCargoItems()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val cargoDao = CargoDatabase.getDatabase(application).cargoDao()
 
-    // Fungsi Tambah Data
+    val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
     fun addCargo(
         awbNo: String,
         flightNo: String,
@@ -27,32 +30,29 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         customer: String
     ) {
         viewModelScope.launch {
-            dao.insertCargo(
-                CargoEntity(
-                    awbNo = awbNo,
-                    flightNo = flightNo,
-                    pti = pti,
-                    pcsQty = pcsQty,
-                    weight = weight,
-                    subTotal = subTotal,
-                    description = description,
-                    customer = customer
-                )
+            val item = CargoItem(
+                awbNo = awbNo,
+                flightNo = flightNo,
+                pti = pti,
+                pcsQty = pcsQty,
+                weight = weight,
+                subTotal = subTotal,
+                description = description,
+                customer = customer
             )
+            cargoDao.insertCargo(item)
         }
     }
 
-    // Fungsi Hapus Item
-    fun deleteCargo(cargo: CargoEntity) {
+    fun deleteCargo(cargoItem: CargoItem) {
         viewModelScope.launch {
-            dao.deleteCargo(cargo)
+            cargoDao.deleteCargo(cargoItem)
         }
     }
 
-    // Fungsi Hapus Semua Data
     fun clearAll() {
         viewModelScope.launch {
-            dao.deleteAll()
+            cargoDao.deleteAll()
         }
     }
 }
