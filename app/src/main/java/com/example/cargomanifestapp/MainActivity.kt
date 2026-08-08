@@ -242,7 +242,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                     if (cargoList.isEmpty()) {
                         Text("Database kosong.", modifier = Modifier.padding(16.dp), color = Color.Gray)
                     } else {
-                        cargoList.forEachIndexed { index, item ->
+                        // Menggunakan for-loop biasa agar aman dari scope Composable
+                        for (index in cargoList.indices) {
+                            val item = cargoList[index]
                             Row(
                                 modifier = Modifier
                                     .background(if (index % 2 == 0) Color(0xFFF2F2F2) else Color.White)
@@ -272,7 +274,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     }
 }
 
-// Menambahkan anotasi @Composable pada fungsi penolong ini
 @Composable
 fun TableCell(text: String, width: Dp, isHeader: Boolean = false) {
     Text(
