@@ -22,7 +22,6 @@ fun MainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList: List<CargoItem> by viewModel.cargoList.collectAsState(initial = emptyList())
 
-    // State untuk input field
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -34,34 +33,268 @@ fun MainScreen(viewModel: CargoViewModel) {
     var isEditing by remember { mutableStateOf(false) }
     var selectedItemId by remember { mutableStateOf<Long?>(null) }
     
-    // UI Layout
+    var showDeleteDialog by remember { mutableStateOf(false) }
+    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
+    
+    var showClearAllDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Cargo Manifest App") },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
     ) { paddingValues ->
-        Column(modifier = Modifier.padding(paddingValues).padding(16.dp)) {
-            // [Form input di sini disederhanakan...]
-            // ... Pastikan semua Field ada sesuai kebutuhan Anda ...
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = if (isEditing) "Edit Data Kargo" else "Tambah Data Kargo",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+
+            OutlinedTextField(
+                value = pti,
+                onValueChange = { pti = it },
+                label = { Text("PTI") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = pcsQty,
+                    onValueChange = { pcsQty = it },
+                    label = { Text("Pcs / Qty") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = weight,
+                    onValueChange = { weight = it },
+                    label = { Text("Weight (Kg)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = subTotal,
+                    onValueChange = { subTotal = it },
+                    label = { Text("Sub Total") },
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = noPag,
+                    onValueChange = { noPag = it },
+                    label = { Text("No PAG") },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            OutlinedTextField(
+                value = description,
+                onValueChange = { description = it },
+                label = { Text("Description") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            OutlinedTextField(
+                value = customer,
+                onValueChange = { customer = it },
+                label = { Text("Customer") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = {
+                        if (pti.isBlank() || pcsQty.isBlank()) {
+                            Toast.makeText(context, "PTI dan Pcs/Qty harus diisi!", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        if (isEditing && selectedItemId != null) {
+                            val updatedItem = CargoItem(
+                                id = selectedItemId!!,
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            viewModel.updateCargo(updatedItem)
+                            Toast.makeText(context, "Data berhasil diperbarui", Toast.LENGTH_SHORT).show()
+                            isEditing = false
+                            selectedItemId = null
+                        } else {
+                            val newItem = CargoItem(
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            viewModel.insertCargo(newItem)
+                            Toast.makeText(context, "Data berhasil ditambahkan", Toast.LENGTH_SHORT).show()
+                        }
+
+                        pti = ""
+                        pcsQty = ""
+                        weight = ""
+                        subTotal = ""
+                        description = ""
+                        customer = ""
+                        noPag = ""
+                    }
+                ) {
+                    Text(if (isEditing) "Update Data" else "Simpan Data")
+                }
+
+                Row {
+                    TextButton(onClick = {
+                        Toast.makeText(context, "Fitur Ekspor Excel dipanggil", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Text("Export Excel")
+                    }
+
+                    TextButton(onClick = { showClearAllDialog = true }) {
+                        Text("Hapus Semua", color = Color.Red)
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
-            // FIX: Menggunakan Divider standar agar kompatibel
-            Divider(modifier = Modifier.fillMaxWidth()) 
-            Spacer(modifier = Modifier.height(8.dp))
+            Divider(modifier = Modifier.fillMaxWidth())
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // LazyColumn untuk list data
-            LazyColumn {
-                itemsIndexed(cargoList) { index, item ->
-                    Card(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                        Text(text = "PTI: ${item.pti} | Pcs: ${item.pcsQty}")
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                itemsIndexed(cargoList) { index, item: CargoItem ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color.White)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("${index + 1}", modifier = Modifier.weight(0.5f))
+                            Text(item.pti, modifier = Modifier.weight(1.5f), fontWeight = FontWeight.Bold)
+                            Text(item.pcsQty, modifier = Modifier.weight(1f))
+                            Text(item.subTotal, modifier = Modifier.weight(1f))
+
+                            Row(
+                                modifier = Modifier.weight(1.5f),
+                                horizontalArrangement = Arrangement.End
+                            ) {
+                                TextButton(onClick = {
+                                    isEditing = true
+                                    selectedItemId = item.id
+                                    pti = item.pti
+                                    pcsQty = item.pcsQty
+                                    weight = item.weight
+                                    subTotal = item.subTotal
+                                    description = item.description
+                                    customer = item.customer
+                                    noPag = item.noPag
+                                }) {
+                                    Text("Edit")
+                                }
+
+                                TextButton(onClick = {
+                                    itemToDelete = item
+                                    showDeleteDialog = true
+                                }) {
+                                    Text("Hapus", color = Color.Red)
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    if (showDeleteDialog) {
+        val targetItem = itemToDelete
+        if (targetItem != null) {
+            AlertDialog(
+                onDismissRequest = { 
+                    showDeleteDialog = false
+                    itemToDelete = null
+                },
+                title = { Text("Konfirmasi Hapus") },
+                text = { Text("Apakah Anda yakin ingin menghapus data kargo ${targetItem.pti}?") },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            viewModel.deleteCargo(targetItem)
+                            showDeleteDialog = false
+                            itemToDelete = null
+                            Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                        }
+                    ) {
+                        Text("Hapus", color = Color.Red)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { 
+                        showDeleteDialog = false
+                        itemToDelete = null
+                    }) {
+                        Text("Batal")
+                    }
+                }
+            )
+        }
+    }
+
+    if (showClearAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearAllDialog = false },
+            title = { Text("Konfirmasi Hapus Semua") },
+            text = { Text("Apakah Anda yakin ingin menghapus SELURUH data manifest?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAllCargo()
+                        showClearAllDialog = false
+                        Toast.makeText(context, "Semua data berhasil dibersihkan", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Hapus Semua", color = Color.Red)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearAllDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 }
