@@ -30,7 +30,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     val totalPcs = groupItems.sumOf { it.pcsQty.toIntOrNull() ?: 0 }
                     val totalSub = groupItems.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     
-                    // Bersihkan No PAG dari duplikat agar tampil rapi
+                    // Bersihkan No PAG dari duplikat agar tampil rapi di UI
                     val combinedPag = groupItems.flatMap { it.noPag.split(",") }
                         .map { it.trim() }
                         .filter { it.isNotEmpty() }
@@ -66,8 +66,9 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // Cek apakah data dengan Customer, Description, DAN No PAG yang sama sudah ada di database mentah
             val rawList = cargoDao.getAllCargo().first()
+            
+            // Cek apakah item dengan Customer, Description, DAN No PAG persis sama sudah ada
             val existingItem = rawList.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
@@ -75,7 +76,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
 
             if (existingItem != null) {
-                // Jika No PAG dan barangnya sama persis, akumulasikan
+                // Jika No PAG dan barangnya sama persis, baru lakukan akumulasi jumlah
                 val updatedPcs = ((existingItem.pcsQty.toIntOrNull() ?: 0) + (pcsQty.toIntOrNull() ?: 0)).toString()
                 val updatedSub = ((existingItem.subTotal.toDoubleOrNull() ?: 0.0) + (subTotal.toDoubleOrNull() ?: 0.0)).toString()
 
@@ -86,7 +87,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika beda No PAG atau data baru, masukkan sebagai baris baru di database
+                // Jika No PAG berbeda, masukkan sebagai baris baru di database
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -104,7 +105,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         }
     }
 
-    // Fungsi khusus untuk tombol UPDATE/EDIT agar tidak menjumlahkan ulang secara liar
+    // Fungsi khusus Update Data (Murni menimpa data tanpa menjumlahkan ulang)
     fun updateCargo(cargoItem: CargoItem) {
         viewModelScope.launch {
             cargoDao.update(
@@ -114,7 +115,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = cargoItem.pti.trim().uppercase(),
                     description = cargoItem.description.trim().uppercase(),
                     customer = cargoItem.customer.trim().uppercase(),
-                    noPag = cargoItem.noPag.trim().uppercase()
+                    noPag = cargoItem.noPag.trim().uppercase(),
+                    pcsQty = cargoItem.pcsQty.trim(),
+                    weight = cargoItem.weight.trim(),
+                    subTotal = cargoItem.subTotal.trim()
                 )
             )
         }
