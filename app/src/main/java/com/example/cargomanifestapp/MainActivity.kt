@@ -4,6 +4,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -19,18 +20,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
 
-    private lateinit var viewModel: CargoViewModel
+    private val viewModel: CargoViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        val database = AppDatabase.getDatabase(applicationContext)
-        val factory = CargoViewModelFactory(database.cargoDao())
-        viewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
         setContent {
             MaterialTheme {
@@ -186,7 +182,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                 )
 
                                 // AWB No, Flight No, dan PTI TETAP TERISI (tidak dikosongkan)
-                                // Hanya rincian barang berikut ini yang dikosongkan:
+                                // Hanya rincian barang berikut yang dikosongkan:
                                 pcsQty = ""
                                 weight = ""
                                 subTotal = ""
