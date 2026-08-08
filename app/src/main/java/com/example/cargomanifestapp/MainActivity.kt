@@ -65,7 +65,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
         }
     }
 
-    // Jika ada hasil otomatis gunakan itu, jika kosong dapat diinput manual
     val finalSubTotal = calculatedSubTotal ?: subTotalInput
 
     Scaffold(
@@ -183,9 +182,9 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
             }
 
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                // MENGGUNAKAN DIVIDER BIASA
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
                 
-                // Header Tabel + Tombol Export Excel & Hapus Semua
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -198,7 +197,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         if (cargoList.isNotEmpty()) {
-                            // Tombol Export Excel (Hijau)
                             Button(
                                 onClick = { viewModel.exportToExcel(context) },
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF21A366)),
