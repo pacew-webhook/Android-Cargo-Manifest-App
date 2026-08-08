@@ -43,16 +43,15 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // LOGIKA PERBAIKAN: Mengecek kesamaan berdasarkan Customer + Description + No PAG
+            // LOGIKA: Gabungkan data jika CUSTOMER dan DESCRIPTION sama
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
-                it.noPag.equals(cleanNoPag, ignoreCase = true) &&
                 cleanCustomer.isNotEmpty()
             }
 
             if (existingItem != null) {
-                // Jika data sama persis (Customer, Desc, No PAG), gabungkan jumlahnya
+                // Jika data ditemukan, tambahkan PcsQty dan SubTotal
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -71,11 +70,12 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal
+                    subTotal = updatedSubTotal,
+                    noPag = if (cleanNoPag.isNotBlank()) cleanNoPag else existingItem.noPag // Perbarui noPag jika diisi
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika ada salah satu yang berbeda (misal No PAG beda), buat baris baru
+                // Jika data Customer & Description belum ada, buat baris baru
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -121,13 +121,13 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // Header
+                // Header Flight / AWB
                 sheet.getRow(2)?.getCell(6)?.setCellValue(firstItem.awbNo.uppercase())
                 sheet.getRow(8)?.getCell(6)?.setCellValue(": ${firstItem.flightNo.uppercase()}")
 
                 val startRowIndex = 13
                 
-                // Isi Manifest (Tabel Kiri)
+                // 1. Isi Manifest Cargo (Tabel Kiri)
                 for (i in list.indices) {
                     val item = list[i]
                     val row = sheet.getRow(startRowIndex + i) ?: sheet.createRow(startRowIndex + i)
@@ -140,7 +140,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
-                // Isi Stowing Checklist (Tabel Kanan)
+                // 2. Isi Stowing Checklist (Tabel Kanan) - Di-group berdasarkan No PAG
                 val groupedData = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
@@ -165,7 +165,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     stowingRowIdx++
                 }
 
-                // Total Weight
+                // 3. Total Weight
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
                 (totalRow.getCell(10) ?: totalRow.createCell(10)).setCellValue(totalNet)
                 (totalRow.getCell(11) ?: totalRow.createCell(11)).setCellValue(totalGross)
