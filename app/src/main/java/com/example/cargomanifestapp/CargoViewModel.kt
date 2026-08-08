@@ -96,7 +96,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     awbCell.setCellValue(firstItem.awbNo.uppercase())
                 }
 
-                // 2. FLIGHT NO -> Baris 9 Excel (KOTAK MERAH), Kolom G (Row Index 8, Cell Index 6)
+                // 2. FLIGHT NO -> Baris 9 Excel, Kolom G (Row Index 8, Cell Index 6)
                 val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
                 val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
                 if (firstItem.flightNo.isNotEmpty()) {
@@ -113,7 +113,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom A (0): No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                    // Kolom B (1): PTI (Dipaksa KAPITAL)
+                    // Kolom B (1): PTI (HURUF KAPITAL)
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
                     // Kolom C (2): Pcs/Cly
@@ -125,10 +125,10 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     // Kolom E (4): Sub Total
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
 
-                    // Kolom F (5): Description (Dipaksa KAPITAL)
+                    // Kolom F (5): Description (HURUF KAPITAL)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
 
-                    // Kolom G (6): Costumers (Dipaksa KAPITAL)
+                    // Kolom G (6): Costumers (HURUF KAPITAL)
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
