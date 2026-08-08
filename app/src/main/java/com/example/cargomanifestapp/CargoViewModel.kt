@@ -129,76 +129,68 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
                 val workbook = XSSFWorkbook(inputStream)
                 
-                // Karena tabel Stowing dan Manifest ada di sheet "Manifest", kita fokuskan pengisian ke sheet tersebut
-                for (sheetIndex in 0 until workbook.numberOfSheets) {
-                    val sheet = workbook.getSheetAt(sheetIndex)
-                    val firstItem = list.first()
+                // Ambil sheet "Manifest" secara spesifik atau fallback ke sheet pertama
+                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+                val firstItem = list.first()
 
-                    // Header Flight / AWB
-                    val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
-                    val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
-                    if (firstItem.awbNo.isNotEmpty()) {
-                        awbCell.setCellValue(firstItem.awbNo.uppercase())
-                    }
+                // Header Flight / AWB
+                val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
+                val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
+                if (firstItem.awbNo.isNotEmpty()) {
+                    awbCell.setCellValue(firstItem.awbNo.uppercase())
+                }
 
-                    val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
-                    val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
-                    if (firstItem.flightNo.isNotEmpty()) {
-                        flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
-                    }
+                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
+                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
+                if (firstItem.flightNo.isNotEmpty()) {
+                    flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
+                }
 
-                    // Baris Data Mulai dari index 13 (Baris ke-14 di Excel)
-                    val startRowIndex = 13
-                    for (i in list.indices) {
-                        val item = list[i]
-                        val rowIndex = startRowIndex + i
-                        val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+                // Baris Data Mulai dari index 13 (Baris ke-14 di Excel)
+                val startRowIndex = 13
+                for (i in list.indices) {
+                    val item = list[i]
+                    val rowIndex = startRowIndex + i
+                    val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                        // --- 1. TABEL MANIFEST (Sebelah Kiri) ---
-                        // No Urut (Kolom A / Index 0)
-                        (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+                    // --- 1. TABEL MANIFEST (SEBELAH KIRI) ---
+                    // Kolom A (Index 0): No Urut
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                        // PTI (Kolom B / Index 1)
-                        val ptiCell = row.getCell(1) ?: row.createCell(1)
-                        ptiCell.setCellValue(item.pti.uppercase())
+                    // Kolom B (Index 1): PTI
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti.uppercase())
 
-                        // Pcs / Qty (Kolom C / Index 2) -> Diperbaiki agar terinput
-                        val pcsVal = item.pcsQty.toDoubleOrNull()
-                        val pcsCell = row.getCell(2) ?: row.createCell(2)
-                        if (pcsVal != null) pcsCell.setCellValue(pcsVal) else pcsCell.setCellValue("")
+                    // Kolom C (Index 2): Pcs/Qty
+                    val pcsVal = item.pcsQty.toDoubleOrNull()
+                    val pcsCell = row.getCell(2) ?: row.createCell(2)
+                    if (pcsVal != null) pcsCell.setCellValue(pcsVal) else pcsCell.setCellValue(0.0)
 
-                        // Weight Net (Kolom D / Index 3)
-                        val weightVal = item.weight.toDoubleOrNull()
-                        val cellWeight = row.getCell(3) ?: row.createCell(3)
-                        if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
+                    // Kolom D (Index 3): Weight Net
+                    val weightVal = item.weight.toDoubleOrNull()
+                    val cellWeight = row.getCell(3) ?: row.createCell(3)
+                    if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue(0.0)
 
-                        // Weight SubTotal (Kolom E / Index 4)
-                        val subTotalVal = item.subTotal.toDoubleOrNull()
-                        val cellSubTotal = row.getCell(4) ?: row.createCell(4)
-                        if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
+                    // Kolom E (Index 4): Weight SubTotal
+                    val subTotalVal = item.subTotal.toDoubleOrNull()
+                    val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                    if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue(0.0)
 
-                        // Description Manifest (Kolom F / Index 5)
-                        val descCell = row.getCell(5) ?: row.createCell(5)
-                        descCell.setCellValue(item.description.uppercase())
+                    // Kolom F (Index 5): Description Manifest
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description.uppercase())
 
-                        // Customers (Kolom G / Index 6)
-                        val custCell = row.getCell(6) ?: row.createCell(6)
-                        custCell.setCellValue(item.customer.uppercase())
+                    // Kolom G (Index 6): Costumers
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
 
 
-                        // --- 2. TABEL STOWING CHECKLIST (Sebelah Kanan di Sheet yang sama) ---
-                        // Berdasarkan gambar, tabel stowing berada di sebelah kanan:
-                        // No Stowing (Kolom H / Index 7) -> Opsional/Nomor Urut Stowing
-                        (row.getCell(7) ?: row.createCell(7)).setCellValue((i + 1).toDouble())
+                    // --- 2. TABEL STOWING CHECKLIST (SEBELAH KANAN DI SHEET YANG SAMA) ---
+                    // Kolom H (Index 7): No Stowing
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((i + 1).toDouble())
 
-                        // No PAG (Kolom I / Index 8)
-                        val pagCell = row.getCell(8) ?: row.createCell(8)
-                        pagCell.setCellValue(item.noPag.uppercase())
+                    // Kolom I (Index 8): No PAG
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag.uppercase())
 
-                        // Description Stowing (Kolom J / Index 9)
-                        val stowingDescCell = row.getCell(9) ?: row.createCell(9)
-                        stowingDescCell.setCellValue(item.description.uppercase())
-                    }
+                    // Kolom J (Index 9): Description Stowing
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description.uppercase())
                 }
 
                 workbook.setForceFormulaRecalculation(true)
