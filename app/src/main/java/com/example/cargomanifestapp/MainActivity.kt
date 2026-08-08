@@ -182,7 +182,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
             }
 
             item {
-                // MENGGUNAKAN DIVIDER BIASA
                 Divider(modifier = Modifier.padding(vertical = 8.dp))
                 
                 Row(
@@ -273,6 +272,7 @@ fun CargoManifestScreen(viewModel: CargoViewModel = viewModel()) {
     }
 }
 
+// Menambahkan anotasi @Composable pada fungsi penolong ini
 @Composable
 fun TableCell(text: String, width: Dp, isHeader: Boolean = false) {
     Text(
