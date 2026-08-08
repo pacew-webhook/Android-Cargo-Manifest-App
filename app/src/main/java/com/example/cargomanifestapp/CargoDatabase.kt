@@ -7,7 +7,6 @@ import androidx.room.RoomDatabase
 
 @Database(entities = [CargoItem::class], version = 1, exportSchema = false)
 abstract class CargoDatabase : RoomDatabase() {
-
     abstract fun cargoDao(): CargoDao
 
     companion object {
