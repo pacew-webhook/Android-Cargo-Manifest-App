@@ -10,6 +10,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -22,7 +23,6 @@ import java.io.InputStream
 class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
     // 1. GABUNGKAN DATA KHUSUS UNTUK TAMPILAN DI APLIKASI (UI)
-    // Jika Customer & Description sama, otomatis dijumlahkan Pcs & SubTotal-nya di layar HP
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .map { list ->
             list.groupBy { Pair(it.customer.uppercase(), it.description.uppercase()) }
@@ -31,7 +31,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     val totalPcs = groupItems.sumOf { it.pcsQty.toIntOrNull() ?: 0 }
                     val totalSub = groupItems.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     
-                    // Ambil gabungan No PAG untuk info di UI jika diperlukan
                     val combinedPag = groupItems.map { it.noPag }.distinct().joinToString(", ")
 
                     first.copy(
@@ -46,13 +45,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
-
-    // Untuk keperluan export Excel, kita butuh data mentah aslinya dari database agar berat per PAG akurat
-    private suspend fun getRawCargoList(): List<CargoItem> {
-        // Mengambil langsung dari DAO tanpa grouping UI
-        // Jika ViewModel Anda belum punya fungsi getRaw, Anda bisa buat atau sesuaikan dengan DAO Anda
-        return cargoDao.getAllCargoSync() // Pastikan DAO memiliki fungsi non-Flow atau ambil dari value mentah
-    }
 
     fun addCargo(
         awbNo: String,
@@ -70,7 +62,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // Simpan murni apa adanya ke database agar berat per No PAG tetap akurat
             cargoDao.insert(
                 CargoItem(
                     awbNo = awbNo.trim().uppercase(),
@@ -101,11 +92,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
     fun exportToExcel(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            // Gunakan data asli (mentah) dari database untuk Excel
-            val rawList = cargoDao.getAllCargo().let { 
-                // Mengambil snapshot data list database saat ini secara aman
-                kotlinx.coroutines.flow.first(cargoDao.getAllCargo()) 
-            }
+            // PERBAIKAN: Mengambil data mentah langsung dari Flow menggunakan .first() yang benar
+            val rawList = cargoDao.getAllCargo().first()
 
             if (rawList.isEmpty()) {
                 withContext(Dispatchers.Main) {
@@ -127,7 +115,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val startRowIndex = 13
 
                 // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
-                // Digabung berdasarkan Customer & Description
                 val manifestGrouped = rawList.groupBy { Pair(it.customer.uppercase(), it.description.uppercase()) }
                 var manifestIdx = 0
 
@@ -151,7 +138,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 }
 
                 // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) ---
-                // Dikelompokkan murni berdasarkan No PAG
                 val groupedByPag = rawList.groupBy { it.noPag.uppercase() }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
