@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.cargomanifestapp"
-        minSdk = 24
+        minSdk = 26 // DINAUKAN KE SDK 26 SESUAI PETUNJUK ERROR
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
@@ -31,6 +31,8 @@ android {
         }
     }
     compileOptions {
+        // Mengaktifkan desugaring Java 8+ untuk kompatibilitas Apache POI
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_1_8
         targetCompatibility = JavaVersion.VERSION_1_8
     }
@@ -58,6 +60,8 @@ android {
 }
 
 dependencies {
+    // --- Library Desugaring untuk Apache POI ---
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // --- Core Android & Jetpack Compose ---
     implementation("androidx.core:core-ktx:1.12.0")
