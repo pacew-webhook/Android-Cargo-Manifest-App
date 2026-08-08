@@ -146,7 +146,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     flightCell.setCellValue(": ${firstItem.flightNo.uppercase()}")
                 }
 
-                val startRowIndex = 13 // Baris ke-14
+                val startRowIndex = 13 // Baris ke-14 di Excel (Index 13)
 
                 // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
                 for (i in list.indices) {
@@ -173,7 +173,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer.uppercase())
                 }
 
-                // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) DENGAN GROUPING NO PAG ---
+                // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) DENGAN GROUPING ---
                 val groupedData = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalWeightStowing = 0.0
@@ -181,27 +181,39 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 for ((noPag, items) in groupedData) {
                     val row = sheet.getRow(stowingRowIdx) ?: sheet.createRow(stowingRowIdx)
 
-                    // Gabungkan deskripsi yang memiliki No PAG sama (misal: "PAKET, AYAM HIDUP")
-                    val combinedDesc = items.joinToString(", ") { it.description }
-                    // Hitung total subtotal berat per No PAG
+                    // Menggabungkan deskripsi dengan pemisah " + "
+                    val combinedDesc = items.joinToString(" + ") { it.description }
+                    
+                    // Menghitung total berat untuk NO PAG tersebut (berdasarkan SubTotal)
                     val totalWeightPerPag = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     totalWeightStowing += totalWeightPerPag
 
                     // Kolom H (Index 7): No Stowing
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((stowingRowIdx - startRowIndex + 1).toDouble())
+                    
                     // Kolom I (Index 8): No PAG
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(noPag.uppercase())
+                    
                     // Kolom J (Index 9): Description Stowing (Gabungan)
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc.uppercase())
+                    
+                    // Kolom K (Index 10): WEIGHT (Kg) - Net (Mengisi total berat per baris)
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalWeightPerPag)
 
                     stowingRowIdx++
                 }
 
-                // --- 3. ISI TOTAL WEIGHT STOWING ---
-                // Berdasarkan template, baris Total Weight Stowing berada di baris ke-37 (Index 36) dan Kolom K (Index 10)
+                // --- 3. ISI GRAND TOTAL WEIGHT STOWING ---
+                // Menulis Total Keseluruhan ke baris "TOTAL WEIGHT" (Berdasarkan template ada di baris 37 / Index 36)
                 val totalRow = sheet.getRow(36) ?: sheet.createRow(36)
-                val totalCell = totalRow.getCell(10) ?: totalRow.createCell(10)
-                totalCell.setCellValue(totalWeightStowing)
+                
+                // Mengisi di kolom K (Index 10) yaitu kolom Net untuk Total Weight
+                val totalNetCell = totalRow.getCell(10) ?: totalRow.createCell(10)
+                totalNetCell.setCellValue(totalWeightStowing)
+
+                // Jika kolom Gross (Index 11) di tabel Stowing juga perlu diisi Total (biasanya Net dan Gross sama di Cargo aplikasi Anda)
+                // val totalGrossCell = totalRow.getCell(11) ?: totalRow.createCell(11)
+                // totalGrossCell.setCellValue(totalWeightStowing)
 
                 workbook.setForceFormulaRecalculation(true)
                 inputStream.close()
