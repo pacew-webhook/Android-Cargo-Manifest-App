@@ -256,7 +256,10 @@ fun MainScreen(viewModel: CargoViewModel) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        itemToDelete?.let { viewModel.deleteCargo(it) }
+                        val currentItem = itemToDelete
+                        if (currentItem != null) {
+                            viewModel.deleteCargo(currentItem)
+                        }
                         showDeleteDialog = false
                         itemToDelete = null
                         Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
