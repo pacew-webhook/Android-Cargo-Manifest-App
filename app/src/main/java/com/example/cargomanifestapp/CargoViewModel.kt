@@ -154,39 +154,60 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         val rowIndex = startRowIndex + i
                         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                        // 1. Kolom A (Index 0): No Urut
-                        (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
-
-                        // 2. Kolom ke-2 (Index 1): Berdasarkan Jenis Sheet
-                        val cellIndex1 = row.getCell(1) ?: row.createCell(1)
                         val isStowing = sheet.sheetName.contains("STOWING", ignoreCase = true) || 
                                         sheet.sheetName.contains("CHECKLIST", ignoreCase = true)
 
                         if (isStowing) {
-                            // Sheet Stowing: Kolom ke-2 diisi NO PAG
-                            cellIndex1.setCellValue(item.noPag.uppercase())
+                            // --- KHUSUS SHEET STOWING CHECKLIST ---
+                            // 1. Kolom A (Index 0): No Urut
+                            (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+
+                            // 2. Kolom I (Index 8): NO PAG
+                            val pagCell = row.getCell(8) ?: row.createCell(8)
+                            pagCell.setCellValue(item.noPag.uppercase())
+
+                            // 3. Kolom Description (Index 5)
+                            val descCell = row.getCell(5) ?: row.createCell(5)
+                            descCell.setCellValue(item.description.uppercase())
+
+                            // 4. Kolom Weight Net & Gross (Index 3 & 4)
+                            val weightVal = item.weight.toDoubleOrNull()
+                            val cellWeight = row.getCell(3) ?: row.createCell(3)
+                            if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
+
+                            val subTotalVal = item.subTotal.toDoubleOrNull()
+                            val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                            if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
+
+                            // 5. Kolom Customer (Index 6)
+                            val custCell = row.getCell(6) ?: row.createCell(6)
+                            custCell.setCellValue(item.customer.uppercase())
+
                         } else {
-                            // Sheet Manifest: Kolom ke-2 diisi PTI
-                            cellIndex1.setCellValue(item.pti.uppercase())
+                            // --- SHEET MANIFEST BIASA ---
+                            (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
+
+                            // Kolom PTI di Index 1
+                            val ptiCell = row.getCell(1) ?: row.createCell(1)
+                            ptiCell.setCellValue(item.pti.uppercase())
+
+                            // Description
+                            val descCell = row.getCell(5) ?: row.createCell(5)
+                            descCell.setCellValue(item.description.uppercase())
+
+                            // Weight
+                            val weightVal = item.weight.toDoubleOrNull()
+                            val cellWeight = row.getCell(3) ?: row.createCell(3)
+                            if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
+
+                            val subTotalVal = item.subTotal.toDoubleOrNull()
+                            val cellSubTotal = row.getCell(4) ?: row.createCell(4)
+                            if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
+
+                            // Customer
+                            val custCell = row.getCell(6) ?: row.createCell(6)
+                            custCell.setCellValue(item.customer.uppercase())
                         }
-
-                        // 3. Kolom Description (Menyesuaikan letak kolom berdasarkan sheet)
-                        val descIndex = if (isStowing) 2 else 5
-                        val descCell = row.getCell(descIndex) ?: row.createCell(descIndex)
-                        descCell.setCellValue(item.description.uppercase())
-
-                        // 4. Kolom Weight Net & Gross (Index 3 & 4)
-                        val weightVal = item.weight.toDoubleOrNull()
-                        val cellWeight = row.getCell(3) ?: row.createCell(3)
-                        if (weightVal != null) cellWeight.setCellValue(weightVal) else cellWeight.setCellValue("")
-
-                        val subTotalVal = item.subTotal.toDoubleOrNull()
-                        val cellSubTotal = row.getCell(4) ?: row.createCell(4)
-                        if (subTotalVal != null) cellSubTotal.setCellValue(subTotalVal) else cellSubTotal.setCellValue("")
-
-                        // 5. Kolom Customer / Costumers (Index 6)
-                        val custCell = row.getCell(6) ?: row.createCell(6)
-                        custCell.setCellValue(item.customer.uppercase())
                     }
                 }
 
