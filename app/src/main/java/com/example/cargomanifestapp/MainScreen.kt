@@ -20,7 +20,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun MainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
-    val cargoList by viewModel.cargoList.collectAsState(initial = emptyList())
+    val cargoList: List<CargoItem> by viewModel.cargoList.collectAsState(initial = emptyList())
 
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
@@ -34,7 +34,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     var selectedItemId by remember { mutableStateOf<Long?>(null) }
     
     var showDeleteDialog by remember { mutableStateOf(false) }
-    var itemToDelete by remember { mutableStateOf<CargoEntity?>(null) }
+    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
     
     var showClearAllDialog by remember { mutableStateOf(false) }
 
@@ -128,7 +128,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                         }
 
                         if (isEditing && selectedItemId != null) {
-                            val updatedItem = CargoEntity(
+                            val updatedItem = CargoItem(
                                 id = selectedItemId!!,
                                 pti = pti,
                                 pcsQty = pcsQty,
@@ -143,7 +143,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                             isEditing = false
                             selectedItemId = null
                         } else {
-                            val newItem = CargoEntity(
+                            val newItem = CargoItem(
                                 pti = pti,
                                 pcsQty = pcsQty,
                                 weight = weight,
@@ -191,7 +191,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                     .weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                itemsIndexed(cargoList) { index, item ->
+                itemsIndexed(cargoList) { index, item: CargoItem ->
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = Color.White)
@@ -241,19 +241,19 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 
     if (showDeleteDialog) {
-        val currentItem = itemToDelete
-        if (currentItem != null) {
+        val targetItem = itemToDelete
+        if (targetItem != null) {
             AlertDialog(
                 onDismissRequest = { 
                     showDeleteDialog = false
                     itemToDelete = null
                 },
                 title = { Text("Konfirmasi Hapus") },
-                text = { Text("Apakah Anda yakin ingin menghapus data kargo ${currentItem.pti}?") },
+                text = { Text("Apakah Anda yakin ingin menghapus data kargo ${targetItem.pti}?") },
                 confirmButton = {
                     TextButton(
                         onClick = {
-                            viewModel.deleteCargo(currentItem)
+                            viewModel.deleteCargo(targetItem)
                             showDeleteDialog = false
                             itemToDelete = null
                             Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
