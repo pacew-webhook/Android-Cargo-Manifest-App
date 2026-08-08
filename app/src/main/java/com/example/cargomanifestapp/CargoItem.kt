@@ -6,14 +6,12 @@ import androidx.room.PrimaryKey
 @Entity(tableName = "cargo_table")
 data class CargoItem(
     @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val awbNo: String,
-    val flightNo: String,
+    val id: Long = 0L,
     val pti: String,
     val pcsQty: String,
     val weight: String,
     val subTotal: String,
     val description: String,
     val customer: String,
-    val noPag: String = "" // <--- DITAMBAHKAN FIELD NO PAG
+    val noPag: String
 )
