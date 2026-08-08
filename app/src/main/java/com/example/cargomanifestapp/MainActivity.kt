@@ -19,14 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-
-// IMPORT TAMBAHAN UNTUK MEMASTIKAN KELAS TERDETEKSI
-import com.example.cargomanifestapp.CargoViewModel
-import com.example.cargomanifestapp.CargoDatabase
-import com.example.cargomanifestapp.CargoItem
 
 class MainActivity : ComponentActivity() {
 
@@ -41,13 +34,10 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val context = LocalContext.current
                     val database = remember { CargoDatabase.getDatabase(context.applicationContext) }
+                    
+                    // Menggunakan Factory terpisah agar aman dari error reference
                     val cargoViewModel: CargoViewModel = viewModel(
-                        factory = object : ViewModelProvider.Factory {
-                            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                                @Suppress("UNCHECKED_CAST")
-                                return CargoViewModel(database.cargoDao()) as T
-                            }
-                        }
+                        factory = CargoViewModelFactory(database.cargoDao())
                     )
 
                     CargoScreen(viewModel = cargoViewModel)
@@ -63,7 +53,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // State Input Form
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
     var pti by remember { mutableStateOf("") }
@@ -74,10 +63,8 @@ fun CargoScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State Edit Mode
     var editingItem by remember { mutableStateOf<CargoItem?>(null) }
 
-    // State Dialog Konfirmasi Hapus
     var showDeleteDialog by remember { mutableStateOf(false) }
     var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
     var showClearAllDialog by remember { mutableStateOf(false) }
@@ -100,7 +87,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                // SECTION 1: HEADER PENERBANGAN
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -127,7 +113,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                     }
                 }
 
-                // SECTION 2: INPUT DATA BARANG
                 item {
                     Text(
                         text = if (editingItem == null) "Input Data Barang" else "Edit Data Barang",
@@ -255,7 +240,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                     }
                 }
 
-                // SECTION 3: TABEL DAFTAR DATA & ACTION BUTTONS
                 item {
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Row(
@@ -346,7 +330,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
         }
     }
 
-    // DIALOG KONFIRMASI HAPUS PER BARIS
     if (showDeleteDialog && itemToDelete != null) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
@@ -377,7 +360,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
         )
     }
 
-    // DIALOG KONFIRMASI HAPUS SEMUA
     if (showClearAllDialog) {
         AlertDialog(
             onDismissRequest = { showClearAllDialog = false },
