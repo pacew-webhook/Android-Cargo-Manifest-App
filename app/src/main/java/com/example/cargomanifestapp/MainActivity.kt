@@ -28,15 +28,13 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        // Inisialisasi Database dan Dao
+
         val database = CargoDatabase.getDatabase(this)
         val cargoDao = database.cargoDao()
 
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    // Masukkan ViewModelFactory dengan Dao
                     val viewModel: CargoViewModel = viewModel(
                         factory = object : ViewModelProvider.Factory {
                             override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -69,7 +67,6 @@ fun CargoManifestScreen(viewModel: CargoViewModel) {
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
 
-    // Perkalian Otomatis (Pcs/Qty * Weight)
     val calculatedSubTotal = remember(pcsQty, weight) {
         val qtyVal = pcsQty.toDoubleOrNull()
         val weightVal = weight.toDoubleOrNull()
@@ -199,7 +196,8 @@ fun CargoManifestScreen(viewModel: CargoViewModel) {
             }
 
             item {
-                HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                // Diperbaiki kembali menggunakan Divider standar
+                Divider(modifier = Modifier.padding(vertical = 8.dp))
                 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
