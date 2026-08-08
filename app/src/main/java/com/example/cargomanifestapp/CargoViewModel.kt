@@ -3,13 +3,16 @@ package com.example.cargomanifestapp
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -17,7 +20,6 @@ import java.io.InputStream
 
 class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
 
-    // Mengambil data dari DAO secara asinkron
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .stateIn(
             scope = viewModelScope,
@@ -64,73 +66,86 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
     }
 
     fun exportToExcel(context: Context) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val list = cargoList.value
-            if (list.isEmpty()) return@launch
+            if (list.isEmpty()) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Data tabel masih kosong!", Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
 
             try {
-                val inputStream: InputStream = context.assets.open("template.xlsx")
-                val workbook = XSSFWorkbook(inputStream)
-                val sheet = workbook.getSheetAt(0)
+                // 1. Cek ketersediaan file template.xlsx di folder assets
+                val inputStream: InputStream = try {
+                    context.assets.open("template.xlsx")
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "File template.xlsx tidak ditemukan di folder assets!", Toast.LENGTH_LONG).show()
+                    }
+                    return@launch
+                }
 
+                val workbook = XSSFWorkbook(inputStream)
+                
+                // 2. Ambil Sheet bernama "Manifest" (sesuai gambar template)
+                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // 1. ISI HEADER (FLIGHT NO & AWB NO)
-                val flightRow = sheet.getRow(8) ?: sheet.createRow(8)
-                val flightCell = flightRow.getCell(6) ?: flightRow.createCell(6)
-                flightCell.setCellValue(": ${firstItem.flightNo}")
-
-                val awbRow = sheet.getRow(3) ?: sheet.createRow(3)
+                // 3. Isi Header AWB No (Baris 3, Kolom G -> Row Index 2, Cell Index 6)
+                val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
-                awbCell.setCellValue(firstItem.awbNo)
+                if (firstItem.awbNo.isNotEmpty()) {
+                    awbCell.setCellValue(firstItem.awbNo)
+                }
 
-                // 2. ISI TABEL DATA BARANG (Mulai Baris 14 / Index 13)
-                val startRow = 13
-                val size = list.size
+                // 4. Isi Header Flight No (Baris 10, Kolom E -> Row Index 9, Cell Index 4)
+                val flightRow = sheet.getRow(9) ?: sheet.createRow(9)
+                val flightCell = flightRow.getCell(4) ?: flightRow.createCell(4)
+                if (firstItem.flightNo.isNotEmpty()) {
+                    flightCell.setCellValue(firstItem.flightNo)
+                }
 
-                for (i in 0 until size) {
+                // 5. Isi Tabel Data Barang (Mulai Baris 14 -> Row Index 13)
+                val startRowIndex = 13
+                for (i in list.indices) {
                     val item = list[i]
-                    val rowIndex = startRow + i
+                    val rowIndex = startRowIndex + i
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                    // No
-                    val cellNo = row.getCell(0) ?: row.createCell(0)
-                    cellNo.setCellValue((i + 1).toDouble())
+                    // Kolom A (0): No (1, 2, 3...)
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
-                    // PTI
-                    val cellPti = row.getCell(1) ?: row.createCell(1)
-                    cellPti.setCellValue(item.pti)
+                    // Kolom B (1): PTI
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
 
-                    // Pcs/Cly
-                    val cellPcs = row.getCell(2) ?: row.createCell(2)
-                    cellPcs.setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    // Kolom C (2): Pcs/Cty
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
 
-                    // Weight Pcs/Cly
-                    val cellWt = row.getCell(3) ?: row.createCell(3)
-                    cellWt.setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    // Kolom D (3): Weight (Pcs/Cty Wt)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
 
-                    // Weight Sub Total
-                    val cellSub = row.getCell(4) ?: row.createCell(4)
-                    cellSub.setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    // Kolom E (4): Sub Total
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
 
-                    // Description
-                    val cellDesc = row.getCell(5) ?: row.createCell(5)
-                    cellDesc.setCellValue(item.description)
+                    // Kolom F (5): Description
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
 
-                    // Customer
-                    val cellCust = row.getCell(6) ?: row.createCell(6)
-                    cellCust.setCellValue(item.customer)
+                    // Kolom G (6): Costumers
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
                 workbook.setForceFormulaRecalculation(true)
                 inputStream.close()
 
+                // 6. Simpan File Ke Cache
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
+                // 7. Buka File via FileProvider
                 val uri: Uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
@@ -143,11 +158,22 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
-                context.startActivity(intent)
+
+                withContext(Dispatchers.Main) {
+                    try {
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Export Berhasil! File tersimpan di folder cache, tetapi tidak ada aplikasi Excel untuk membuka.", Toast.LENGTH_LONG).show()
+                    }
+                }
 
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
