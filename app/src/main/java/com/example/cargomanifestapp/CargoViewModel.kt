@@ -76,30 +76,30 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
 
             try {
-                // 1. Cek ketersediaan file template.xlsx di folder assets
+                // 1. Disesuaikan persis dengan nama file di assets Anda: template_manifest.xlsx
                 val inputStream: InputStream = try {
-                    context.assets.open("template.xlsx")
+                    context.assets.open("template_manifest.xlsx")
                 } catch (e: Exception) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "File template.xlsx tidak ditemukan di folder assets!", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "File template_manifest.xlsx tidak ditemukan di assets!", Toast.LENGTH_LONG).show()
                     }
                     return@launch
                 }
 
                 val workbook = XSSFWorkbook(inputStream)
                 
-                // 2. Ambil Sheet bernama "Manifest" (sesuai gambar template)
+                // 2. Ambil Sheet bernama "Manifest" (fallback ke sheet index 0)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val firstItem = list.first()
 
-                // 3. Isi Header AWB No (Baris 3, Kolom G -> Row Index 2, Cell Index 6)
+                // 3. Header AWB No -> Baris 3, Kolom G (Row Index 2, Cell Index 6)
                 val awbRow = sheet.getRow(2) ?: sheet.createRow(2)
                 val awbCell = awbRow.getCell(6) ?: awbRow.createCell(6)
                 if (firstItem.awbNo.isNotEmpty()) {
                     awbCell.setCellValue(firstItem.awbNo)
                 }
 
-                // 4. Isi Header Flight No (Baris 10, Kolom E -> Row Index 9, Cell Index 4)
+                // 4. Header Flight No -> Baris 10, Kolom E (Row Index 9, Cell Index 4)
                 val flightRow = sheet.getRow(9) ?: sheet.createRow(9)
                 val flightCell = flightRow.getCell(4) ?: flightRow.createCell(4)
                 if (firstItem.flightNo.isNotEmpty()) {
@@ -113,16 +113,16 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     val rowIndex = startRowIndex + i
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                    // Kolom A (0): No (1, 2, 3...)
+                    // Kolom A (0): No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((i + 1).toDouble())
 
                     // Kolom B (1): PTI
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
 
-                    // Kolom C (2): Pcs/Cty
+                    // Kolom C (2): Pcs/Cly
                     (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
 
-                    // Kolom D (3): Weight (Pcs/Cty Wt)
+                    // Kolom D (3): Weight Pcs/Cly Wt
                     (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
 
                     // Kolom E (4): Sub Total
@@ -138,14 +138,14 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 workbook.setForceFormulaRecalculation(true)
                 inputStream.close()
 
-                // 6. Simpan File Ke Cache
+                // 6. Simpan Hasil Ekspor ke File Temporer
                 val file = File(context.cacheDir, "MANIFEST_CARGO.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
-                // 7. Buka File via FileProvider
+                // 7. Buka File Hasil Ekspor
                 val uri: Uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
@@ -165,7 +165,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     try {
                         context.startActivity(intent)
                     } catch (e: Exception) {
-                        Toast.makeText(context, "Export Berhasil! File tersimpan di folder cache, tetapi tidak ada aplikasi Excel untuk membuka.", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Export Berhasil! File tersimpan, namun tidak ada aplikasi pembaca Excel di HP Anda.", Toast.LENGTH_LONG).show()
                     }
                 }
 
