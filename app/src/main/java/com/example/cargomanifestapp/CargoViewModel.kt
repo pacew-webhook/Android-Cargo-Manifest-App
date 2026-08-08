@@ -44,7 +44,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             val cleanNoPag = noPag.trim().uppercase()
 
             // Database menyimpan berdasarkan kombinasi Customer + Description + No PAG
-            // Ini memastikan jika No PAG berbeda, akan tersimpan sebagai entri terpisah untuk Stowing Checklist
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
@@ -53,7 +52,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
             }
 
             if (existingItem != null) {
-                // Jika No PAG dan datanya sama, akumulasikan jumlahnya
+                // Jika No PAG dan datanya sama, akumulasikan jumlahnya (khusus input baru)
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
@@ -76,7 +75,7 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Jika No PAG berbeda (meskipun customer/deskripsi sama), buat baris baru agar masuk ke No PAG tersebut
+                // Jika No PAG berbeda, buat baris baru
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -94,8 +93,23 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
         }
     }
 
+    // Fungsi khusus Update Data (Murni memperbarui baris yang dipilih tanpa akumulasi/penjumlahan ulang)
     fun updateCargo(cargoItem: CargoItem) {
-        viewModelScope.launch { cargoDao.update(cargoItem) }
+        viewModelScope.launch {
+            cargoDao.update(
+                cargoItem.copy(
+                    awbNo = cargoItem.awbNo.trim().uppercase(),
+                    flightNo = cargoItem.flightNo.trim().uppercase(),
+                    pti = cargoItem.pti.trim().uppercase(),
+                    pcsQty = cargoItem.pcsQty.trim(),
+                    weight = cargoItem.weight.trim(),
+                    subTotal = cargoItem.subTotal.trim(),
+                    description = cargoItem.description.trim().uppercase(),
+                    customer = cargoItem.customer.trim().uppercase(),
+                    noPag = cargoItem.noPag.trim().uppercase()
+                )
+            )
+        }
     }
 
     fun deleteCargo(cargoItem: CargoItem) {
@@ -129,7 +143,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 val startRowIndex = 13
 
                 // --- 1. ISI TABEL MANIFEST (SEBELAH KIRI) ---
-                // Digabung berdasarkan Customer & Description (mengabaikan perbedaan No PAG)
                 val manifestGrouped = list.groupBy { Pair(it.customer, it.description) }
                 var manifestIdx = 0
 
@@ -153,7 +166,6 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                 }
 
                 // --- 2. ISI TABEL STOWING CHECKLIST (SEBELAH KANAN) ---
-                // Dikelompokkan murni berdasarkan No PAG (berbeda No PAG akan menjadi baris terpisah)
                 val groupedByPag = list.groupBy { it.noPag }
                 var stowingRowIdx = startRowIndex
                 var totalNet = 0.0
