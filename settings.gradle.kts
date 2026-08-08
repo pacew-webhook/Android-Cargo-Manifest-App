@@ -13,5 +13,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "CargoManifestApp"
+rootProject.name = "Android-Cargo-Manifest-App"
 include(":app")
