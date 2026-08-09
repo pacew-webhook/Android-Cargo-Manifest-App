@@ -18,7 +18,7 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
-// Model helper untuk penggabungan data Manifest
+// Helper Model Manifest
 data class GroupedManifestItem(
     val pti: String,
     val description: String,
@@ -28,7 +28,7 @@ data class GroupedManifestItem(
     var subTotal: Double
 )
 
-// Model helper untuk penggabungan data Stowing Checklist
+// Helper Model Stowing
 data class GroupedStowingItem(
     val noPag: String,
     val description: String,
@@ -60,15 +60,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val item = CargoItem(
-                awbNo = awbNo.uppercase(),
-                flightNo = flightNo.uppercase(),
-                pti = pti.uppercase(),
-                pcsQty = pcsQty,
-                weight = weight,
-                subTotal = subTotal,
-                description = description.uppercase(),
-                customer = customer.uppercase(),
-                noPag = noPag.uppercase()
+                awbNo = awbNo.trim().uppercase(),
+                flightNo = flightNo.trim().uppercase(),
+                pti = pti.trim().uppercase(),
+                pcsQty = pcsQty.trim(),
+                weight = weight.trim(),
+                subTotal = subTotal.trim(),
+                description = description.trim().uppercase(),
+                customer = customer.trim().uppercase(),
+                noPag = noPag.trim().uppercase()
             )
             cargoDao.insert(item)
         }
@@ -108,27 +108,28 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 // 1. PENGGABUNGAN DATA (AGGREGATION)
                 // -------------------------------------------------------------
                 
-                // Grouping untuk Tabel Manifest (Berdasarkan PTI + Description + Customer)
+                // Grouping Manifest CARGO MURNI berdasarkan DESCRIPTION SAMA
                 val groupedManifest = currentList.groupBy {
-                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}"
-                }.map { (_, items) ->
-                    val first = items.first()
+                    it.description.trim().uppercase()
+                }.map { (descKey, items) ->
+                    val uniquePti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    val uniqueCust = items.map { it.customer }.filter { it.isNotBlank() }.distinct().joinToString(", ")
                     GroupedManifestItem(
-                        pti = first.pti,
-                        description = first.description,
-                        customer = first.customer,
+                        pti = uniquePti,
+                        description = if (descKey.isBlank()) "-" else descKey,
+                        customer = uniqueCust,
                         pcsQty = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 },
                         weight = items.sumOf { it.weight.toDoubleOrNull() ?: 0.0 },
                         subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     )
                 }
 
-                // Grouping untuk Tabel Stowing Checklist (Berdasarkan NO PAG)
+                // Grouping Stowing Checklist berdasarkan NO PAG SAMA
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
-                    val uniqueDescs = items.map { it.description }.distinct().joinToString(", ")
-                    val uniqueCusts = items.map { it.customer }.distinct().joinToString(", ")
+                    val uniqueDescs = items.map { it.description }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    val uniqueCusts = items.map { it.customer }.filter { it.isNotBlank() }.distinct().joinToString(", ")
                     GroupedStowingItem(
                         noPag = if (pagKey.isBlank()) "-" else pagKey,
                         description = uniqueDescs,
@@ -146,19 +147,19 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // AWB NO ke Kolom G3:G4 (Baris 3 = Index 2, Baris 4 = Index 3, Kolom G = Index 6)
+                // AWB NO ke Kolom G3:G4
                 val row3 = sheet.getRow(2) ?: sheet.createRow(2)
-                (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.uppercase())
+                (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
                 val row4 = sheet.getRow(3) ?: sheet.createRow(3)
-                (row4.getCell(6) ?: row4.createCell(6)).setCellValue(awbNo.uppercase())
+                (row4.getCell(6) ?: row4.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
-                // FLIGHT NO ke Kolom G9 dengan tanda titik dua (Baris 9 = Index 8, Kolom G = Index 6)
+                // FLIGHT NO ke Kolom G9 dengan format ": 2Y704"
                 val row9 = sheet.getRow(8) ?: sheet.createRow(8)
-                (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.uppercase()}")
+                (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
 
                 // -------------------------------------------------------------
-                // 3. MASUKKAN DATA TERGABUNG KE MANIFEST CARGO (Kolom A - G)
+                // 3. MASUKKAN DATA MANIFEST CARGO (Kolom A - G)
                 // -------------------------------------------------------------
                 var manifestRowIndex = 13 // Mulai Baris 14 (Index 13)
                 for ((index, item) in groupedManifest.withIndex()) {
@@ -176,7 +177,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 // -------------------------------------------------------------
-                // 4. MASUKKAN DATA TERGABUNG KE STOWING CHEKLIST (Kolom H - M)
+                // 4. MASUKKAN DATA STOWING CHEKLIST (Kolom H - M)
                 // -------------------------------------------------------------
                 var stowingRowIndex = 13 // Mulai Baris 14 (Index 13)
                 for ((index, item) in groupedStowing.withIndex()) {
