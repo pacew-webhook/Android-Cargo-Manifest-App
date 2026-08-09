@@ -108,16 +108,19 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 // 1. PENGGABUNGAN DATA (AGGREGATION)
                 // -------------------------------------------------------------
                 
-                // Grouping Manifest CARGO MURNI berdasarkan DESCRIPTION SAMA
+                // Grouping Manifest CARGO berdasarkan DESCRIPTION DAN CUSTOMER SAMA
                 val groupedManifest = currentList.groupBy {
-                    it.description.trim().uppercase()
-                }.map { (descKey, items) ->
+                    Pair(it.description.trim().uppercase(), it.customer.trim().uppercase())
+                }.map { (keyPair, items) ->
+                    val descKey = keyPair.first
+                    val custKey = keyPair.second
+
                     val uniquePti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
-                    val uniqueCust = items.map { it.customer }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    
                     GroupedManifestItem(
                         pti = uniquePti,
                         description = if (descKey.isBlank()) "-" else descKey,
-                        customer = uniqueCust,
+                        customer = if (custKey.isBlank()) "-" else custKey,
                         pcsQty = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 },
                         weight = items.sumOf { it.weight.toDoubleOrNull() ?: 0.0 },
                         subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
