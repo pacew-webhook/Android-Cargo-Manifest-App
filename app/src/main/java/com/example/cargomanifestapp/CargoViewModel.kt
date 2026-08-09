@@ -1,10 +1,10 @@
-package com.example.cargomanifest.ui // Sesuaikan package dengan proyek Anda
+package com.example.cargomanifestapp
 
 import android.app.Application
+import android.content.Context
+import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.cargomanifest.data.CargoDao
-import com.example.cargomanifest.data.CargoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -15,7 +15,6 @@ class CargoViewModel(
     private val cargoDao: CargoDao
 ) : AndroidViewModel(application) {
 
-    // StateFlow untuk menampung daftar kargo
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
@@ -47,7 +46,6 @@ class CargoViewModel(
             val cleanDescription = description.trim().uppercase()
             val cleanNoPag = noPag.trim().uppercase()
 
-            // Cek apakah item dengan kriteria yang sama sudah ada
             val existingItem = cargoList.value.find { 
                 it.customer.equals(cleanCustomer, ignoreCase = true) && 
                 it.description.equals(cleanDescription, ignoreCase = true) &&
@@ -56,12 +54,10 @@ class CargoViewModel(
             }
 
             if (existingItem != null) {
-                // Hitung akumulasi pcs
                 val currentPcs = existingItem.pcsQty.toIntOrNull() ?: 0
                 val newPcs = pcsQty.trim().toIntOrNull() ?: 0
                 val updatedPcs = (currentPcs + newPcs).toString()
 
-                // Hitung akumulasi subTotal
                 val currentSubTotal = existingItem.subTotal.toDoubleOrNull() ?: 0.0
                 val newSubTotal = subTotal.trim().toDoubleOrNull() ?: 0.0
                 val totalCalc = currentSubTotal + newSubTotal
@@ -71,7 +67,6 @@ class CargoViewModel(
                     totalCalc.toString()
                 }
 
-                // Update item yang sudah ada
                 val updatedItem = existingItem.copy(
                     awbNo = if (awbNo.isNotBlank()) awbNo.trim().uppercase() else existingItem.awbNo,
                     flightNo = if (flightNo.isNotBlank()) flightNo.trim().uppercase() else existingItem.flightNo,
@@ -83,7 +78,6 @@ class CargoViewModel(
                 )
                 cargoDao.update(updatedItem)
             } else {
-                // Masukkan data baru jika belum ada
                 cargoDao.insert(
                     CargoItem(
                         awbNo = awbNo.trim().uppercase(),
@@ -99,5 +93,27 @@ class CargoViewModel(
                 )
             }
         }
+    }
+
+    fun updateCargo(item: CargoItem) {
+        viewModelScope.launch {
+            cargoDao.update(item)
+        }
+    }
+
+    fun deleteCargo(item: CargoItem) {
+        viewModelScope.launch {
+            cargoDao.delete(item)
+        }
+    }
+
+    fun clearAll() {
+        viewModelScope.launch {
+            cargoDao.clearAll()
+        }
+    }
+
+    fun exportToExcel(context: Context) {
+        Toast.makeText(context, "Fitur Export Excel dipanggil", Toast.LENGTH_SHORT).show()
     }
 }
