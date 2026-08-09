@@ -17,7 +17,6 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
-        // Inisialisasi ViewModel menggunakan CargoViewModelFactory yang baru
         val factory = CargoViewModelFactory(application)
         val viewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
@@ -40,9 +39,11 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // State untuk form input
+    // State untuk Header Penerbangan
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
+
+    // State untuk Form Input Barang
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -54,7 +55,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cargo Manifest App") },
+                title = { Text("Manifest Cargo App") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -62,118 +63,192 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
             )
         }
     ) { paddingValues ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Tombol Export Excel
-            Button(
-                onClick = { viewModel.exportToExcel(context) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Export ke Template Excel")
+            // --- BAGIAN 1: HEADER PENERBANGAN ---
+            item {
+                Text("Header Penerbangan", style = MaterialTheme.typography.titleMedium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = awbNo,
+                        onValueChange = { awbNo = it },
+                        label = { Text("AWB No") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = flightNo,
+                        onValueChange = { flightNo = it },
+                        label = { Text("Flight No") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Divider()
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            // --- BAGIAN 2: INPUT DATA BARANG ---
+            item {
+                Text("Input Data Barang", style = MaterialTheme.typography.titleMedium)
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = pti,
+                        onValueChange = { pti = it },
+                        label = { Text("PTI") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = pcsQty,
+                        onValueChange = { pcsQty = it },
+                        label = { Text("Pcs / Qty") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
 
-            // Form Input Sederhana
-            OutlinedTextField(
-                value = pti,
-                onValueChange = { pti = it },
-                label = { Text("PTI") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = pcsQty,
-                onValueChange = { pcsQty = it },
-                label = { Text("Pcs / Qty") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = weight,
-                onValueChange = { weight = it },
-                label = { Text("Weight / Sub Total") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = subTotal,
-                onValueChange = { subTotal = it },
-                label = { Text("Sub Total Kg") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it },
-                label = { Text("Description") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = customer,
-                onValueChange = { customer = it },
-                label = { Text("Customer / PAG") },
-                modifier = Modifier.fillMaxWidth()
-            )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = { weight = it },
+                        label = { Text("Pcs/Qty Wt") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = subTotal,
+                        onValueChange = { subTotal = it },
+                        label = { Text("Sub Total (Kg)") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Spacer(modifier = Modifier.height(4.dp))
 
-            Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(4.dp))
 
-            Button(
-                onClick = {
-                    if (pti.isNotBlank()) {
-                        viewModel.addCargo(
-                            awbNo = awbNo,
-                            flightNo = flightNo,
-                            pti = pti,
-                            pcsQty = pcsQty,
-                            weight = weight,
-                            subTotal = subTotal,
-                            description = description,
-                            customer = customer,
-                            noPag = noPag
-                        )
-                        // Reset form setelah simpan
-                        pti = ""
-                        pcsQty = ""
-                        weight = ""
-                        subTotal = ""
-                        description = ""
-                        customer = ""
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = customer,
+                        onValueChange = { customer = it },
+                        label = { Text("Customer") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = noPag,
+                        onValueChange = { noPag = it },
+                        label = { Text("NO PAG") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Button(
+                    onClick = {
+                        if (pti.isNotBlank()) {
+                            viewModel.addCargo(
+                                awbNo = awbNo,
+                                flightNo = flightNo,
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            // Reset form input barang setelah disimpan
+                            pti = ""
+                            pcsQty = ""
+                            weight = ""
+                            subTotal = ""
+                            description = ""
+                            customer = ""
+                            noPag = ""
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Simpan Ke Database")
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Baris Tombol Tabel (Export & Hapus Semua)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("Tabel Data (${cargoList.size})", style = MaterialTheme.typography.titleMedium)
+                    
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { viewModel.exportToExcel(context) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Text("Export Excel")
+                        }
+                        Button(
+                            onClick = { viewModel.clearAll() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("Hapus Semua")
+                        }
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Tambah Kargo")
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                Divider()
+                Spacer(modifier = Modifier.height(4.dp))
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-            Divider()
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Daftar Data Kargo
-            LazyColumn(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                items(cargoList) { cargo ->
-                    Card(
+            // --- BAGIAN 3: DAFTAR TABEL LIST DATA ---
+            items(cargoList) { cargo ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp),
+                    elevation = CardDefaults.cardElevation(2.dp)
+                ) {
+                    Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        elevation = CardDefaults.cardElevation(2.dp)
+                            .padding(12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text("PTI: ${cargo.pti} | Pcs: ${cargo.pcsQty}", style = MaterialTheme.typography.bodyLarge)
-                            Text("Weight: ${cargo.weight} | Desc: ${cargo.description}", style = MaterialTheme.typography.bodyMedium)
-                            Text("Customer: ${cargo.customer}", style = MaterialTheme.typography.bodySmall)
-                            
-                            Spacer(modifier = Modifier.height(4.dp))
-                            
-                            Button(
-                                onClick = { viewModel.deleteCargo(cargo) },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text("Hapus")
-                            }
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("PTI: ${cargo.pti}", style = MaterialTheme.typography.bodyLarge)
+                            Text("Pcs: ${cargo.pcsQty} | SubTotal: ${cargo.subTotal} Kg", style = MaterialTheme.typography.bodyMedium)
+                            Text("Desc: ${cargo.description} | Cust: ${cargo.customer}", style = MaterialTheme.typography.bodySmall)
+                        }
+                        
+                        Button(
+                            onClick = { viewModel.deleteCargo(cargo) },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Text("Hapus", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
@@ -182,7 +257,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Tema dasar cadangan jika belum ada file theme tersendiri
 @Composable
 fun CargoManifestTheme(content: @Composable () -> Unit) {
     MaterialTheme(
