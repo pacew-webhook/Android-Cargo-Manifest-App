@@ -196,6 +196,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
+                // Grouping Manifest (Deskripsi & Customer)
                 val groupedManifest = currentList.groupBy {
                     Pair(it.description.trim().uppercase(), it.customer.trim().uppercase())
                 }.map { (keyPair, items) ->
@@ -214,6 +215,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
+                // Grouping Stowing (No PAG)
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
@@ -233,7 +235,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Memastikan header kolom 1 sampai 11 / teks dokumen tetap aman
+                // Set Header AWB & Flight No
                 val row3 = sheet.getRow(2) ?: sheet.createRow(2)
                 (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
@@ -243,9 +245,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val row9 = sheet.getRow(8) ?: sheet.createRow(8)
                 (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
 
-                var manifestRowIndex = 13
+                // Tentukan baris awal penulisan data (Mulai baris ke-14 / indeks 13)
+                val startRow = 13
+
+                // 1. Masukkan Data ke Tabel Manifest (Kolom A-G / Indeks 0-6) secara berurutan ke bawah
                 for ((index, item) in groupedManifest.withIndex()) {
-                    val row = sheet.getRow(manifestRowIndex) ?: sheet.createRow(manifestRowIndex)
+                    val currentRowIndex = startRow + index
+                    val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
 
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
@@ -254,21 +260,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
-
-                    manifestRowIndex++
                 }
 
-                var stowingRowIndex = 13
+                // 2. Masukkan Data ke Tabel Stowing / PAG (Kolom H-M / Indeks 7-12) secara berurutan ke bawah
                 for ((index, item) in groupedStowing.withIndex()) {
-                    val row = sheet.getRow(stowingRowIndex) ?: sheet.createRow(stowingRowIndex)
+                    val currentRowIndex = startRow + index
+                    val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
 
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
                     (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)
                     (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
-
-                    stowingRowIndex++
                 }
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
@@ -290,7 +293,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
 
                     context.startActivity(Intent.createChooser(intent, "Buka File Excel dengan"))
-                    Toast.makeText(context, "Export Excel Berhasil!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Export Excel Berhasil & Rapi!", Toast.LENGTH_SHORT).show()
                 }
 
             } catch (e: Exception) {
