@@ -1,7 +1,5 @@
-dependencies {
-    // ... library lainnya ...
-
-    // Library Apache POI untuk baca & tulis Excel (.xlsx)
-    implementation("org.apache.poi:poi:5.2.3")
-    implementation("org.apache.poi:poi-ooxml:5.2.3")
+// Root build.gradle.kts
+plugins {
+    id("com.android.application") version "8.1.4" apply false
+    id("org.jetbrains.kotlin.android") version "1.9.0" apply false
 }
