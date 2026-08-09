@@ -13,6 +13,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 
@@ -44,11 +45,9 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // State Header
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State Form Input
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -57,7 +56,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State Dialog Konfirmasi Hapus
     var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     if (showDeleteAllDialog) {
@@ -101,7 +99,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // --- BAGIAN 1: HEADER PENERBANGAN ---
             item {
                 Text("Header Penerbangan", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
@@ -111,17 +108,19 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = awbNo,
-                        onValueChange = { awbNo = it },
+                        onValueChange = { awbNo = it.uppercase() },
                         label = { Text("AWB No") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                     )
                     OutlinedTextField(
                         value = flightNo,
-                        onValueChange = { flightNo = it },
+                        onValueChange = { flightNo = it.uppercase() },
                         label = { Text("Flight No") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -129,7 +128,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
-            // --- BAGIAN 2: INPUT DATA BARANG ---
             item {
                 Text("Input Data Barang", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
@@ -140,10 +138,11 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = pti,
-                        onValueChange = { pti = it },
+                        onValueChange = { pti = it.uppercase() },
                         label = { Text("PTI") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                     )
                     OutlinedTextField(
                         value = pcsQty,
@@ -181,10 +180,11 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
 
                 OutlinedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { description = it.uppercase() },
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                 )
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -194,17 +194,19 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = customer,
-                        onValueChange = { customer = it },
+                        onValueChange = { customer = it.uppercase() },
                         label = { Text("Customer") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                     )
                     OutlinedTextField(
                         value = noPag,
-                        onValueChange = { noPag = it },
+                        onValueChange = { noPag = it.uppercase() },
                         label = { Text("NO PAG") },
                         modifier = Modifier.weight(1f),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
                     )
                 }
 
@@ -269,7 +271,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
-            // --- BAGIAN 3: DAFTAR TABEL LIST DATA ---
             items(
                 items = cargoList,
                 key = { item -> item.id }
