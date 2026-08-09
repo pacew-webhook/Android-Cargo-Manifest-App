@@ -89,13 +89,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 var isUsingTemplate = false
 
-                // Membaca file template dari app/src/main/assets/manifest_template.xlsx
+                // Disesuaikan dengan nama berkas di GitHub: template_manifest.xlsx
                 val workbook: Workbook = try {
-                    val inputStream = context.assets.open("manifest_template.xlsx")
+                    val inputStream = context.assets.open("template_manifest.xlsx")
                     isUsingTemplate = true
                     WorkbookFactory.create(inputStream).also { inputStream.close() }
                 } catch (e: Exception) {
-                    // Fallback jika file assets/manifest_template.xlsx tidak ada
                     XSSFWorkbook().apply {
                         val sheet = createSheet("Manifest")
                         val headerRow = sheet.createRow(0)
@@ -108,17 +107,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Jika memakai template, tentukan baris awal penulisan data (misal baris 14 / index 13)
-                // Jika tidak memakai template, mulai dari baris setelah header (index 1)
                 var rowIndex = if (isUsingTemplate) {
-                    // Isi Header Penerbangan jika sel template tersedia
+                    // Pengisian Header AWB No dan Flight No jika sel ada di template
                     val rowAwb = sheet.getRow(4) ?: sheet.createRow(4)
                     (rowAwb.getCell(2) ?: rowAwb.createCell(2)).setCellValue(awbNo)
 
                     val rowFlight = sheet.getRow(5) ?: sheet.createRow(5)
                     (rowFlight.getCell(2) ?: rowFlight.createCell(2)).setCellValue(flightNo)
 
-                    13 // Baris ke-14 pada Excel
+                    13 // Baris ke-14 pada Excel (index 13)
                 } else {
                     1
                 }
