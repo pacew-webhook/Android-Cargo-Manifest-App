@@ -3,6 +3,7 @@ package com.example.cargomanifestapp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -14,14 +15,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: CargoViewModel by viewModels {
+        CargoViewModelFactory(application)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val factory = CargoViewModelFactory(application)
-        val viewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
         setContent {
             CargoManifestTheme {
@@ -46,7 +48,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State Form
+    // State Form Input
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -123,7 +125,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
@@ -263,7 +265,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                Divider()
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
@@ -310,4 +312,12 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
             }
         }
     }
+}
+
+@Composable
+fun CargoManifestTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(),
+        content = content
+    )
 }
