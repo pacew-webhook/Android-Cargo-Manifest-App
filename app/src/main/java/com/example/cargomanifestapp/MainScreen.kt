@@ -1,12 +1,8 @@
 package com.example.cargomanifestapp
 
-import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
-import android.os.Environment
-import android.provider.MediaStore
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -24,11 +20,12 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
+import java.io.FileOutputStream
 import java.io.InputStream
-import java.io.OutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -358,7 +355,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel menggunakan template dan langsung membuka file otomatis
+// Fungsi Export Excel sesuai template dan langsung membuka file otomatis
 fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -399,47 +396,29 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
         }
 
         val fileName = "MANIFEST_CARGO_${System.currentTimeMillis()}.xlsx"
-        var fileUri: Uri? = null
-        var fos: OutputStream? = null
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val contentValues = ContentValues().apply {
-                put(MediaStore.MediaColumns.DISPLAY_NAME, fileName)
-                put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
-            }
-            val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
-            if (uri != null) {
-                fileUri = uri
-                fos = context.contentResolver.openOutputStream(uri)
-            }
-        } else {
-            val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = File(downloadsDir, fileName)
-            fos = java.io.FileOutputStream(file)
-            fileUri = Uri.fromFile(file)
-        }
-
-        fos?.use {
-            workbook.write(it)
-            workbook.close()
-        }
+        val file = File(context.cacheDir, fileName)
+        val fos = FileOutputStream(file)
+        workbook.write(fos)
+        fos.close()
+        workbook.close()
 
         Toast.makeText(context, "Berhasil Export & Membuka File!", Toast.LENGTH_SHORT).show()
 
-        if (fileUri != null) {
-            val intent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(fileUri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            try {
-                context.startActivity(intent)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Tidak ada aplikasi pembaca Excel", Toast.LENGTH_LONG).show()
-            }
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        
+        try {
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(context, "Tidak ada aplikasi pembaca Excel", Toast.LENGTH_LONG).show()
         }
 
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Error Template: ${e.mess
+        Toast.makeText(context, "Error Template: ${e.message}", Toast.LENGTH_LONG).show()
+    }
+}
