@@ -3,7 +3,9 @@ package com.example.cargomanifestapp
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -57,12 +59,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
     val ptiFocusRequester = remember { FocusRequester() }
 
+    // File Picker Launcher untuk Import File Excel
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        uri?.let {
+            viewModel.importFromExcel(context, it)
+        }
+    }
+
     var selectedCargoId by remember { mutableStateOf<Int?>(null) }
 
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // Input kosong (tanpa prefiks di dalam kotak ketik agar mudah diinput)
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -70,7 +80,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // Hitung otomatis Sub Total (Pcs/Qty * Pcs/Qty Wt)
     val subTotal = remember(pcsQty, weight) {
         val pcs = pcsQty.toDoubleOrNull() ?: 0.0
         val wt = weight.toDoubleOrNull() ?: 0.0
@@ -218,7 +227,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Baris 1: PTI & Pcs / Qty
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -227,7 +235,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = pti,
                     onValueChange = { pti = it.uppercase() },
                     label = { Text("PTI") },
-                    placeholder = { Text("Contoh: 001") }, // Mode inaktif penuntun
+                    placeholder = { Text("Contoh: 001") },
                     keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
@@ -247,7 +255,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 2: Weight & Sub Total
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -283,7 +290,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 4: Customer & NO PAG
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -297,7 +303,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         if (selectedCargoId == null) {
                             val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
                             if (existingItem != null) {
-                                // Hilangkan prefiks KAL saat auto-fill agar bersih di input
                                 pti = existingItem.pti.removePrefix("KAL").trim()
                             }
                         }
@@ -312,7 +317,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = noPag,
                     onValueChange = { noPag = it.uppercase() },
                     label = { Text("NO PAG") },
-                    placeholder = { Text("Contoh: 002") }, // Mode inaktif penuntun
+                    placeholder = { Text("Contoh: 002") },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Characters,
                         keyboardType = KeyboardType.Text,
@@ -332,7 +337,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             Button(
                 onClick = {
                     if (pti.isNotBlank() && pcsQty.isNotBlank()) {
-                        // Otomatis tambahkan awalan KAL dan PAG saat disimpan jika belum ada
                         val finalPti = if (pti.startsWith("KAL")) pti else "KAL$pti"
                         val finalPag = if (noPag.isBlank() || noPag.startsWith("PAG")) noPag else "PAG$noPag"
 
@@ -390,6 +394,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // ================= HEADER TABEL & AKSI TOMBOL =================
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -398,14 +403,25 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             Text(
                 text = "Tabel Data (${cargoList.size})",
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
+                fontSize = 14.sp
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // TOMBOL IMPORT EXCEL BARU
+                Button(
+                    onClick = {
+                        filePickerLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Text("Import Excel", fontSize = 11.sp)
+                }
                 Button(
                     onClick = { viewModel.exportToExcel(context, awbNo, flightNo) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
-                    Text("Export Excel", fontSize = 12.sp)
+                    Text("Export Excel", fontSize = 11.sp)
                 }
                 Button(
                     onClick = {
@@ -413,9 +429,10 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             showDeleteAllDialog = true
                         }
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E))
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
-                    Text("Hapus Semua", fontSize = 12.sp)
+                    Text("Hapus Semua", fontSize = 11.sp)
                 }
             }
         }
@@ -435,13 +452,11 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         .fillMaxWidth()
                         .clickable {
                             selectedCargoId = item.id
-                            // Saat di-klik untuk edit, buang prefiks KAL agar mudah diubah
                             pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
                             weight = item.weight
                             description = item.description
                             customer = item.customer
-                            // Buang prefiks PAG saat di-klik untuk edit
                             noPag = item.noPag.removePrefix("PAG").trim()
                             ptiFocusRequester.requestFocus()
                         },
@@ -482,7 +497,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 itemToDelete = item
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                            shape = RoundedCornerShape(8.dp)
+                           shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Hapus", fontSize = 12.sp)
                         }
