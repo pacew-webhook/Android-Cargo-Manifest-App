@@ -12,11 +12,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.room.Entity
 import androidx.room.PrimaryKey
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Inisialisasi Database & DAO
+    val database = remember { CargoDatabase.getDatabase(context) }
+    val dao = remember { database.cargoDao() }
     
     // State Header Penerbangan
     var awbNo by remember { mutableStateOf("") }
@@ -30,9 +36,6 @@ fun MainScreen() {
     var noPag by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
-
-    // List data tabel sementara
-    val cargoList = remember { mutableStateListOf<CargoItem>() }
 
     Scaffold(
         topBar = {
@@ -134,17 +137,22 @@ fun MainScreen() {
             Button(
                 onClick = {
                     if (pti.isNotBlank()) {
-                        cargoList.add(
-                            CargoItem(
-                                pti = pti,
-                                pcsCly = pcsCly,
-                                pcsClyWt = pcsClyWt,
-                                subTotal = subTotal,
-                                noPag = noPag,
-                                description = description,
-                                customer = customer
-                            )
+                        val newItem = CargoItem(
+                            pti = pti,
+                            pcsCly = pcsCly,
+                            pcsClyWt = pcsClyWt,
+                            subTotal = subTotal,
+                            noPag = noPag,
+                            description = description,
+                            customer = customer
                         )
+                        
+                        // Simpan ke Room Database menggunakan coroutine
+                        coroutineScope.launch {
+                            dao.insertCargo(newItem)
+                            Toast.makeText(context, "Data berhasil disimpan ke Database", Toast.LENGTH_SHORT).show()
+                        }
+
                         // Reset input setelah disimpan
                         pti = ""
                         pcsCly = ""
@@ -153,7 +161,6 @@ fun MainScreen() {
                         noPag = ""
                         description = ""
                         customer = ""
-                        Toast.makeText(context, "Data berhasil ditambahkan", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Kolom PTI tidak boleh kosong", Toast.LENGTH_SHORT).show()
                     }
