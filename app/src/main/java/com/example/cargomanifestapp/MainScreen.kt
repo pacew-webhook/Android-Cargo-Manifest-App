@@ -23,6 +23,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 import java.io.OutputStream
@@ -37,7 +38,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State Input Barang (Otomatis Kapital)
+    // State Input Barang
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var pcsQtyWt by remember { mutableStateOf("") }
@@ -197,7 +198,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                             noPag = noPag
                         )
                         viewModel.insertCargo(newItem)
-                        Toast.makeText(context, "Simpan ke Database Berhasil", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                     }
 
                     pti = ""
@@ -358,7 +359,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel menggunakan template_manifest.xlsx dari folder assets
+// Fungsi Export Excel yang membaca template_manifest.xlsx dari folder assets
 fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -366,36 +367,43 @@ fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: S
     }
 
     try {
-        // Membaca file template dari folder assets
         val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
         val workbook = XSSFWorkbook(inputStream)
         inputStream.close()
 
-        val sheet = workbook.getSheetAt(0) // Mengambil sheet pertama
+        val sheet = workbook.getSheetAt(0)
 
-        // Menulis AWB No dan Flight No ke template (sesuai posisi di template Anda)
-        sheet.getRow(0)?.getCell(0)?.setCellValue("AWB No: $awbNo")
-        sheet.getRow(1)?.getCell(0)?.setCellValue("Flight No: $flightNo")
+        // Mengisi Header AWB No dan Flight No ke posisi sel template Anda
+        sheet.getRow(1)?.getCell(10)?.setCellValue(awbNo)  // Sel K2 (Kolom indeks 10, Baris indeks 1) sesuai template asli
+        sheet.getRow(2)?.getCell(10)?.setCellValue(flightNo) // Sel K3
 
-        // Baris awal data dimulai dari baris ke-4 (indeks 4, karena baris 0-3 adalah header/info)
-        var rowIndex = 4 
-
+        // Memasukkan Data Item kargo mulai dari baris indeks 4 (Baris ke-5 di Excel)
+        var rowIndex = 4
         list.forEachIndexed { index, item ->
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+
+            row.getCell(0, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
+            row.getCell(1, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
             
-            row.getCell(0, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-            row.getCell(1, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
-            row.getCell(2, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pcsQty)
-            row.getCell(3, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.weight)
-            row.getCell(4, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.subTotal)
-            row.getCell(5, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-            row.getCell(6, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
-            row.getCell(7, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.noPag)
+            // Kolom Pcs / Qty
+            val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
+            row.getCell(2, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(pcsVal)
+            
+            // Kolom Pcs/Qty Wt (Weight)
+            val wtVal = item.weight.toDoubleOrNull() ?: 0.0
+            row.getCell(3, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(wtVal)
+            
+            // Kolom Sub Total
+            val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
+            row.getCell(4, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(subVal)
+
+            row.getCell(5, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
+            row.getCell(6, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
 
             rowIndex++
         }
 
-        val fileName = "CargoManifest_${System.currentTimeMillis()}.xlsx"
+        val fileName = "MANIFEST_CARGO_${System.currentTimeMillis()}.xlsx"
         var fos: OutputStream? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -417,7 +425,7 @@ fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: S
         fos?.use {
             workbook.write(it)
             workbook.close()
-            Toast.makeText(context, "Berhasil Export menggunakan Template!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Berhasil Export ke Folder Downloads!", Toast.LENGTH_LONG).show()
         } ?: run {
             Toast.makeText(context, "Gagal menyimpan file Excel", Toast.LENGTH_SHORT).show()
         }
