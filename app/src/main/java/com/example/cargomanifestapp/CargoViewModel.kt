@@ -75,7 +75,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun exportToExcel(context: Context) {
+    fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentList = cargoList.value
@@ -87,11 +87,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // Coba buka template, jika tidak ada buat workbook baru secara otomatis
+                var isUsingTemplate = false
+
+                // Membaca file template dari app/src/main/assets/manifest_template.xlsx
                 val workbook: Workbook = try {
                     val inputStream = context.assets.open("manifest_template.xlsx")
+                    isUsingTemplate = true
                     WorkbookFactory.create(inputStream).also { inputStream.close() }
                 } catch (e: Exception) {
+                    // Fallback jika file assets/manifest_template.xlsx tidak ada
                     XSSFWorkbook().apply {
                         val sheet = createSheet("Manifest")
                         val headerRow = sheet.createRow(0)
@@ -103,7 +107,21 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-                var rowIndex = if (sheet.lastRowNum >= 13) 14 else sheet.lastRowNum + 1
+
+                // Jika memakai template, tentukan baris awal penulisan data (misal baris 14 / index 13)
+                // Jika tidak memakai template, mulai dari baris setelah header (index 1)
+                var rowIndex = if (isUsingTemplate) {
+                    // Isi Header Penerbangan jika sel template tersedia
+                    val rowAwb = sheet.getRow(4) ?: sheet.createRow(4)
+                    (rowAwb.getCell(2) ?: rowAwb.createCell(2)).setCellValue(awbNo)
+
+                    val rowFlight = sheet.getRow(5) ?: sheet.createRow(5)
+                    (rowFlight.getCell(2) ?: rowFlight.createCell(2)).setCellValue(flightNo)
+
+                    13 // Baris ke-14 pada Excel
+                } else {
+                    1
+                }
 
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
