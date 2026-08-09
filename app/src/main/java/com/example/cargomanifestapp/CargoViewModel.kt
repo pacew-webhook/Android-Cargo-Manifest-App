@@ -1,189 +1,85 @@
 package com.example.cargomanifestapp
 
-import android.app.Application
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
+// Model Data Pendukung
+data class CargoItem(
+    val id: String = "",
+    val pti: String = "",
+    val pcsQty: String = "",
+    val weight: String = "",
+    val subTotal: String = "",
+    val description: String = "",
+    val customer: String = "",
+    val noPag: String = ""
+)
+
 data class GroupedManifestItem(
     val pti: String,
     val description: String,
     val customer: String,
-    var pcsQty: Double,
-    var weight: Double,
-    var subTotal: Double
+    val pcsQty: Double,
+    val weight: Double,
+    val subTotal: Double
 )
 
 data class GroupedStowingItem(
     val noPag: String,
     val description: String,
     val customer: String,
-    var subTotal: Double
+    val subTotal: Double
 )
 
-class CargoViewModel(application: Application) : AndroidViewModel(application) {
+class CargoViewModel : ViewModel() {
 
-    private val dao = CargoDatabase.getDatabase(application).cargoDao()
+    // State utama untuk menampung list data kargo
+    private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
+    val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
-    val cargoList: StateFlow<List<CargoItem>> = dao.getAllCargo()
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = emptyList()
-        )
+    // ================= FUNGSI TAMBAHAN / STATE LAINNYA =================
+    
+    fun addCargo(item: CargoItem) {
+        val currentList = _cargoList.value.toMutableList()
+        currentList.add(item)
+        _cargoList.value = currentList
+    }
 
-    fun addCargo(
-        awbNo: String,
-        flightNo: String,
-        pti: String,
-        pcsQty: String,
-        weight: String,
-        subTotal: String,
-        description: String,
-        customer: String,
-        noPag: String
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val cargo = CargoItem(
-                awbNo = awbNo.trim().uppercase(),
-                flightNo = flightNo.trim().uppercase(),
-                pti = pti.trim().uppercase(),
-                pcsQty = pcsQty.trim(),
-                weight = weight.trim(),
-                subTotal = subTotal.trim(),
-                description = description.trim().uppercase(),
-                customer = customer.trim().uppercase(),
-                noPag = noPag.trim().uppercase()
-            )
-            dao.insertCargo(cargo)
+    fun updateCargo(index: Int, item: CargoItem) {
+        val currentList = _cargoList.value.toMutableList()
+        if (index in currentList.indices) {
+            currentList[index] = item
+            _cargoList.value = currentList
         }
     }
 
-    fun updateCargo(cargo: CargoItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            val updatedCargo = cargo.copy(
-                awbNo = cargo.awbNo.trim().uppercase(),
-                flightNo = cargo.flightNo.trim().uppercase(),
-                pti = cargo.pti.trim().uppercase(),
-                pcsQty = cargo.pcsQty.trim(),
-                weight = cargo.weight.trim(),
-                subTotal = cargo.subTotal.trim(),
-                description = cargo.description.trim().uppercase(),
-                customer = cargo.customer.trim().uppercase(),
-                noPag = cargo.noPag.trim().uppercase()
-            )
-            dao.updateCargo(updatedCargo)
+    fun deleteCargo(index: Int) {
+        val currentList = _cargoList.value.toMutableList()
+        if (index in currentList.indices) {
+            currentList.removeAt(index)
+            _cargoList.value = currentList
         }
     }
 
-    fun deleteCargo(cargo: CargoItem) {
-        viewModelScope.launch(Dispatchers.IO) {
-            dao.deleteCargo(cargo)
-        }
+    fun clearData() {
+        _cargoList.value = emptyList()
     }
 
-    fun clearAll() {
-        viewModelScope.launch(Dispatchers.IO) {
-            dao.deleteAllCargo()
-        }
-    }
-
-    // ================= FUNGSI IMPORT DATA EXCEL =================
-    fun importFromExcel(context: Context, uri: Uri) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val inputStream = context.contentResolver.openInputStream(uri)
-                    ?: throw Exception("Gagal membaca file dari penyimpanan.")
-
-                val workbook = WorkbookFactory.create(inputStream)
-                inputStream.close()
-
-                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-                val formatter = DataFormatter()
-
-                val awbNo = formatter.formatCellValue(sheet.getRow(2)?.getCell(6)).trim().uppercase()
-                val flightRaw = formatter.formatCellValue(sheet.getRow(8)?.getCell(6)).trim().uppercase()
-                val flightNo = flightRaw.removePrefix(":").trim()
-
-                val importedItems = mutableListOf<CargoItem>()
-
-                // Mulai membaca dari baris ke-14 (indeks 13) agar aman dari header/formula atas
-                val startRow = 13 
-
-                for (rowIndex in startRow..sheet.lastRowNum) {
-                    val row = sheet.getRow(rowIndex) ?: continue
-
-                    val rawPti = formatter.formatCellValue(row.getCell(1)).trim().uppercase()
-                    val pcsQty = formatter.formatCellValue(row.getCell(2)).trim()
-                    val weight = formatter.formatCellValue(row.getCell(3)).trim()
-                    val subTotal = formatter.formatCellValue(row.getCell(4)).trim()
-                    val rawDesc = formatter.formatCellValue(row.getCell(5)).trim().uppercase()
-                    val rawCust = formatter.formatCellValue(row.getCell(6)).trim().uppercase()
-                    val rawPag = formatter.formatCellValue(row.getCell(8)).trim().uppercase()
-
-                    // Filter baris sampah / header / rumus SUM
-                    val isInvalidRow = rawDesc.contains("APPROVED") || 
-                                       rawDesc.contains("SUM(") || 
-                                       pcsQty.contains("SUM(") || 
-                                       (rawPti.isBlank() && pcsQty.isBlank() && rawDesc.isBlank() && rawCust.isBlank())
-
-                    if (!isInvalidRow) {
-                        val finalPti = if (rawPti.isBlank()) "" else if (rawPti.startsWith("KAL")) rawPti else "KAL$rawPti"
-                        val finalPag = if (rawPag.isBlank() || rawPag == "-") "" else if (rawPag.startsWith("PAG")) rawPag else "PAG$rawPag"
-
-                        importedItems.add(
-                            CargoItem(
-                                awbNo = awbNo,
-                                flightNo = flightNo,
-                                pti = finalPti,
-                                pcsQty = pcsQty,
-                                weight = weight,
-                                subTotal = subTotal,
-                                description = if (rawDesc == "-") "" else rawDesc,
-                                customer = if (rawCust == "-") "" else rawCust,
-                                noPag = finalPag
-                            )
-                        )
-                    }
-                }
-
-                if (importedItems.isNotEmpty()) {
-                    importedItems.forEach { dao.insertCargo(it) }
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Berhasil mengimpor ${importedItems.size} data!", Toast.LENGTH_SHORT).show()
-                    }
-                } else {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Tidak ada data valid yang ditemukan mulai baris 14!", Toast.LENGTH_SHORT).show()
-                    }
-                }
-
-                workbook.close()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Gagal Import: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
-                }
-            }
-        }
-    }
-
-    // ================= FUNGSI EXPORT DATA EXCEL =================
+    // ================= FUNGSI EXPORT DATA EXCEL (YANG DIPERBAIKI) =================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -196,13 +92,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // Grouping Manifest (Deskripsi & Customer)
+                // 1. Grouping Data Manifest (Tabel Sisi Kiri)
                 val groupedManifest = currentList.groupBy {
                     Pair(it.description.trim().uppercase(), it.customer.trim().uppercase())
                 }.map { (keyPair, items) ->
                     val descKey = keyPair.first
                     val custKey = keyPair.second
-
                     val uniquePti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
                     
                     GroupedManifestItem(
@@ -215,7 +110,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // Grouping Stowing (No PAG)
+                // 2. Grouping Data Stowing / PAG (Tabel Sisi Kanan)
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
@@ -229,26 +124,23 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
+                // Membuka Template Excel dari Assets
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Set Header AWB & Flight No
-                val row3 = sheet.getRow(2) ?: sheet.createRow(2)
-                (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.trim().uppercase())
+                // Mengisi Header AWB & Flight No
+                val row2 = sheet.getRow(1) ?: sheet.createRow(1)
+                (row2.getCell(6) ?: row2.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
-                val row4 = sheet.getRow(3) ?: sheet.createRow(3)
-                (row4.getCell(6) ?: row4.createCell(6)).setCellValue(awbNo.trim().uppercase())
+                val row8 = sheet.getRow(7) ?: sheet.createRow(7)
+                (row8.getCell(6) ?: row8.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
 
-                val row9 = sheet.getRow(8) ?: sheet.createRow(8)
-                (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
+                val startRow = 12 // Baris awal data dimulai (Baris ke-13 pada Excel)
 
-                // Tentukan baris awal penulisan data (Mulai baris ke-14 / indeks 13)
-                val startRow = 13
-
-                // 1. Masukkan Data ke Tabel Manifest (Kolom A-G / Indeks 0-6) secara berurutan ke bawah
+                // 3. Menulis Data ke Tabel Manifest (Kolom A s.d G / Indeks 0 sampai 6)
                 for ((index, item) in groupedManifest.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -262,7 +154,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 2. Masukkan Data ke Tabel Stowing / PAG (Kolom H-M / Indeks 7-12) secara berurutan ke bawah
+                // 4. Menulis Data ke Tabel Stowing / PAG (Kolom H s.d M / Indeks 7 sampai 12 secara presisi)
                 for ((index, item) in groupedStowing.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -270,10 +162,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal) // Kolom Net
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.subTotal) // Kolom Gross
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)  // Kolom Costumers
                 }
 
+                // Menyimpan File Hasil Export ke Cache Internal
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -286,6 +180,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     file
                 )
 
+                // Membuka File Excel Secara Otomatis
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
