@@ -2,11 +2,13 @@ package com.example.cargomanifestapp
 
 import android.content.ContentValues
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.File
 import java.io.InputStream
 import java.io.OutputStream
 
@@ -217,7 +220,6 @@ fun MainScreen(viewModel: CargoViewModel) {
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Baris Judul Tabel & Tombol Aksi
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -242,7 +244,6 @@ fun MainScreen(viewModel: CargoViewModel) {
                 }
             }
 
-            // Tabel Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -258,7 +259,6 @@ fun MainScreen(viewModel: CargoViewModel) {
                 Text("Aksi", color = Color.White, modifier = Modifier.weight(1.3f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
 
-            // LazyColumn Data List
             LazyColumn(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -359,7 +359,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel menggunakan template dari Assets
+// Fungsi Export Excel menggunakan template dan langsung membuka file otomatis
 fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -367,53 +367,40 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
     }
 
     try {
-        // Membuka file template_manifest.xlsx dari folder assets
         val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
         val workbook = XSSFWorkbook(inputStream)
         inputStream.close()
 
         val sheet = workbook.getSheetAt(0)
 
-        // 1. Mengisi Header AWB No dan Flight No pada posisi sel di template
-        sheet.getRow(0)?.getCell(10)?.setCellValue(awbNo)   // Sel AWB No (Kolom K, Baris 1)
-        sheet.getRow(1)?.getCell(10)?.setCellValue(flightNo) // Sel Flight No (Kolom K, Baris 2)
+        sheet.getRow(0)?.getCell(10)?.setCellValue(awbNo)
+        sheet.getRow(1)?.getCell(10)?.setCellValue(flightNo)
 
-        // 2. Memasukkan Data Item Kargo mulai dari baris indeks ke-4 (Baris ke-5 Excel)
         var rowIndex = 4
         list.forEachIndexed { index, item ->
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-            // Kolom No. Urut (Kolom A / Index 0)
             row.getCell(0, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-            
-            // Kolom PTI (Kolom B / Index 1)
             row.getCell(1, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
             
-            // Kolom Pcs / Qty (Kolom C / Index 2)
             val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
             row.getCell(2, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(pcsVal)
             
-            // Kolom Weight / Pcs/Qty Wt (Kolom D / Index 3)
             val wtVal = item.weight.toDoubleOrNull() ?: 0.0
             row.getCell(3, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(wtVal)
             
-            // Kolom Sub Total (Kolom E / Index 4)
             val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
             row.getCell(4, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(subVal)
 
-            // Kolom Description (Kolom F / Index 5)
             row.getCell(5, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-            
-            // Kolom Customer (Kolom G / Index 6)
             row.getCell(6, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
-
-            // Kolom No PAG untuk tabel bagian kanan (Kolom I / Index 8)
             row.getCell(8, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.noPag)
 
             rowIndex++
         }
 
         val fileName = "MANIFEST_CARGO_${System.currentTimeMillis()}.xlsx"
+        var fileUri: Uri? = null
         var fos: OutputStream? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -424,15 +411,33 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
             }
             val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
             if (uri != null) {
+                fileUri = uri
                 fos = context.contentResolver.openOutputStream(uri)
             }
         } else {
             val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-            val file = java.io.File(downloadsDir, fileName)
+            val file = File(downloadsDir, fileName)
             fos = java.io.FileOutputStream(file)
+            fileUri = Uri.fromFile(file)
         }
 
         fos?.use {
             workbook.write(it)
             workbook.close()
-            Toast.makeText(context, "Berhasil Export ke Folder Downloads!",
+        }
+
+        Toast.makeText(context, "Berhasil Export & Membuka File!", Toast.LENGTH_SHORT).show()
+
+        // Perintah otomatis membuka file Excel setelah berhasil diexport
+        if (fileUri != null) {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(fileUri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Tidak ada aplikasi pembaca Excel", Toast.LENGTH_LONG).show()
+            }
+        }
