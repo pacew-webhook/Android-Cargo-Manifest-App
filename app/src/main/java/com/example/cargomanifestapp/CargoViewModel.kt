@@ -6,8 +6,6 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -232,15 +230,5 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-    }
-}
-
-class CargoViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
-    override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(CargoViewModel::class.java)) {
-            @Suppress("UNCHECKED_CAST")
-            return CargoViewModel(application) as T
-        }
-        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
