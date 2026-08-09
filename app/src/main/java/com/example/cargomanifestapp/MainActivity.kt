@@ -79,7 +79,10 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    val subTotal = remember(pcsQty, weight) {
+    // Sub Total yang bisa diketik manual / diisi otomatis
+    var subTotalInput by remember { mutableStateOf("") }
+
+    val calculatedSubTotal = remember(pcsQty, weight) {
         val pcs = pcsQty.toDoubleOrNull() ?: 0.0
         val wt = weight.toDoubleOrNull() ?: 0.0
         val result = pcs * wt
@@ -89,6 +92,8 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             ""
         }
     }
+
+    val subTotal = if (subTotalInput.isNotBlank()) subTotalInput else calculatedSubTotal
 
     var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
@@ -115,6 +120,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
         description = ""
         customer = ""
         noPag = ""
+        subTotalInput = ""
         selectedCargoId = null
     }
 
@@ -268,10 +274,13 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
-                    value = subTotal,
-                    onValueChange = {},
-                    readOnly = true,
+                    value = subTotalInput,
+                    onValueChange = { subTotalInput = it },
+                    readOnly = false, // Dapat diisi/diketik manual
                     label = { Text("Sub Total (Kg)") },
+                    placeholder = { Text(calculatedSubTotal.ifEmpty { "Manual/Auto" }) },
+                    keyboardOptions = numberNextKeyboardOptions,
+                    keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
@@ -452,6 +461,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
                             weight = item.weight
+                            subTotalInput = item.subTotal // Masukkan nilai sub total ke input saat diedit
                             description = item.description
                             customer = item.customer
                             noPag = item.noPag.removePrefix("PAG").trim()
@@ -480,14 +490,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 fontSize = 13.sp,
                                 color = Color.Gray
                             )
-
-                            val pagInfo = if (item.noPag.isNotBlank()) " | PAG: ${item.noPag}" else ""
-                            Text(
-                                text = "Desc: ${item.description} | Cust: ${item.customer}$pagInfo",
-                                fontSize = 13.sp,
-                                color = Color.Gray
-                            )
-                        }
+}
 
                         Button(
                             onClick = {
@@ -499,7 +502,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             Text("Hapus", fontSize = 12.sp)
                         }
                     }
-                    }
+                }
             }
         }
     }
