@@ -146,7 +146,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Baris 1: PTI (Teks) & Pcs/Qty (Angka)
+            // Baris 1: PTI & Pcs/Qty
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -166,7 +166,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = pcsQty,
                     onValueChange = { pcsQty = it },
                     label = { Text("Pcs / Qty") },
-                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
+                    keyboardOptions = numberNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -174,7 +174,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 2: Weight (Angka) & Sub Total (Angka)
+            // Baris 2: Weight & Sub Total
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -183,7 +183,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = weight,
                     onValueChange = { weight = it },
                     label = { Text("Pcs/Qty Wt") },
-                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
+                    keyboardOptions = numberNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -192,7 +192,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = subTotal,
                     onValueChange = { subTotal = it },
                     label = { Text("Sub Total (Kg)") },
-                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
+                    keyboardOptions = numberNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -200,7 +200,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 3: Description (Teks)
+            // Baris 3: Description
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it.uppercase() },
@@ -212,14 +212,24 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 4: Customer (Teks) & NO PAG (Teks)
+            // Baris 4: Customer & NO PAG
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = customer,
-                    onValueChange = { customer = it.uppercase() },
+                    onValueChange = { inputCustomer ->
+                        val uppercaseInput = inputCustomer.uppercase()
+                        customer = uppercaseInput
+
+                        // LOGIKA OTOMATIS GANTI PTI:
+                        // Cari apakah nama Customer ini sudah ada di tabel data
+                        val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
+                        if (existingItem != null) {
+                            pti = existingItem.pti // Otomatis timpa kolom PTI dengan PTI dari Customer tersebut
+                        }
+                    },
                     label = { Text("Customer") },
                     keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
@@ -322,11 +332,11 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // ================= 3. DAFTAR KARTU DATA (KHUSUS INI YANG BISA DI-SCROLL) =================
+        // ================= 3. DAFTAR KARTU DATA (SCROLLABLE) =================
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f), // Mengisi sisa area paling bawah dan hanya bagian ini yang scroll
+                .weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(cargoList) { item ->
