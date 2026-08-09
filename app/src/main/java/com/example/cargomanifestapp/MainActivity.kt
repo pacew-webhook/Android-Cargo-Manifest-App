@@ -40,7 +40,10 @@ class MainActivity : ComponentActivity() {
                         factory = object : ViewModelProvider.Factory {
                             override fun <T : ViewModel> create(modelClass: Class<T>): T {
                                 @Suppress("UNCHECKED_CAST")
-                                return CargoViewModel(database.cargoDao()) as T
+                                return CargoViewModel(
+                                    application = application,
+                                    cargoDao = database.cargoDao()
+                                ) as T
                             }
                         }
                     )
