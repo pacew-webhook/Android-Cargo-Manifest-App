@@ -62,13 +62,13 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State Input dengan Awalan Default "KAL" dan "PAG"
-    var pti by remember { mutableStateOf("KAL") }
+    // Input kosong (tanpa prefiks di dalam kotak ketik agar mudah diinput)
+    var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
-    var noPag by remember { mutableStateOf("PAG") }
+    var noPag by remember { mutableStateOf("") }
 
     // Hitung otomatis Sub Total (Pcs/Qty * Pcs/Qty Wt)
     val subTotal = remember(pcsQty, weight) {
@@ -76,7 +76,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
         val wt = weight.toDoubleOrNull() ?: 0.0
         val result = pcs * wt
         if (result > 0.0) {
-            // Jika berupa bilangan bulat, hilangkan desimal koma nol-nya agar rapi
             if (result % 1.0 == 0.0) result.toInt().toString() else result.toString()
         } else {
             ""
@@ -102,12 +101,12 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     )
 
     fun clearInputForm() {
-        pti = "KAL"
+        pti = ""
         pcsQty = ""
         weight = ""
         description = ""
         customer = ""
-        noPag = "PAG"
+        noPag = ""
         selectedCargoId = null
     }
 
@@ -219,18 +218,16 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(4.dp))
 
-            // Baris 1: PTI (Awalan KAL) & Pcs / Qty
+            // Baris 1: PTI & Pcs / Qty
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = pti,
-                    onValueChange = { input ->
-                        val upper = input.uppercase()
-                        pti = if (!upper.startsWith("KAL")) "KAL" + upper.removePrefix("KAL") else upper
-                    },
+                    onValueChange = { pti = it.uppercase() },
                     label = { Text("PTI") },
+                    placeholder = { Text("Contoh: 001") }, // Mode inaktif penuntun
                     keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
@@ -250,7 +247,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 2: Weight & Sub Total (Otomatis Perkalian)
+            // Baris 2: Weight & Sub Total
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -266,7 +263,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 )
                 OutlinedTextField(
                     value = subTotal,
-                    onValueChange = {}, // ReadOnly karena otomatis terhitung
+                    onValueChange = {},
                     readOnly = true,
                     label = { Text("Sub Total (Kg)") },
                     singleLine = true,
@@ -286,7 +283,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             )
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 4: Customer & NO PAG (Awalan PAG)
+            // Baris 4: Customer & NO PAG
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -300,7 +297,8 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         if (selectedCargoId == null) {
                             val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
                             if (existingItem != null) {
-                                pti = existingItem.pti
+                                // Hilangkan prefiks KAL saat auto-fill agar bersih di input
+                                pti = existingItem.pti.removePrefix("KAL").trim()
                             }
                         }
                     },
@@ -312,11 +310,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 )
                 OutlinedTextField(
                     value = noPag,
-                    onValueChange = { input ->
-                        val upper = input.uppercase()
-                        noPag = if (!upper.startsWith("PAG")) "PAG" + upper.removePrefix("PAG") else upper
-                    },
+                    onValueChange = { noPag = it.uppercase() },
                     label = { Text("NO PAG") },
+                    placeholder = { Text("Contoh: 002") }, // Mode inaktif penuntun
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Characters,
                         keyboardType = KeyboardType.Text,
@@ -336,17 +332,21 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             Button(
                 onClick = {
                     if (pti.isNotBlank() && pcsQty.isNotBlank()) {
+                        // Otomatis tambahkan awalan KAL dan PAG saat disimpan jika belum ada
+                        val finalPti = if (pti.startsWith("KAL")) pti else "KAL$pti"
+                        val finalPag = if (noPag.isBlank() || noPag.startsWith("PAG")) noPag else "PAG$noPag"
+
                         if (selectedCargoId == null) {
                             viewModel.addCargo(
                                 awbNo = awbNo,
                                 flightNo = flightNo,
-                                pti = pti,
+                                pti = finalPti,
                                 pcsQty = pcsQty,
                                 weight = weight,
                                 subTotal = subTotal,
                                 description = description,
                                 customer = customer,
-                                noPag = noPag
+                                noPag = finalPag
                             )
                             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                         } else {
@@ -354,13 +354,13 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 id = selectedCargoId!!,
                                 awbNo = awbNo,
                                 flightNo = flightNo,
-                                pti = pti,
+                                pti = finalPti,
                                 pcsQty = pcsQty,
                                 weight = weight,
                                 subTotal = subTotal,
                                 description = description,
                                 customer = customer,
-                                noPag = noPag
+                                noPag = finalPag
                             )
                             viewModel.updateCargo(updatedItem)
                             Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
@@ -435,12 +435,14 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         .fillMaxWidth()
                         .clickable {
                             selectedCargoId = item.id
-                            pti = item.pti
+                            // Saat di-klik untuk edit, buang prefiks KAL agar mudah diubah
+                            pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
                             weight = item.weight
                             description = item.description
                             customer = item.customer
-                            noPag = item.noPag
+                            // Buang prefiks PAG saat di-klik untuk edit
+                            noPag = item.noPag.removePrefix("PAG").trim()
                             ptiFocusRequester.requestFocus()
                         },
                     colors = CardDefaults.cardColors(
@@ -488,8 +490,5 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 }
             }
         }
-
     }
-        
-    }
-
+}
