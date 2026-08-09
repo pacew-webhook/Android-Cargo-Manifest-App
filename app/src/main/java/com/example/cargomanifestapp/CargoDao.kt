@@ -1,19 +1,23 @@
 package com.example.cargomanifestapp
 
-import androidx.room.Entity
-import androidx.room.PrimaryKey
+import androidx.room.*
+import kotlinx.coroutines.flow.Flow
 
-@Entity(tableName = "cargo_table")
-data class CargoItem(
-    @PrimaryKey(autoGenerate = true)
-    val id: Int = 0,
-    val awbNo: String,
-    val flightNo: String,
-    val pti: String,
-    val pcsQty: String,
-    val weight: String,
-    val subTotal: String,
-    val description: String,
-    val customer: String,
-    val noPag: String = ""
-)
+@Dao
+interface CargoDao {
+
+    @Query("SELECT * FROM cargo_table ORDER BY id ASC")
+    fun getAllCargo(): Flow<List<CargoItem>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insert(cargo: CargoItem)
+
+    @Update
+    suspend fun update(cargo: CargoItem)
+
+    @Delete
+    suspend fun delete(cargo: CargoItem)
+
+    @Query("DELETE FROM cargo_table")
+    suspend fun deleteAll()
+}
