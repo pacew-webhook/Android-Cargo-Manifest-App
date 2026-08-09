@@ -10,6 +10,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -164,8 +166,11 @@ fun MainScreen() {
     }
 }
 
-// Data class untuk menampung item kargo
+// Data class yang dikonfigurasi sebagai Room Entity
+@Entity(tableName = "cargo_table")
 data class CargoItem(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0L,
     val pti: String,
     val pcsCly: String,
     val pcsClyWt: String,
