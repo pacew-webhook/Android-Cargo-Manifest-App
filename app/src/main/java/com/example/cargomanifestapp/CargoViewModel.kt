@@ -115,12 +115,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)     // F: Description
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)        // G: Customers
 
-                    // === TABEL STOWING CHEKLIST (Kolom H - L) ===
+                    // === TABEL STOWING CHEKLIST (Kolom H - M) ===
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // H: No
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // I: NO PAG (I14)
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // J: Description
                     (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // K: Net
-                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.customer)       // L: Customer
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)       // M: Customer (Kolom M / Index 12)
 
                     rowIndex++
                 }
