@@ -109,7 +109,7 @@ class CargoViewModel(
 
     fun clearAll() {
         viewModelScope.launch {
-            cargoDao.clearAll()
+            cargoDao.deleteAll()
         }
     }
 
