@@ -18,6 +18,24 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
+// Model helper untuk penggabungan data Manifest
+data class GroupedManifestItem(
+    val pti: String,
+    val description: String,
+    val customer: String,
+    var pcsQty: Double,
+    var weight: Double,
+    var subTotal: Double
+)
+
+// Model helper untuk penggabungan data Stowing Checklist
+data class GroupedStowingItem(
+    val noPag: String,
+    val description: String,
+    val customer: String,
+    var subTotal: Double
+)
+
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val cargoDao: CargoDao = CargoDatabase.getDatabase(application).cargoDao()
@@ -86,46 +104,96 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 1. Buka Template Excel dari Folder Assets
+                // -------------------------------------------------------------
+                // 1. PENGGABUNGAN DATA (AGGREGATION)
+                // -------------------------------------------------------------
+                
+                // Grouping untuk Tabel Manifest (Berdasarkan PTI + Description + Customer)
+                val groupedManifest = currentList.groupBy {
+                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}"
+                }.map { (_, items) ->
+                    val first = items.first()
+                    GroupedManifestItem(
+                        pti = first.pti,
+                        description = first.description,
+                        customer = first.customer,
+                        pcsQty = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 },
+                        weight = items.sumOf { it.weight.toDoubleOrNull() ?: 0.0 },
+                        subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
+                    )
+                }
+
+                // Grouping untuk Tabel Stowing Checklist (Berdasarkan NO PAG)
+                val groupedStowing = currentList.groupBy {
+                    it.noPag.trim().uppercase()
+                }.map { (pagKey, items) ->
+                    val uniqueDescs = items.map { it.description }.distinct().joinToString(", ")
+                    val uniqueCusts = items.map { it.customer }.distinct().joinToString(", ")
+                    GroupedStowingItem(
+                        noPag = if (pagKey.isBlank()) "-" else pagKey,
+                        description = uniqueDescs,
+                        customer = uniqueCusts,
+                        subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
+                    )
+                }
+
+                // -------------------------------------------------------------
+                // 2. OLAH TEMPLATE EXCEL
+                // -------------------------------------------------------------
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // 2. Set AWB NO di Kolom G9 (Baris 9 = Index 8, Kolom G = Index 6)
-                val rowAwb = sheet.getRow(8) ?: sheet.createRow(8)
-                (rowAwb.getCell(6) ?: rowAwb.createCell(6)).setCellValue(awbNo)
+                // AWB NO ke Kolom G3:G4 (Baris 3 = Index 2, Baris 4 = Index 3, Kolom G = Index 6)
+                val row3 = sheet.getRow(2) ?: sheet.createRow(2)
+                (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.uppercase())
 
-                // Set FLIGHT NO di Kolom G10 (Baris 10 = Index 9, Kolom G = Index 6)
-                val rowFlight = sheet.getRow(9) ?: sheet.createRow(9)
-                (rowFlight.getCell(6) ?: rowFlight.createCell(6)).setCellValue(flightNo)
+                val row4 = sheet.getRow(3) ?: sheet.createRow(3)
+                (row4.getCell(6) ?: row4.createCell(6)).setCellValue(awbNo.uppercase())
 
-                // 3. Mengisi Data ke Tabel Manifest & Tabel Stowing Checklist (Mulai Baris 14 / Index 13)
-                var rowIndex = 13
-                for ((index, item) in currentList.withIndex()) {
-                    val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+                // FLIGHT NO ke Kolom G9 dengan tanda titik dua (Baris 9 = Index 8, Kolom G = Index 6)
+                val row9 = sheet.getRow(8) ?: sheet.createRow(8)
+                (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.uppercase()}")
 
-                    // === TABEL MANIFEST CARGO (Kolom A - G) ===
+                // -------------------------------------------------------------
+                // 3. MASUKKAN DATA TERGABUNG KE MANIFEST CARGO (Kolom A - G)
+                // -------------------------------------------------------------
+                var manifestRowIndex = 13 // Mulai Baris 14 (Index 13)
+                for ((index, item) in groupedManifest.withIndex()) {
+                    val row = sheet.getRow(manifestRowIndex) ?: sheet.createRow(manifestRowIndex)
+
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble()) // A: No
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)              // B: PTI
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0) // C: Pcs/Qty
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0) // D: Weight
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // E: SubTotal
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty)            // C: Pcs/Qty
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight)            // D: Weight
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal)          // E: SubTotal
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)     // F: Description
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)        // G: Customers
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)        // G: Customer
 
-                    // === TABEL STOWING CHEKLIST (Kolom H - M) ===
-                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // H: No
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // I: NO PAG (I14)
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // J: Description
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // K: Net
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)       // M: Customer (Kolom M / Index 12)
-
-                    rowIndex++
+                    manifestRowIndex++
                 }
 
-                // 4. Simpan & Buka File Excel Output
+                // -------------------------------------------------------------
+                // 4. MASUKKAN DATA TERGABUNG KE STOWING CHEKLIST (Kolom H - M)
+                // -------------------------------------------------------------
+                var stowingRowIndex = 13 // Mulai Baris 14 (Index 13)
+                for ((index, item) in groupedStowing.withIndex()) {
+                    val row = sheet.getRow(stowingRowIndex) ?: sheet.createRow(stowingRowIndex)
+
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // H: No
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // I: NO PAG
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // J: Description
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)        // K: Net Weight
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)       // M: Customer
+
+                    stowingRowIndex++
+                }
+
+                // -------------------------------------------------------------
+                // 5. SIMPAN DAN BUKA FILE OUTPUT EXCEL
+                // -------------------------------------------------------------
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
