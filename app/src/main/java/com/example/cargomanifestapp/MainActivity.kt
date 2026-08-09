@@ -74,8 +74,8 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State Dialog Konfirmasi Hapus
-    var itemToDelete by remember { mutableStateOf<CargoModel?>(null) }
+    // State Dialog Konfirmasi Hapus (Diubah dari CargoModel ke CargoItem)
+    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     // Opsi Keyboard Teks Kapital
@@ -351,8 +351,8 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             )
                             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                         } else {
-                            // UPDATE DATA YANG ADA
-                            val updatedItem = CargoModel(
+                            // UPDATE DATA YANG ADA (Diubah dari CargoModel ke CargoItem)
+                            val updatedItem = CargoItem(
                                 id = selectedCargoId!!,
                                 awbNo = awbNo,
                                 flightNo = flightNo,
@@ -493,9 +493,4 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         ) {
                             Text("Hapus", fontSize = 12.sp)
                         }
-                    }
-                }
-            }
-        }
-    }
-}
+     
