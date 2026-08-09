@@ -5,6 +5,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -57,6 +58,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     // Focus Requester Khusus untuk Kolom PTI
     val ptiFocusRequester = remember { FocusRequester() }
 
+    // State Pelacak Item yang Sedang Di-edit (null = Tambah Baru)
+    var selectedCargoId by remember { mutableStateOf<Int?>(null) }
+
     // State Header Penerbangan
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
@@ -69,6 +73,10 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
+
+    // State Dialog Konfirmasi Hapus
+    var itemToDelete by remember { mutableStateOf<CargoModel?>(null) }
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     // Opsi Keyboard Teks Kapital
     val textNextKeyboardOptions = KeyboardOptions(
@@ -86,6 +94,73 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     val nextKeyboardActions = KeyboardActions(
         onNext = { focusManager.moveFocus(FocusDirection.Next) }
     )
+
+    // Helper Function Reset Form Input
+    fun clearInputForm() {
+        pti = ""
+        pcsQty = ""
+        weight = ""
+        subTotal = ""
+        description = ""
+        customer = ""
+        noPag = ""
+        selectedCargoId = null // Kembalikan mode ke Simpan Baru
+    }
+
+    // Dialog Konfirmasi Hapus Item Tunggal
+    itemToDelete?.let { item ->
+        AlertDialog(
+            onDismissRequest = { itemToDelete = null },
+            title = { Text("Konfirmasi Hapus") },
+            text = { Text("Apakah Anda yakin ingin menghapus data PTI ${item.pti}?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        // Jika item yang sedang di-edit dihapus, bersihkan form
+                        if (selectedCargoId == item.id) {
+                            clearInputForm()
+                        }
+                        viewModel.deleteCargo(item)
+                        itemToDelete = null
+                        Toast.makeText(context, "Data berhasil dihapus!", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Hapus", color = Color(0xFFB3261E))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { itemToDelete = null }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
+    // Dialog Konfirmasi Hapus Semua Data
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            title = { Text("Hapus Semua Data") },
+            text = { Text("Apakah Anda yakin ingin menghapus seluruh data pada tabel?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAll()
+                        clearInputForm()
+                        showDeleteAllDialog = false
+                        Toast.makeText(context, "Semua data berhasil dihapus!", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Hapus Semua", color = Color(0xFFB3261E))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -140,9 +215,10 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
             // Input Data Barang
             Text(
-                text = "Input Data Barang",
+                text = if (selectedCargoId == null) "Input Data Barang" else "Edit Data Barang",
                 fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
+                fontSize = 15.sp,
+                color = if (selectedCargoId == null) Color.Unspecified else Color(0xFF006A60)
             )
             Spacer(modifier = Modifier.height(4.dp))
 
@@ -223,11 +299,11 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         val uppercaseInput = inputCustomer.uppercase()
                         customer = uppercaseInput
 
-                        // LOGIKA OTOMATIS GANTI PTI:
-                        // Cari apakah nama Customer ini sudah ada di tabel data
-                        val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
-                        if (existingItem != null) {
-                            pti = existingItem.pti // Otomatis timpa kolom PTI dengan PTI dari Customer tersebut
+                        if (selectedCargoId == null) {
+                            val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
+                            if (existingItem != null) {
+                                pti = existingItem.pti
+                            }
                         }
                     },
                     label = { Text("Customer") },
@@ -256,34 +332,45 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
             Spacer(modifier = Modifier.height(10.dp))
 
-            // Tombol Simpan Ke Database
+            // TOMBOL DINAMIS: SIMPAN KE DATABASE / UPDATE DATA
             Button(
                 onClick = {
                     if (pti.isNotBlank() && pcsQty.isNotBlank()) {
-                        viewModel.addCargo(
-                            awbNo = awbNo,
-                            flightNo = flightNo,
-                            pti = pti,
-                            pcsQty = pcsQty,
-                            weight = weight,
-                            subTotal = subTotal,
-                            description = description,
-                            customer = customer,
-                            noPag = noPag
-                        )
-                        // Reset form input barang
-                        pti = ""
-                        pcsQty = ""
-                        weight = ""
-                        subTotal = ""
-                        description = ""
-                        customer = ""
-                        noPag = ""
+                        if (selectedCargoId == null) {
+                            // TAMBAH DATA BARU
+                            viewModel.addCargo(
+                                awbNo = awbNo,
+                                flightNo = flightNo,
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            // UPDATE DATA YANG ADA
+                            val updatedItem = CargoModel(
+                                id = selectedCargoId!!,
+                                awbNo = awbNo,
+                                flightNo = flightNo,
+                                pti = pti,
+                                pcsQty = pcsQty,
+                                weight = weight,
+                                subTotal = subTotal,
+                                description = description,
+                                customer = customer,
+                                noPag = noPag
+                            )
+                            viewModel.updateCargo(updatedItem)
+                            Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
+                        }
 
-                        // Kembalikan Fokus Kursor ke Kolom PTI
+                        // Reset form dan kembalikan fokus ke PTI
+                        clearInputForm()
                         ptiFocusRequester.requestFocus()
-
-                        Toast.makeText(context, "Data disimpan!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Mohon isi PTI dan Pcs/Qty!", Toast.LENGTH_SHORT).show()
                     }
@@ -291,10 +378,16 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(46.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (selectedCargoId == null) Color(0xFF6750A4) else Color(0xFF006A60)
+                ),
                 shape = RoundedCornerShape(24.dp)
             ) {
-                Text("Simpan Ke Database", color = Color.White, fontWeight = FontWeight.Bold)
+                Text(
+                    text = if (selectedCargoId == null) "Simpan Ke Database" else "Update Data",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -320,8 +413,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 }
                 Button(
                     onClick = {
-                        viewModel.clearAll()
-                        Toast.makeText(context, "Semua data dihapus!", Toast.LENGTH_SHORT).show()
+                        if (cargoList.isNotEmpty()) {
+                            showDeleteAllDialog = true
+                        }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E))
                 ) {
@@ -332,7 +426,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // ================= 3. DAFTAR KARTU DATA (SCROLLABLE) =================
+        // ================= 3. DAFTAR KARTU DATA (SCROLLABLE & CLICKABLE TO EDIT) =================
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
@@ -340,9 +434,27 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(cargoList) { item ->
+                val isSelected = selectedCargoId == item.id
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            // SAAT KARTU DIKLIK: Isi otomatis seluruh form & tandai ID item
+                            selectedCargoId = item.id
+                            pti = item.pti
+                            pcsQty = item.pcsQty
+                            weight = item.weight
+                            subTotal = item.subTotal
+                            description = item.description
+                            customer = item.customer
+                            noPag = item.noPag
+
+                            // Pindahkan fokus kursor ke kolom PTI
+                            ptiFocusRequester.requestFocus()
+                        },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) Color(0xFFE8DEF8) else Color(0xFFF3EDF7)
+                    ),
                     shape = RoundedCornerShape(12.dp)
                 ) {
                     Row(
@@ -373,7 +485,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         }
 
                         Button(
-                            onClick = { viewModel.deleteCargo(item) },
+                            onClick = {
+                                itemToDelete = item
+                            },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
                             shape = RoundedCornerShape(8.dp)
                         ) {
