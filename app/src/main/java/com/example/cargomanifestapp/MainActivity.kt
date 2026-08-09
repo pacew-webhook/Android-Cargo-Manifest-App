@@ -8,11 +8,9 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +24,7 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -71,11 +70,19 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // Opsi Keyboard Kapital & Enter Pindah Kolom
-    val nextKeyboardOptions = KeyboardOptions(
+    // Opsi Keyboard Teks Kapital
+    val textNextKeyboardOptions = KeyboardOptions(
         capitalization = KeyboardCapitalization.Characters,
+        keyboardType = KeyboardType.Text,
         imeAction = ImeAction.Next
     )
+
+    // Opsi Keyboard Angka
+    val numberNextKeyboardOptions = KeyboardOptions(
+        keyboardType = KeyboardType.Number,
+        imeAction = ImeAction.Next
+    )
+
     val nextKeyboardActions = KeyboardActions(
         onNext = { focusManager.moveFocus(FocusDirection.Next) }
     )
@@ -91,23 +98,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             fontSize = 22.sp,
             fontWeight = FontWeight.Bold,
             color = Color(0xFF6200EE),
-            modifier = Modifier.padding(bottom = 12.dp)
+            modifier = Modifier.padding(bottom = 8.dp)
         )
 
-        // ================= BAGIAN FORM INPUT (SCROLLABLE IF NEEDED) =================
+        // ================= 1. BAGIAN INPUT (DIAM / TIDAK DI-SCROLL) =================
         Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .weight(1f, fill = false)
+            modifier = Modifier.fillMaxWidth()
         ) {
             // Header Penerbangan
             Text(
                 text = "Header Penerbangan",
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 15.sp
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -116,7 +120,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = awbNo,
                     onValueChange = { awbNo = it.uppercase() },
                     label = { Text("AWB No") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -125,24 +129,24 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = flightNo,
                     onValueChange = { flightNo = it.uppercase() },
                     label = { Text("Flight No") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             // Input Data Barang
             Text(
                 text = "Input Data Barang",
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 15.sp
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Baris 1: PTI & Pcs/Qty
+            // Baris 1: PTI (Teks) & Pcs/Qty (Angka)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -151,64 +155,64 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = pti,
                     onValueChange = { pti = it.uppercase() },
                     label = { Text("PTI") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier
                         .weight(1f)
-                        .focusRequester(ptiFocusRequester) // Pasang FocusRequester di PTI
+                        .focusRequester(ptiFocusRequester)
                 )
                 OutlinedTextField(
                     value = pcsQty,
-                    onValueChange = { pcsQty = it.uppercase() },
+                    onValueChange = { pcsQty = it },
                     label = { Text("Pcs / Qty") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 2: Weight & Sub Total
+            // Baris 2: Weight (Angka) & Sub Total (Angka)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = weight,
-                    onValueChange = { weight = it.uppercase() },
+                    onValueChange = { weight = it },
                     label = { Text("Pcs/Qty Wt") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
                 OutlinedTextField(
                     value = subTotal,
-                    onValueChange = { subTotal = it.uppercase() },
+                    onValueChange = { subTotal = it },
                     label = { Text("Sub Total (Kg)") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = numberNextKeyboardOptions, // Keyboard Angka
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 3: Description
+            // Baris 3: Description (Teks)
             OutlinedTextField(
                 value = description,
                 onValueChange = { description = it.uppercase() },
                 label = { Text("Description") },
-                keyboardOptions = nextKeyboardOptions,
+                keyboardOptions = textNextKeyboardOptions,
                 keyboardActions = nextKeyboardActions,
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
 
-            // Baris 4: Customer & NO PAG
+            // Baris 4: Customer (Teks) & NO PAG (Teks)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -217,7 +221,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     value = customer,
                     onValueChange = { customer = it.uppercase() },
                     label = { Text("Customer") },
-                    keyboardOptions = nextKeyboardOptions,
+                    keyboardOptions = textNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
                     singleLine = true,
                     modifier = Modifier.weight(1f)
@@ -228,11 +232,11 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     label = { Text("NO PAG") },
                     keyboardOptions = KeyboardOptions(
                         capitalization = KeyboardCapitalization.Characters,
+                        keyboardType = KeyboardType.Text,
                         imeAction = ImeAction.Done
                     ),
                     keyboardActions = KeyboardActions(
                         onDone = {
-                            // Pindahkan fokus kembali ke PTI saat menekan Done pada keyboard
                             ptiFocusRequester.requestFocus()
                         }
                     ),
@@ -240,7 +244,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     modifier = Modifier.weight(1f)
                 )
             }
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
             // Tombol Simpan Ke Database
             Button(
@@ -276,7 +280,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
+                    .height(46.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
                 shape = RoundedCornerShape(24.dp)
             ) {
@@ -284,9 +288,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // ================= TABEL DATA HEADER =================
+        // ================= 2. TABEL DATA HEADER =================
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -295,14 +299,14 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             Text(
                 text = "Tabel Data (${cargoList.size})",
                 fontWeight = FontWeight.Bold,
-                fontSize = 16.sp
+                fontSize = 15.sp
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { viewModel.exportToExcel(context, awbNo, flightNo) },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
                 ) {
-                    Text("Export Excel")
+                    Text("Export Excel", fontSize = 12.sp)
                 }
                 Button(
                     onClick = {
@@ -311,18 +315,18 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E))
                 ) {
-                    Text("Hapus Semua")
+                    Text("Hapus Semua", fontSize = 12.sp)
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
-        // ================= DAFTAR TABEL DATA (INDEPENDENTLY SCROLLABLE) =================
+        // ================= 3. DAFTAR KARTU DATA (KHUSUS INI YANG BISA DI-SCROLL) =================
         LazyColumn(
             modifier = Modifier
                 .fillMaxWidth()
-                .weight(1f), // Mengisi seluruh sisa ruang layar dan bisa di-scroll
+                .weight(1f), // Mengisi sisa area paling bawah dan hanya bagian ini yang scroll
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(cargoList) { item ->
