@@ -1,4 +1,4 @@
-package com.example.cargomanifestapp
+package com.example.cargomanifest.data // Sesuaikan package dengan proyek Anda
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
@@ -15,5 +15,5 @@ data class CargoItem(
     val subTotal: String,
     val description: String,
     val customer: String,
-    val noPag: String = "" // <--- DITAMBAHKAN FIELD NO PAG
+    val noPag: String = ""
 )
