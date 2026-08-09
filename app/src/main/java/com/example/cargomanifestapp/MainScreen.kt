@@ -2,7 +2,6 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -21,7 +20,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
@@ -355,7 +353,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel sesuai template dan langsung membuka file otomatis
+// Fungsi Export Excel dengan metode createCell yang stabil
 fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -367,34 +365,34 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
         val workbook = XSSFWorkbook(inputStream)
         inputStream.close()
 
-        val sheet = workbook.getSheetAt(0)
+        // Mengambil sheet "Manifest" secara spesifik, fallback ke sheet pertama jika tidak ada
+        val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-        sheet.getRow(0)?.getCell(10)?.setCellValue(awbNo)
-        sheet.getRow(1)?.getCell(10)?.setCellValue(flightNo)
+        // Header Penerbangan
+        val rowHeader0 = sheet.getRow(0) ?: sheet.createRow(0)
+        rowHeader0.createCell(10).setCellValue(awbNo)
 
-        var rowIndex = 4
+        val rowHeader1 = sheet.getRow(1) ?: sheet.createRow(1)
+        rowHeader1.createCell(10).setCellValue(flightNo)
+
+        // Mapping Data Kargo (Mulai dari baris ke-5 / indeks 4)
+        var rowIndex = 4 
         list.forEachIndexed { index, item ->
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-            row.getCell(0, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-            row.getCell(1, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
-            
-            val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
-            row.getCell(2, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(pcsVal)
-            
-            val wtVal = item.weight.toDoubleOrNull() ?: 0.0
-            row.getCell(3, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(wtVal)
-            
-            val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
-            row.getCell(4, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(subVal)
-
-            row.getCell(5, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-            row.getCell(6, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
-            row.getCell(8, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.noPag)
+            row.createCell(0).setCellValue((index + 1).toDouble())
+            row.createCell(1).setCellValue(item.pti)
+            row.createCell(2).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+            row.createCell(3).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+            row.createCell(4).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+            row.createCell(5).setCellValue(item.description)
+            row.createCell(6).setCellValue(item.customer)
+            row.createCell(8).setCellValue(item.noPag)
 
             rowIndex++
         }
 
+        // Menyimpan file ke cache internal aplikasi
         val fileName = "MANIFEST_CARGO_${System.currentTimeMillis()}.xlsx"
         val file = File(context.cacheDir, fileName)
         val fos = FileOutputStream(file)
@@ -404,6 +402,7 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
 
         Toast.makeText(context, "Berhasil Export & Membuka File!", Toast.LENGTH_SHORT).show()
 
+        // Membuka file menggunakan FileProvider agar aman dan tidak crash
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
