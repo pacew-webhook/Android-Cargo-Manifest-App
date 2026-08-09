@@ -67,7 +67,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
     var subTotal by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
-    var noPag by remember { mutableStateOf("") } // <-- State Baru untuk No PAG
+    var noPag by remember { mutableStateOf("") }
 
     // State Edit Mode
     var editingItem by remember { mutableStateOf<CargoItem?>(null) }
@@ -76,7 +76,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text("Manifest Cargo App", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.smallTopAppBarColors(containerColor = Color(0xFFE8DEF8))
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFFE8DEF8))
             )
         }
     ) { padding ->
@@ -199,7 +199,6 @@ fun CargoScreen(viewModel: CargoViewModel) {
                         onClick = {
                             if (pti.isNotBlank() && pcsQty.isNotBlank()) {
                                 if (editingItem == null) {
-                                    // Pemanggilan addCargo() versi terbaru
                                     viewModel.addCargo(
                                         awbNo = awbNo,
                                         flightNo = flightNo,
@@ -209,7 +208,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                         subTotal = subTotal,
                                         description = description,
                                         customer = customer,
-                                        noPag = noPag // <-- Mengirim No PAG
+                                        noPag = noPag
                                     )
                                     Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                                 } else {
@@ -224,7 +223,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                             subTotal = subTotal,
                                             description = description.uppercase(),
                                             customer = customer.uppercase(),
-                                            noPag = noPag.uppercase() // <-- Update No PAG
+                                            noPag = noPag.uppercase()
                                         )
                                     )
                                     editingItem = null
@@ -237,7 +236,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                 subTotal = ""
                                 description = ""
                                 customer = ""
-                                noPag = "" // <-- Reset Field No PAG
+                                noPag = ""
 
                             } else {
                                 Toast.makeText(context, "PTI dan Pcs/Qty wajib diisi!", Toast.LENGTH_SHORT).show()
@@ -254,7 +253,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                 // SECTION 3: TABEL DAFTAR DATA & ACTION BUTTONS
                 item {
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -323,7 +322,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
                                     subTotal = item.subTotal
                                     description = item.description
                                     customer = item.customer
-                                    noPag = item.noPag // <-- Isi No PAG saat Klik Edit
+                                    noPag = item.noPag
                                 },
                                 contentPadding = PaddingValues(0.dp)
                             ) {
