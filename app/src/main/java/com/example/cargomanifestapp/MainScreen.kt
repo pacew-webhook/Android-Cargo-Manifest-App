@@ -353,7 +353,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel dengan metode createCell yang stabil
+// Fungsi Export Excel dengan posisi baris & kolom yang disesuaikan template asli
 fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -365,29 +365,29 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
         val workbook = XSSFWorkbook(inputStream)
         inputStream.close()
 
-        // Mengambil sheet "Manifest" secara spesifik, fallback ke sheet pertama jika tidak ada
+        // Mengambil sheet "Manifest" secara spesifik, fallback ke sheet pertama
         val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-        // Header Penerbangan
-        val rowHeader0 = sheet.getRow(0) ?: sheet.createRow(0)
-        rowHeader0.createCell(10).setCellValue(awbNo)
+        // Header Penerbangan (Disesuaikan ke baris ke-7 dan ke-8 / indeks 7 & 8)
+        val rowHeader7 = sheet.getRow(7) ?: sheet.createRow(7)
+        rowHeader7.createCell(5).setCellValue(awbNo)
 
-        val rowHeader1 = sheet.getRow(1) ?: sheet.createRow(1)
-        rowHeader1.createCell(10).setCellValue(flightNo)
+        val rowHeader8 = sheet.getRow(8) ?: sheet.createRow(8)
+        rowHeader8.createCell(5).setCellValue(flightNo)
 
-        // Mapping Data Kargo (Mulai dari baris ke-5 / indeks 4)
-        var rowIndex = 4 
+        // Mapping Data Kargo (Dimulai dari baris ke-14 / indeks 13 sesuai gambar template)
+        var rowIndex = 13 
         list.forEachIndexed { index, item ->
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-            row.createCell(0).setCellValue((index + 1).toDouble())
-            row.createCell(1).setCellValue(item.pti)
-            row.createCell(2).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
-            row.createCell(3).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
-            row.createCell(4).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
-            row.createCell(5).setCellValue(item.description)
-            row.createCell(6).setCellValue(item.customer)
-            row.createCell(8).setCellValue(item.noPag)
+            row.createCell(0).setCellValue((index + 1).toDouble())                      // No (Kolom A)
+            row.createCell(1).setCellValue(item.pti)                                   // PTI (Kolom B)
+            row.createCell(2).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)        // Pcs/Cly (Kolom C)
+            row.createCell(3).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)        // Weight Pcs/Cly (Kolom D)
+            row.createCell(4).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)      // Weight Sub Total (Kolom E)
+            row.createCell(5).setCellValue(item.description)                           // Description (Kolom F)
+            row.createCell(9).setCellValue(item.customer)                              // Customers (Kolom J)
+            row.createCell(11).setCellValue(item.noPag)                                // No PAG
 
             rowIndex++
         }
@@ -402,7 +402,7 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
 
         Toast.makeText(context, "Berhasil Export & Membuka File!", Toast.LENGTH_SHORT).show()
 
-        // Membuka file menggunakan FileProvider agar aman dan tidak crash
+        // Membuka file menggunakan FileProvider
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
