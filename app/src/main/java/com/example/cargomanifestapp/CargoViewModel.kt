@@ -13,7 +13,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
 
@@ -41,15 +43,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             val item = CargoItem(
-                awbNo = awbNo,
-                flightNo = flightNo,
-                pti = pti,
+                awbNo = awbNo.uppercase(),
+                flightNo = flightNo.uppercase(),
+                pti = pti.uppercase(),
                 pcsQty = pcsQty,
                 weight = weight,
                 subTotal = subTotal,
-                description = description,
-                customer = customer,
-                noPag = noPag
+                description = description.uppercase(),
+                customer = customer.uppercase(),
+                noPag = noPag.uppercase()
             )
             cargoDao.insert(item)
         }
@@ -85,13 +87,24 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                val inputStream = context.assets.open("manifest_template.xlsx")
-                val workbook = WorkbookFactory.create(inputStream)
-                inputStream.close()
+                // Coba buka template, jika tidak ada buat workbook baru secara otomatis
+                val workbook: Workbook = try {
+                    val inputStream = context.assets.open("manifest_template.xlsx")
+                    WorkbookFactory.create(inputStream).also { inputStream.close() }
+                } catch (e: Exception) {
+                    XSSFWorkbook().apply {
+                        val sheet = createSheet("Manifest")
+                        val headerRow = sheet.createRow(0)
+                        val headers = arrayOf("NO", "PTI", "PCS/QTY", "WEIGHT", "SUBTOTAL", "DESCRIPTION", "CUSTOMER")
+                        headers.forEachIndexed { i, title ->
+                            headerRow.createCell(i).setCellValue(title)
+                        }
+                    }
+                }
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+                var rowIndex = if (sheet.lastRowNum >= 13) 14 else sheet.lastRowNum + 1
 
-                var rowIndex = 14
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
