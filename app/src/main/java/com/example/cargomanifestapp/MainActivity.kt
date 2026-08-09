@@ -492,4 +492,4 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     }
         
     }
-}
+
