@@ -59,7 +59,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
     val ptiFocusRequester = remember { FocusRequester() }
 
-    // File Picker Launcher untuk Import File Excel
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -394,7 +393,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // ================= HEADER TABEL & AKSI TOMBOL =================
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
@@ -406,7 +404,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 fontSize = 14.sp
             )
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                // TOMBOL IMPORT EXCEL BARU
                 Button(
                     onClick = {
                         filePickerLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -497,12 +494,12 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 itemToDelete = item
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                           shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(8.dp)
                         ) {
                             Text("Hapus", fontSize = 12.sp)
                         }
                     }
-                }
+                    }
             }
         }
     }
