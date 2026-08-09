@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "cargo_table")
-data class CargoModel(
+data class CargoItem(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val awbNo: String,
