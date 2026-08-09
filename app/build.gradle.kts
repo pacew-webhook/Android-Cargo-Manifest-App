@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
-id("com.google.devtools.ksp")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -42,7 +42,6 @@ android {
         compose = true
     }
     composeOptions {
-        // Ditingkatkan dari 1.5.1 ke 1.5.8 agar cocok dengan Kotlin 1.9.22
         kotlinCompilerExtensionVersion = "1.5.8"
     }
     packaging {
@@ -60,8 +59,6 @@ android {
 }
 
 dependencies {
-
-ksp("androidx.room:room-compiler:$roomVersion")
     // --- Desugaring untuk Apache POI ---
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
@@ -81,11 +78,11 @@ ksp("androidx.room:room-compiler:$roomVersion")
     // --- ViewModel Compose ---
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
-    // --- Room Database ---
+    // --- Room Database (Menggunakan KSP) ---
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion")
 
     // --- APACHE POI (Export Excel .xlsx) ---
     implementation("org.apache.poi:poi:5.2.3")
