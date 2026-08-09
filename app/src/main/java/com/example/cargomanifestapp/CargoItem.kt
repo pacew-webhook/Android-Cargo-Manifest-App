@@ -4,7 +4,7 @@ import androidx.room.Entity
 import androidx.room.PrimaryKey
 
 @Entity(tableName = "cargo_table")
-data class CargoItem(
+data class CargoModel(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
     val awbNo: String,
@@ -15,5 +15,5 @@ data class CargoItem(
     val subTotal: String,
     val description: String,
     val customer: String,
-    val noPag: String = ""
+    val noPag: String
 )
