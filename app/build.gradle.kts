@@ -45,7 +45,15 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            // Mencegah error duplikasi resource dari library POI/log4j
             excludes += "META-INF/services/javax.print.PrintServiceLookup"
+            excludes += "META-INF/DEPENDENCIES"
+            excludes += "META-INF/LICENSE"
+            excludes += "META-INF/LICENSE.txt"
+            excludes += "META-INF/license.txt"
+            excludes += "META-INF/NOTICE"
+            excludes += "META-INF/NOTICE.txt"
+            excludes += "META-INF/notice.txt"
         }
     }
 }
@@ -61,9 +69,12 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3:1.1.1")
 
-    // Apache POI diletakkan secara benar di dalam blok dependencies
+    // Apache POI
     implementation("org.apache.poi:poi:5.2.3")
-    implementation("org.apache.poi:poi-ooxml:5.2.3")
+    // Eksekusi Log4j dari POI OOXML agar terhindar dari MethodHandle error di Android API < 26
+    implementation("org.apache.poi:poi-ooxml:5.2.3") {
+        exclude(group = "org.apache.logging.log4j", module = "log4j-api")
+    }
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
