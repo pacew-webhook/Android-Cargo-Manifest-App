@@ -256,7 +256,7 @@ fun CargoScreen(viewModel: CargoViewModel) {
 
                 // SECTION 3: TABEL DAFTAR DATA & ACTION BUTTONS
                 item {
-                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
