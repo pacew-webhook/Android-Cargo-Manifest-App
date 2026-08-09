@@ -15,7 +15,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
 
@@ -87,39 +86,37 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                var isUsingTemplate = false
+                // 1. Cek apakah file template terdeteksi di dalam APK
+                val assetList = context.assets.list("") ?: arrayOf()
+                val isTemplateExist = assetList.contains("template_manifest.xlsx")
 
-                // Disesuaikan dengan nama berkas di GitHub: template_manifest.xlsx
-                val workbook: Workbook = try {
-                    val inputStream = context.assets.open("template_manifest.xlsx")
-                    isUsingTemplate = true
-                    WorkbookFactory.create(inputStream).also { inputStream.close() }
-                } catch (e: Exception) {
-                    XSSFWorkbook().apply {
-                        val sheet = createSheet("Manifest")
-                        val headerRow = sheet.createRow(0)
-                        val headers = arrayOf("NO", "PTI", "PCS/QTY", "WEIGHT", "SUBTOTAL", "DESCRIPTION", "CUSTOMER")
-                        headers.forEachIndexed { i, title ->
-                            headerRow.createCell(i).setCellValue(title)
-                        }
+                if (!isTemplateExist) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            context,
+                            "File 'template_manifest.xlsx' tidak ditemukan dalam APK!\nIsi assets: ${assetList.joinToString()}",
+                            Toast.LENGTH_LONG
+                        ).show()
                     }
+                    return@launch
                 }
+
+                // 2. Baca template Excel secara langsung
+                val inputStream = context.assets.open("template_manifest.xlsx")
+                val workbook: Workbook = WorkbookFactory.create(inputStream)
+                inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                var rowIndex = if (isUsingTemplate) {
-                    // Pengisian Header AWB No dan Flight No jika sel ada di template
-                    val rowAwb = sheet.getRow(4) ?: sheet.createRow(4)
-                    (rowAwb.getCell(2) ?: rowAwb.createCell(2)).setCellValue(awbNo)
+                // 3. Isi Header AWB No dan Flight No (Ubah indeks baris/kolom sesuai sel template)
+                val rowAwb = sheet.getRow(4) ?: sheet.createRow(4)
+                (rowAwb.getCell(2) ?: rowAwb.createCell(2)).setCellValue(awbNo)
 
-                    val rowFlight = sheet.getRow(5) ?: sheet.createRow(5)
-                    (rowFlight.getCell(2) ?: rowFlight.createCell(2)).setCellValue(flightNo)
+                val rowFlight = sheet.getRow(5) ?: sheet.createRow(5)
+                (rowFlight.getCell(2) ?: rowFlight.createCell(2)).setCellValue(flightNo)
 
-                    13 // Baris ke-14 pada Excel (index 13)
-                } else {
-                    1
-                }
-
+                // 4. Masukkan data barang mulai dari baris ke-14 Excel (index 13)
+                var rowIndex = 13
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
@@ -136,6 +133,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     rowIndex++
                 }
 
+                // Save & Share File
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -161,7 +159,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Gagal export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        context,
+                        "Error Template: ${e.javaClass.simpleName} - ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
