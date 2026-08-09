@@ -32,8 +32,9 @@ jobs:
     - name: Make gradlew executable
       run: chmod +x gradlew
 
-    - name: Build APK with Gradle Wrapper
-      run: ./gradlew assembleDebug --stacktrace
+ - name: Build APK with Gradle Wrapper
+        run: ./gradlew assembleDebug --continue --stacktrace
+        
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
