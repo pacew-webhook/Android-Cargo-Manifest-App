@@ -64,7 +64,7 @@ dependencies {
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    kapt("androidx.room:room-compiler:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion") // Diubah dari kapt ke ksp
 
     // Activity KTX & Lifecycle
     implementation("androidx.activity:activity-ktx:1.8.2")
