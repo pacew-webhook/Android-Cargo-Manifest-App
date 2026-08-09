@@ -19,16 +19,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val cargoDao: CargoDao = CargoDatabase.getDatabase(application).cargoDao()
 
-    // Mengambil data kargo secara real-time dari Room Database
-    val cargoList: StateFlow<List<CargoEntity>> = cargoDao.getAllCargo()
+    // Menggunakan CargoItem (sesuai entity awal Anda)
+    val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-    // Fungsi untuk menambah data kargo baru
-    fun insert(
+    fun addCargo(
         awbNo: String,
         flightNo: String,
         pti: String,
@@ -40,7 +39,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         noPag: String
     ) {
         viewModelScope.launch {
-            val item = CargoEntity(
+            val item = CargoItem(
                 awbNo = awbNo,
                 flightNo = flightNo,
                 pti = pti,
@@ -55,21 +54,25 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Fungsi untuk menghapus satu item kargo
-    fun delete(cargo: CargoEntity) {
+    fun updateCargo(item: CargoItem) {
         viewModelScope.launch {
-            cargoDao.delete(cargo)
+            cargoDao.update(item)
         }
     }
 
-    // Fungsi untuk menghapus seluruh data kargo (sesuai tombol "Hapus Semua" di UI)
+    fun deleteCargo(item: CargoItem) {
+        viewModelScope.launch {
+            cargoDao.delete(item)
+        }
+    }
+
     fun clearAll() {
         viewModelScope.launch {
             cargoDao.deleteAll()
         }
     }
 
-    // Fungsi untuk Export data ke Excel menggunakan template dari folder assets
+    // Fungsi Export Excel ke sheet "Manifest" menggunakan template assets
     fun exportToExcel(context: Context) {
         viewModelScope.launch {
             try {
@@ -80,43 +83,37 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // Membuka template Excel dari folder assets (Pastikan file manifest_template.xlsx sudah ada di assets)
+                // Membuka template dari folder assets
                 val inputStream = context.assets.open("manifest_template.xlsx")
                 val workbook = WorkbookFactory.create(inputStream)
-                val sheet = workbook.getSheetAt(0) // Mengambil sheet pertama
+                
+                // Mengambil sheet bernama "Manifest" secara spesifik
+                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Melakukan looping untuk mengisi baris tabel mulai dari baris indeks ke-14 (baris ke-15 di Excel)
-                // Sesuaikan indeks ini dengan posisi tabel kosong pada template Anda
+                // Baris awal data kargo (indeks 14 = baris ke-15 di Excel)
                 var rowIndex = 14 
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
                     
-                    // Kolom No (Indeks 0)
                     row.getCell(0, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-                    // Kolom PTI (Indeks 1)
                     row.getCell(1, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
-                    // Kolom Pcs/Qty (Indeks 2)
                     row.getCell(2, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
-                    // Kolom Sub Total / Weight (Indeks 3)
                     row.getCell(3, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
-                    // Kolom Sub Total Kg (Indeks 4)
                     row.getCell(4, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
-                    // Kolom Description (Indeks 5)
                     row.getCell(5, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-                    // Kolom Customer / PAG (Indeks 6)
                     row.getCell(6, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
 
                     rowIndex++
                 }
 
-                // Menyimpan file hasil modifikasi ke direktori cache aplikasi
+                // Menyimpan file hasil export ke cache
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
-                // Membuka/Membagikan file Excel menggunakan FileProvider
+                // Membuka file Excel
                 val uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
