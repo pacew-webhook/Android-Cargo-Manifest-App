@@ -9,13 +9,19 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -42,6 +48,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CargoAppScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val cargoList by viewModel.cargoList.collectAsState()
 
     // State Header Penerbangan
@@ -57,12 +64,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
+    // Opsi Keyboard Kapital & Enter Pindah Kolom
+    val nextKeyboardOptions = KeyboardOptions(
+        capitalization = KeyboardCapitalization.Characters,
+        imeAction = ImeAction.Next
+    )
+    val nextKeyboardActions = KeyboardActions(
+        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Title App Bar
         Text(
             text = "Manifest Cargo App",
             fontSize = 22.sp,
@@ -89,14 +104,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = awbNo,
-                        onValueChange = { awbNo = it },
+                        onValueChange = { awbNo = it.uppercase() },
                         label = { Text("AWB No") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = flightNo,
-                        onValueChange = { flightNo = it },
+                        onValueChange = { flightNo = it.uppercase() },
                         label = { Text("Flight No") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -119,14 +140,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = pti,
-                        onValueChange = { pti = it },
+                        onValueChange = { pti = it.uppercase() },
                         label = { Text("PTI") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = pcsQty,
-                        onValueChange = { pcsQty = it },
+                        onValueChange = { pcsQty = it.uppercase() },
                         label = { Text("Pcs / Qty") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -139,14 +166,20 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = weight,
-                        onValueChange = { weight = it },
+                        onValueChange = { weight = it.uppercase() },
                         label = { Text("Pcs/Qty Wt") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = subTotal,
-                        onValueChange = { subTotal = it },
+                        onValueChange = { subTotal = it.uppercase() },
                         label = { Text("Sub Total (Kg)") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -155,8 +188,11 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 // Baris 3: Description
                 OutlinedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { description = it.uppercase() },
                     label = { Text("Description") },
+                    keyboardOptions = nextKeyboardOptions,
+                    keyboardActions = nextKeyboardActions,
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -168,14 +204,25 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 ) {
                     OutlinedTextField(
                         value = customer,
-                        onValueChange = { customer = it },
+                        onValueChange = { customer = it.uppercase() },
                         label = { Text("Customer") },
+                        keyboardOptions = nextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = noPag,
-                        onValueChange = { noPag = it },
+                        onValueChange = { noPag = it.uppercase() },
                         label = { Text("NO PAG") },
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { focusManager.clearFocus() }
+                        ),
+                        singleLine = true,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -204,6 +251,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             description = ""
                             customer = ""
                             noPag = ""
+                            focusManager.clearFocus()
                             Toast.makeText(context, "Data disimpan!", Toast.LENGTH_SHORT).show()
                         } else {
                             Toast.makeText(context, "Mohon isi PTI dan Pcs/Qty!", Toast.LENGTH_SHORT).show()
@@ -235,9 +283,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                     )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = {
-                                viewModel.exportToExcel(context, awbNo, flightNo)
-                            },
+                            onClick = { viewModel.exportToExcel(context, awbNo, flightNo) },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
                         ) {
                             Text("Export Excel")
@@ -282,7 +328,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 color = Color.Gray
                             )
 
-                            // Menampilkan Desc, Customer, dan NO PAG jika terisi
                             val pagInfo = if (item.noPag.isNotBlank()) " | PAG: ${item.noPag}" else ""
                             Text(
                                 text = "Desc: ${item.description} | Cust: ${item.customer}$pagInfo",
