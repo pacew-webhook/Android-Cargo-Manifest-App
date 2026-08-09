@@ -5,7 +5,7 @@ import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
 
-@Database(entities = [CargoModel::class], version = 1, exportSchema = false) // <--- Ubah dari CargoItem ke CargoModel
+@Database(entities = [CargoItem::class], version = 1, exportSchema = false)
 abstract class CargoDatabase : RoomDatabase() {
     abstract fun cargoDao(): CargoDao
 
