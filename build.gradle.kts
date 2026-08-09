@@ -1,5 +1,7 @@
-plugins {
-    alias(libs.plugins.android.application) apply false
-    alias(libs.plugins.kotlin.android) apply false
-    alias(libs.plugins.ksp) apply false
+dependencies {
+    // ... library lainnya ...
+
+    // Library Apache POI untuk baca & tulis Excel (.xlsx)
+    implementation("org.apache.poi:poi:5.2.3")
+    implementation("org.apache.poi:poi-ooxml:5.2.3")
 }
