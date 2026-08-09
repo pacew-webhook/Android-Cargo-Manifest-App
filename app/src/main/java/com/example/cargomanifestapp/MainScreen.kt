@@ -23,9 +23,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.InputStream
 import java.io.OutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -58,7 +56,7 @@ fun MainScreen(viewModel: CargoViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cargo Manifest App") },
+                title = { Text("Manifest Cargo App") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color(0xFFE6DEEC),
                     titleContentColor = Color.Black
@@ -100,7 +98,7 @@ fun MainScreen(viewModel: CargoViewModel) {
             }
 
             Text(
-                text = if (isEditing) "Edit Data Kargo" else "Input Data Barang",
+                text = "Input Data Barang",
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp
             )
@@ -124,7 +122,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                 OutlinedTextField(
                     value = pcsQtyWt,
                     onValueChange = { pcsQtyWt = it },
-                    label = { Text("Weight (Kg)") },
+                    label = { Text("Pcs/Qty Wt") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.weight(1f)
                 )
@@ -198,7 +196,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                             noPag = noPag
                         )
                         viewModel.insertCargo(newItem)
-                        Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Simpan ke Database Berhasil", Toast.LENGTH_SHORT).show()
                     }
 
                     pti = ""
@@ -212,7 +210,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4))
             ) {
-                Text(if (isEditing) "Update Data" else "Simpan Ke Database", color = Color.White)
+                Text(if (isEditing) "Update Data Kargo" else "Simpan Ke Database", color = Color.White)
             }
 
             Spacer(modifier = Modifier.height(4.dp))
@@ -228,7 +226,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            exportToExcelUsingTemplate(context, cargoList, awbNo, flightNo)
+                            exportToExcel(context, cargoList, awbNo, flightNo)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
@@ -359,60 +357,47 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Export Excel menggunakan template dari Assets dengan pemetaan sel yang akurat
-fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
+// Fungsi Export Excel versi stabil awal yang berfungsi normal
+fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
         return
     }
 
     try {
-        val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
-        val workbook = XSSFWorkbook(inputStream)
-        inputStream.close()
+        val workbook = XSSFWorkbook()
+        val sheet = workbook.createSheet("Cargo Manifest")
 
-        val sheet = workbook.getSheetAt(0)
+        var rowIndex = 0
+        sheet.createRow(rowIndex++).createCell(0).setCellValue("AWB No: $awbNo")
+        sheet.createRow(rowIndex++).createCell(0).setCellValue("Flight No: $flightNo")
+        rowIndex++ // Baris kosong
 
-        // 1. Mengisi Header AWB No dan Flight No pada posisi sel yang tepat sesuai template
-        sheet.getRow(0)?.getCell(10)?.setCellValue(awbNo)   // Sel AWB No
-        sheet.getRow(1)?.getCell(10)?.setCellValue(flightNo) // Sel Flight No
+        // Header Kolom Tabel
+        val headerRow = sheet.createRow(rowIndex++)
+        headerRow.createCell(0).setCellValue("No")
+        headerRow.createCell(1).setCellValue("PTI")
+        headerRow.createCell(2).setCellValue("Pcs/Qty")
+        headerRow.createCell(3).setCellValue("Weight")
+        headerRow.createCell(4).setCellValue("Sub Total")
+        headerRow.createCell(5).setCellValue("Description")
+        headerRow.createCell(6).setCellValue("Customer")
+        headerRow.createCell(7).setCellValue("No PAG")
 
-        // 2. Memasukkan Data Item Kargo mulai dari baris indeks ke-4 (Baris ke-5 Excel)
-        var rowIndex = 4
+        // Masukkan Data List Kargo
         list.forEachIndexed { index, item ->
-            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-
-            // Kolom No. Urut (Kolom A / Index 0)
-            row.getCell(0, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-            
-            // Kolom PTI (Kolom B / Index 1)
-            row.getCell(1, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
-            
-            // Kolom Pcs / Qty (Kolom C / Index 2)
-            val pcsVal = item.pcsQty.toDoubleOrNull() ?: 0.0
-            row.getCell(2, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(pcsVal)
-            
-            // Kolom Weight / Pcs/Qty Wt (Kolom D / Index 3)
-            val wtVal = item.weight.toDoubleOrNull() ?: 0.0
-            row.getCell(3, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(wtVal)
-            
-            // Kolom Sub Total (Kolom E / Index 4)
-            val subVal = item.subTotal.toDoubleOrNull() ?: 0.0
-            row.getCell(4, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(subVal)
-
-            // Kolom Description (Kolom F / Index 5)
-            row.getCell(5, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-            
-            // Kolom Customer (Kolom G / Index 6)
-            row.getCell(6, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
-
-            // Kolom No PAG untuk tabel bagian kanan (Kolom I / Index 8)
-            row.getCell(8, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.noPag)
-
-            rowIndex++
+            val row = sheet.createRow(rowIndex++)
+            row.createCell(0).setCellValue((index + 1).toDouble())
+            row.createCell(1).setCellValue(item.pti)
+            row.createCell(2).setCellValue(item.pcsQty)
+            row.createCell(3).setCellValue(item.weight)
+            row.createCell(4).setCellValue(item.subTotal)
+            row.createCell(5).setCellValue(item.description)
+            row.createCell(6).setCellValue(item.customer)
+            row.createCell(7).setCellValue(item.noPag)
         }
 
-        val fileName = "MANIFEST_CARGO_${System.currentTimeMillis()}.xlsx"
+        val fileName = "CargoManifest_${System.currentTimeMillis()}.xlsx"
         var fos: OutputStream? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -434,5 +419,13 @@ fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: S
         fos?.use {
             workbook.write(it)
             workbook.close()
-            Toast.makeText(context, "Berhasil Export ke Folder Downloads!", Toast.LENGTH_LONG).show()
-   
+            Toast.makeText(context, "Berhasil Export ke folder Download!", Toast.LENGTH_LONG).show()
+        } ?: run {
+            Toast.makeText(context, "Gagal menyimpan file Excel", Toast.LENGTH_SHORT).show()
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+    }
+}
+
