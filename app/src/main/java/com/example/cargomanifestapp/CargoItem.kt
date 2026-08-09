@@ -1,4 +1,4 @@
-package com.example.cargomanifest.data // Sesuaikan package dengan proyek Anda
+package com.example.cargomanifestapp
 
 import androidx.room.Entity
 import androidx.room.PrimaryKey
