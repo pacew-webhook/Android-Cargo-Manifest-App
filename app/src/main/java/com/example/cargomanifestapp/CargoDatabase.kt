@@ -7,7 +7,6 @@ import androidx.room.RoomDatabase
 
 @Database(entities = [CargoItem::class], version = 1, exportSchema = false)
 abstract class CargoDatabase : RoomDatabase() {
-
     abstract fun cargoDao(): CargoDao
 
     companion object {
@@ -20,7 +19,7 @@ abstract class CargoDatabase : RoomDatabase() {
                     context.applicationContext,
                     CargoDatabase::class.java,
                     "cargo_database"
-                ).build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }
