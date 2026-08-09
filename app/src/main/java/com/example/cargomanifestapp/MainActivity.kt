@@ -3,22 +3,27 @@ package com.example.cargomanifestapp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
+
+    private val viewModel: CargoViewModel by viewModels {
+        CargoViewModelFactory(application)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        
-        val factory = CargoViewModelFactory(application)
-        val viewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
         setContent {
             CargoManifestTheme {
@@ -39,11 +44,11 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
 
-    // State untuk Header Penerbangan
+    // State Header
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State untuk Form Input Barang
+    // State Form
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
@@ -51,6 +56,32 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
+
+    // State Konfirmasi Hapus Semua
+    var showDeleteAllDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteAllDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteAllDialog = false },
+            title = { Text("Hapus Semua Data") },
+            text = { Text("Apakah Anda yakin ingin menghapus seluruh data kargo?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAll()
+                        showDeleteAllDialog = false
+                    }
+                ) {
+                    Text("Hapus", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteAllDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -73,6 +104,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
             // --- BAGIAN 1: HEADER PENERBANGAN ---
             item {
                 Text("Header Penerbangan", style = MaterialTheme.typography.titleMedium)
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -81,23 +113,27 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         value = awbNo,
                         onValueChange = { awbNo = it },
                         label = { Text("AWB No") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                     OutlinedTextField(
                         value = flightNo,
                         onValueChange = { flightNo = it },
                         label = { Text("Flight No") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
-                Divider()
+                Spacer(modifier = Modifier.height(12.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(8.dp))
             }
 
             // --- BAGIAN 2: INPUT DATA BARANG ---
             item {
                 Text("Input Data Barang", style = MaterialTheme.typography.titleMedium)
-                
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -106,13 +142,16 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         value = pti,
                         onValueChange = { pti = it },
                         label = { Text("PTI") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                     OutlinedTextField(
                         value = pcsQty,
                         onValueChange = { pcsQty = it },
                         label = { Text("Pcs / Qty") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        singleLine = true
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -125,13 +164,17 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         value = weight,
                         onValueChange = { weight = it },
                         label = { Text("Pcs/Qty Wt") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true
                     )
                     OutlinedTextField(
                         value = subTotal,
                         onValueChange = { subTotal = it },
                         label = { Text("Sub Total (Kg)") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        singleLine = true
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -140,7 +183,8 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Description") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -152,17 +196,19 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         value = customer,
                         onValueChange = { customer = it },
                         label = { Text("Customer") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                     OutlinedTextField(
                         value = noPag,
                         onValueChange = { noPag = it },
                         label = { Text("NO PAG") },
-                        modifier = Modifier.weight(1f)
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
                     )
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
                     onClick = {
@@ -193,15 +239,16 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                     Text("Simpan Ke Database")
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                // Baris Tombol Tabel (Export & Hapus Semua)
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Baris Action (Judul + Export & Hapus)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("Tabel Data (${cargoList.size})", style = MaterialTheme.typography.titleMedium)
-                    
+
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { viewModel.exportToExcel(context) },
@@ -210,21 +257,25 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                             Text("Export Excel")
                         }
                         Button(
-                            onClick = { viewModel.clearAll() },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                            onClick = { showDeleteAllDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            enabled = cargoList.isNotEmpty()
                         ) {
                             Text("Hapus Semua")
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Divider()
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider()
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
             // --- BAGIAN 3: DAFTAR TABEL LIST DATA ---
-            items(cargoList) { cargo ->
+            items(
+                items = cargoList,
+                key = { item -> item.id }
+            ) { cargo ->
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -235,18 +286,26 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("PTI: ${cargo.pti}", style = MaterialTheme.typography.bodyLarge)
-                            Text("Pcs: ${cargo.pcsQty} | SubTotal: ${cargo.subTotal} Kg", style = MaterialTheme.typography.bodyMedium)
-                            Text("Desc: ${cargo.description} | Cust: ${cargo.customer}", style = MaterialTheme.typography.bodySmall)
+                            Text(
+                                "Pcs: ${cargo.pcsQty} | SubTotal: ${cargo.subTotal} Kg",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                            Text(
+                                "Desc: ${cargo.description} | Cust: ${cargo.customer}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
                         }
-                        
+
                         Button(
                             onClick = { viewModel.deleteCargo(cargo) },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.height(36.dp)
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
                         ) {
                             Text("Hapus", style = MaterialTheme.typography.bodySmall)
                         }
