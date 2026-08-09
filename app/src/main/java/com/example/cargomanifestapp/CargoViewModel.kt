@@ -86,54 +86,46 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 1. Cek apakah file template terdeteksi di dalam APK
-                val assetList = context.assets.list("") ?: arrayOf()
-                val isTemplateExist = assetList.contains("template_manifest.xlsx")
-
-                if (!isTemplateExist) {
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(
-                            context,
-                            "File 'template_manifest.xlsx' tidak ditemukan dalam APK!\nIsi assets: ${assetList.joinToString()}",
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
-                    return@launch
-                }
-
-                // 2. Baca template Excel secara langsung
+                // 1. Buka Template Excel dari Folder Assets
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // 3. Isi Header AWB No dan Flight No (Ubah indeks baris/kolom sesuai sel template)
-                val rowAwb = sheet.getRow(4) ?: sheet.createRow(4)
-                (rowAwb.getCell(2) ?: rowAwb.createCell(2)).setCellValue(awbNo)
+                // 2. Set AWB NO di Kolom G9 (Baris 9 = Index 8, Kolom G = Index 6)
+                val rowAwb = sheet.getRow(8) ?: sheet.createRow(8)
+                (rowAwb.getCell(6) ?: rowAwb.createCell(6)).setCellValue(awbNo)
 
-                val rowFlight = sheet.getRow(5) ?: sheet.createRow(5)
-                (rowFlight.getCell(2) ?: rowFlight.createCell(2)).setCellValue(flightNo)
+                // Set FLIGHT NO di Kolom G10 (Baris 10 = Index 9, Kolom G = Index 6)
+                val rowFlight = sheet.getRow(9) ?: sheet.createRow(9)
+                (rowFlight.getCell(6) ?: rowFlight.createCell(6)).setCellValue(flightNo)
 
-                // 4. Masukkan data barang mulai dari baris ke-14 Excel (index 13)
+                // 3. Mengisi Data ke Tabel Manifest & Tabel Stowing Checklist (Mulai Baris 14 / Index 13)
                 var rowIndex = 13
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
+                    // === TABEL MANIFEST CARGO (Kolom A - G) ===
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble()) // A: No
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)              // B: PTI
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0) // C: Pcs/Qty
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0) // D: Weight
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // E: SubTotal
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)     // F: Description
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)        // G: Customers
 
-                    val customerText = if (item.noPag.isNotBlank()) "${item.customer} - ${item.noPag}" else item.customer
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(customerText)
+                    // === TABEL STOWING CHEKLIST (Kolom H - L) ===
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // H: No
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // I: NO PAG (I14)
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // J: Description
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // K: Net
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.customer)       // L: Customer
 
                     rowIndex++
                 }
 
-                // Save & Share File
+                // 4. Simpan & Buka File Excel Output
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -161,7 +153,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     Toast.makeText(
                         context,
-                        "Error Template: ${e.javaClass.simpleName} - ${e.localizedMessage}",
+                        "Gagal Export: ${e.localizedMessage}",
                         Toast.LENGTH_LONG
                     ).show()
                 }
