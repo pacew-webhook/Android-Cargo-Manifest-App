@@ -42,7 +42,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val dao = CargoDatabase.getDatabase(application).cargoDao()
 
-    val cargoList: StateFlow<List<CargoModel>> = dao.getAllCargo()
+    val cargoList: StateFlow<List<CargoItem>> = dao.getAllCargo()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -61,7 +61,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         noPag: String
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val cargo = CargoModel(
+            val cargo = CargoItem(
                 awbNo = awbNo.trim().uppercase(),
                 flightNo = flightNo.trim().uppercase(),
                 pti = pti.trim().uppercase(),
@@ -76,7 +76,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun updateCargo(cargo: CargoModel) {
+    fun updateCargo(cargo: CargoItem) {
         viewModelScope.launch(Dispatchers.IO) {
             val updatedCargo = cargo.copy(
                 awbNo = cargo.awbNo.trim().uppercase(),
@@ -93,7 +93,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun deleteCargo(cargo: CargoModel) {
+    fun deleteCargo(cargo: CargoItem) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.deleteCargo(cargo)
         }
