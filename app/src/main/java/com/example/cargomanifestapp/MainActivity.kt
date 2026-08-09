@@ -7,12 +7,16 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -43,6 +47,7 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun CargoMainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     val cargoList by viewModel.cargoList.collectAsState()
 
     var awbNo by remember { mutableStateOf("") }
@@ -57,6 +62,30 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     var noPag by remember { mutableStateOf("") }
 
     var showDeleteAllDialog by remember { mutableStateOf(false) }
+
+    fun saveData() {
+        if (pti.isNotBlank()) {
+            viewModel.addCargo(
+                awbNo = awbNo,
+                flightNo = flightNo,
+                pti = pti,
+                pcsQty = pcsQty,
+                weight = weight,
+                subTotal = subTotal,
+                description = description,
+                customer = customer,
+                noPag = noPag
+            )
+            pti = ""
+            pcsQty = ""
+            weight = ""
+            subTotal = ""
+            description = ""
+            customer = ""
+            noPag = ""
+            focusManager.clearFocus()
+        }
+    }
 
     if (showDeleteAllDialog) {
         AlertDialog(
@@ -112,7 +141,13 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         label = { Text("AWB No") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                     OutlinedTextField(
                         value = flightNo,
@@ -120,7 +155,13 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         label = { Text("Flight No") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
@@ -142,15 +183,27 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         label = { Text("PTI") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                     OutlinedTextField(
                         value = pcsQty,
                         onValueChange = { pcsQty = it },
                         label = { Text("Pcs / Qty") },
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -164,16 +217,28 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         onValueChange = { weight = it },
                         label = { Text("Pcs/Qty Wt") },
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                     OutlinedTextField(
                         value = subTotal,
                         onValueChange = { subTotal = it },
                         label = { Text("Sub Total (Kg)") },
                         modifier = Modifier.weight(1f),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        singleLine = true
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                 }
                 Spacer(modifier = Modifier.height(4.dp))
@@ -184,7 +249,13 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Characters,
+                        imeAction = ImeAction.Next
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                    )
                 )
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -198,7 +269,13 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         label = { Text("Customer") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onNext = { focusManager.moveFocus(FocusDirection.Next) }
+                        )
                     )
                     OutlinedTextField(
                         value = noPag,
@@ -206,35 +283,20 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                         label = { Text("NO PAG") },
                         modifier = Modifier.weight(1f),
                         singleLine = true,
-                        keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters)
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { saveData() }
+                        )
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
                 Button(
-                    onClick = {
-                        if (pti.isNotBlank()) {
-                            viewModel.addCargo(
-                                awbNo = awbNo,
-                                flightNo = flightNo,
-                                pti = pti,
-                                pcsQty = pcsQty,
-                                weight = weight,
-                                subTotal = subTotal,
-                                description = description,
-                                customer = customer,
-                                noPag = noPag
-                            )
-                            pti = ""
-                            pcsQty = ""
-                            weight = ""
-                            subTotal = ""
-                            description = ""
-                            customer = ""
-                            noPag = ""
-                        }
-                    },
+                    onClick = { saveData() },
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Simpan Ke Database")
@@ -251,7 +313,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
-                            onClick = { viewModel.exportToExcel(context) },
+                            onClick = { viewModel.exportToExcel(context, awbNo, flightNo) },
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
                             Text("Export Excel")
