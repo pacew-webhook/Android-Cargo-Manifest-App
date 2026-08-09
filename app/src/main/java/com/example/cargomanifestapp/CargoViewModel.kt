@@ -19,7 +19,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val cargoDao: CargoDao = CargoDatabase.getDatabase(application).cargoDao()
 
-    // Menggunakan CargoItem (sesuai entity awal Anda)
+    // Mengambil data kargo secara real-time dari database
     val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
         .stateIn(
             scope = viewModelScope,
@@ -27,6 +27,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             initialValue = emptyList()
         )
 
+    // Fungsi untuk menambah data kargo baru
     fun addCargo(
         awbNo: String,
         flightNo: String,
@@ -54,18 +55,21 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // Fungsi untuk mengupdate data kargo
     fun updateCargo(item: CargoItem) {
         viewModelScope.launch {
             cargoDao.update(item)
         }
     }
 
+    // Fungsi untuk menghapus satu data kargo
     fun deleteCargo(item: CargoItem) {
         viewModelScope.launch {
             cargoDao.delete(item)
         }
     }
 
+    // Fungsi untuk menghapus seluruh data kargo
     fun clearAll() {
         viewModelScope.launch {
             cargoDao.deleteAll()
@@ -83,38 +87,47 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // Membuka template dari folder assets
+                // Membuka template dari folder assets menggunakan InputStream
                 val inputStream = context.assets.open("manifest_template.xlsx")
                 val workbook = WorkbookFactory.create(inputStream)
+                inputStream.close()
                 
-                // Mengambil sheet bernama "Manifest" secara spesifik
+                // Mengambil sheet bernama "Manifest" secara spesifik (dengan cadangan sheet pertama jika tidak ditemukan)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Baris awal data kargo (indeks 14 = baris ke-15 di Excel)
+                // Baris awal data kargo pada template (indeks 14 = baris ke-15 di Excel)
                 var rowIndex = 14 
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
                     
-                    // Pemetaan sel berdasarkan kolom tabel pada template
+                    // Pemetaan sel kolom sesuai format tabel manifes:
+                    // Kolom A (0): No Urut
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
+                    // Kolom B (1): PTI
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
+                    // Kolom C (2): Pcs / Qty
                     (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    // Kolom D (3): Weight (Pcs/Qty Wt)
                     (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    // Kolom E (4): Sub Total (Kg)
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    // Kolom F (5): Description
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
+                    // Kolom G (6): Customer / NO PAG
+                    val customerText = if (item.noPag.isNotBlank()) "${item.customer} - ${item.noPag}" else item.customer
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(customerText)
 
                     rowIndex++
                 }
 
-                // Menyimpan file hasil export ke cache
+                // Menyimpan file hasil export ke direktori cache aplikasi
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
                 outputStream.close()
                 workbook.close()
 
-                // Membuka file Excel
+                // Membuka file Excel menggunakan FileProvider agar bisa dibaca aplikasi penampil Excel di HP
                 val uri = FileProvider.getUriForFile(
                     context,
                     "${context.packageName}.provider",
