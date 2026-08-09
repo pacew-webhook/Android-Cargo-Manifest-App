@@ -3,7 +3,6 @@ package com.example.cargomanifestapp
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.viewModels
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,15 +14,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.ViewModelProvider
 
 class MainActivity : ComponentActivity() {
-
-    private val viewModel: CargoViewModel by viewModels {
-        CargoViewModelFactory(application)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        val factory = CargoViewModelFactory(application)
+        val viewModel = ViewModelProvider(this, factory)[CargoViewModel::class.java]
 
         setContent {
             CargoManifestTheme {
@@ -57,7 +55,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // State Konfirmasi Hapus Semua
+    // State Dialog Konfirmasi Hapus
     var showDeleteAllDialog by remember { mutableStateOf(false) }
 
     if (showDeleteAllDialog) {
@@ -125,7 +123,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                     )
                 }
                 Spacer(modifier = Modifier.height(12.dp))
-                HorizontalDivider()
+                Divider()
                 Spacer(modifier = Modifier.height(8.dp))
             }
 
@@ -224,7 +222,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                                 customer = customer,
                                 noPag = noPag
                             )
-                            // Reset form input barang setelah disimpan
                             pti = ""
                             pcsQty = ""
                             weight = ""
@@ -241,7 +238,6 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Baris Action (Judul + Export & Hapus)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -267,7 +263,7 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider()
+                Divider()
                 Spacer(modifier = Modifier.height(4.dp))
             }
 
@@ -314,12 +310,4 @@ fun CargoMainScreen(viewModel: CargoViewModel) {
             }
         }
     }
-}
-
-@Composable
-fun CargoManifestTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = lightColorScheme(),
-        content = content
-    )
 }
