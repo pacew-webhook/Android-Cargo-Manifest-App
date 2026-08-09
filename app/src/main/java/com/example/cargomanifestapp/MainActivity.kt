@@ -493,4 +493,16 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                         ) {
                             Text("Hapus", fontSize = 12.sp)
                         }
+
+                                        }
+                }
+            }
+        }
+    }
+}
+
+
+
+
+
      
