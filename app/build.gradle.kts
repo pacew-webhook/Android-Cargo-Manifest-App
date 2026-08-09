@@ -30,19 +30,25 @@ android {
             )
         }
     }
+    
+    // Diperbarui ke Java 11 agar mendukung Apache POI & Compose Terbaru
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_1_8
-        targetCompatibility = JavaVersion.VERSION_1_8
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
     }
+    
     buildFeatures {
         compose = true
     }
+    
+    // Diperbarui ke 1.5.10 (cocok untuk Kotlin 1.9.22 & Compose BOM 2024)
     composeOptions {
-        kotlinCompilerExtensionVersion = "1.5.3"
+        kotlinCompilerExtensionVersion = "1.5.10"
     }
+    
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -73,7 +79,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
-    // Compose BOM Terbaru (Mendukung HorizontalDivider & Material3 Versi Terbaru)
+    // Compose BOM 2024.02.01
     implementation(platform("androidx.compose:compose-bom:2024.02.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
