@@ -5,11 +5,11 @@ id("kotlin-kapt")
 }
 
 android {
-    namespace = "com.example.cargomanifest"
+    namespace = "com.example.cargomanifestapp"
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.example.cargomanifest"
+        applicationId = "com.example.cargomanifestapp"
         minSdk = 26
         targetSdk = 34
         versionCode = 1
