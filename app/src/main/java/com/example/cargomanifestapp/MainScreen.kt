@@ -8,7 +8,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
-import androidx.core.content.FileProvider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -428,7 +427,6 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
 
         Toast.makeText(context, "Berhasil Export & Membuka File!", Toast.LENGTH_SHORT).show()
 
-        // Perintah otomatis membuka file Excel setelah berhasil diexport
         if (fileUri != null) {
             val intent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(fileUri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -441,3 +439,7 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
                 Toast.makeText(context, "Tidak ada aplikasi pembaca Excel", Toast.LENGTH_LONG).show()
             }
         }
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error Template: ${e.mess
