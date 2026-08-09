@@ -74,7 +74,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun exportToExcel(context: Context) {
-        // Pindahkan eksekusi ke Dispatchers.IO untuk mencegah UI Freeze
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentList = cargoList.value
@@ -91,11 +90,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-
-                // opsional: Tulis Header AWB & Flight No jika ada lokasi cell-nya di template
-                // val firstItem = currentList.first()
-                // (sheet.getRow(3)?.getCell(1) ?: sheet.createRow(3).createCell(1)).setCellValue(firstItem.awbNo)
-                // (sheet.getRow(4)?.getCell(1) ?: sheet.createRow(4).createCell(1)).setCellValue(firstItem.flightNo)
 
                 var rowIndex = 14
                 for ((index, item) in currentList.withIndex()) {
@@ -126,7 +120,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     file
                 )
 
-                // Eksekusi UI Intent dan Toast kembali ke Main Thread
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
