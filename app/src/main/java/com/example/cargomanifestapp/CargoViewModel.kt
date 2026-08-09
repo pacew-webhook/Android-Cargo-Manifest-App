@@ -95,13 +95,14 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 for ((index, item) in currentList.withIndex()) {
                     val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
                     
-                    row.getCell(0, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
-                    row.getCell(1, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
-                    row.getCell(2, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
-                    row.getCell(3, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
-                    row.getCell(4, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
-                    row.getCell(5, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
-                    row.getCell(6, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
+                    // Pemetaan sel berdasarkan kolom tabel pada template
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
 
                     rowIndex++
                 }
