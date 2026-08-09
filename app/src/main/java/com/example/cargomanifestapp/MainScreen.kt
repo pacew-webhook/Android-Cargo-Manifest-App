@@ -19,10 +19,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.InputStream
 import java.io.OutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -31,11 +33,11 @@ fun MainScreen(viewModel: CargoViewModel) {
     val context = LocalContext.current
     val cargoList: List<CargoItem> by viewModel.cargoList.collectAsState(initial = emptyList())
 
-    // State Header Penerbangan
+    // State Header Penerbangan (Otomatis Kapital)
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
 
-    // State Input Barang
+    // State Input Barang (Otomatis Kapital)
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var pcsQtyWt by remember { mutableStateOf("") }
@@ -80,14 +82,16 @@ fun MainScreen(viewModel: CargoViewModel) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
                             value = awbNo,
-                            onValueChange = { awbNo = it },
+                            onValueChange = { awbNo = it.uppercase() },
                             label = { Text("AWB No") },
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = flightNo,
-                            onValueChange = { flightNo = it },
+                            onValueChange = { flightNo = it.uppercase() },
                             label = { Text("Flight No") },
+                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                             modifier = Modifier.weight(1f)
                         )
                     }
@@ -102,8 +106,9 @@ fun MainScreen(viewModel: CargoViewModel) {
 
             OutlinedTextField(
                 value = pti,
-                onValueChange = { pti = it },
+                onValueChange = { pti = it.uppercase() },
                 label = { Text("PTI") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -134,24 +139,27 @@ fun MainScreen(viewModel: CargoViewModel) {
                 )
                 OutlinedTextField(
                     value = noPag,
-                    onValueChange = { noPag = it },
+                    onValueChange = { noPag = it.uppercase() },
                     label = { Text("NO PAG") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                     modifier = Modifier.weight(1f)
                 )
             }
 
             OutlinedTextField(
                 value = description,
-                onValueChange = { description = it },
+                onValueChange = { description = it.uppercase() },
                 label = { Text("Description") },
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                 modifier = Modifier.fillMaxWidth()
             )
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = customer,
-                    onValueChange = { customer = it },
+                    onValueChange = { customer = it.uppercase() },
                     label = { Text("Customer") },
+                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -219,7 +227,7 @@ fun MainScreen(viewModel: CargoViewModel) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Button(
                         onClick = {
-                            exportToExcel(context, cargoList, awbNo, flightNo)
+                            exportToExcelUsingTemplate(context, cargoList, awbNo, flightNo)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2196F3)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
@@ -350,50 +358,45 @@ fun MainScreen(viewModel: CargoViewModel) {
     }
 }
 
-// Fungsi Pendukung untuk Export Excel (.xlsx) menggunakan Apache POI
-fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
+// Fungsi Export Excel menggunakan template_manifest.xlsx dari folder assets
+fun exportToExcelUsingTemplate(context: Context, list: List<CargoItem>, awbNo: String, flightNo: String) {
     if (list.isEmpty()) {
         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
         return
     }
 
     try {
-        val workbook = XSSFWorkbook()
-        val sheet = workbook.createSheet("Cargo Manifest")
+        // Membaca file template dari folder assets
+        val inputStream: InputStream = context.assets.open("template_manifest.xlsx")
+        val workbook = XSSFWorkbook(inputStream)
+        inputStream.close()
 
-        // Buat Baris Header Info Penerbangan
-        var rowIndex = 0
-        sheet.createRow(rowIndex++).createCell(0).setCellValue("AWB No: $awbNo")
-        sheet.createRow(rowIndex++).createCell(0).setCellValue("Flight No: $flightNo")
-        rowIndex++ // Spasi kosong
+        val sheet = workbook.getSheetAt(0) // Mengambil sheet pertama
 
-        // Header Kolom Tabel
-        val headerRow = sheet.createRow(rowIndex++)
-        headerRow.createCell(0).setCellValue("No")
-        headerRow.createCell(1).setCellValue("PTI")
-        headerRow.createCell(2).setCellValue("Pcs/Qty")
-        headerRow.createCell(3).setCellValue("Weight")
-        headerRow.createCell(4).setCellValue("Sub Total")
-        headerRow.createCell(5).setCellValue("Description")
-        headerRow.createCell(6).setCellValue("Customer")
-        headerRow.createCell(7).setCellValue("No PAG")
+        // Menulis AWB No dan Flight No ke template (sesuai posisi di template Anda)
+        sheet.getRow(0)?.getCell(0)?.setCellValue("AWB No: $awbNo")
+        sheet.getRow(1)?.getCell(0)?.setCellValue("Flight No: $flightNo")
 
-        // Masukkan Data
+        // Baris awal data dimulai dari baris ke-4 (indeks 4, karena baris 0-3 adalah header/info)
+        var rowIndex = 4 
+
         list.forEachIndexed { index, item ->
-            val row = sheet.createRow(rowIndex++)
-            row.createCell(0).setCellValue((index + 1).toDouble())
-            row.createCell(1).setCellValue(item.pti)
-            row.createCell(2).setCellValue(item.pcsQty)
-            row.createCell(3).setCellValue(item.weight)
-            row.createCell(4).setCellValue(item.subTotal)
-            row.createCell(5).setCellValue(item.description)
-            row.createCell(6).setCellValue(item.customer)
-            row.createCell(7).setCellValue(item.noPag)
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+            
+            row.getCell(0, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue((index + 1).toDouble())
+            row.getCell(1, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pti)
+            row.getCell(2, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.pcsQty)
+            row.getCell(3, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.weight)
+            row.getCell(4, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.subTotal)
+            row.getCell(5, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.description)
+            row.getCell(6, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.customer)
+            row.getCell(7, org.apache.poi.ss.usermodel.Row.MissingCellPolicy.CREATE_NULL_AS_BLANK).setCellValue(item.noPag)
+
+            rowIndex++
         }
 
         val fileName = "CargoManifest_${System.currentTimeMillis()}.xlsx"
         var fos: OutputStream? = null
-        var uri: Uri? = null
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val contentValues = ContentValues().apply {
@@ -401,7 +404,7 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
                 put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS)
             }
-            uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
+            val uri = context.contentResolver.insert(MediaStore.Files.getContentUri("external"), contentValues)
             if (uri != null) {
                 fos = context.contentResolver.openOutputStream(uri)
             }
@@ -414,12 +417,12 @@ fun exportToExcel(context: Context, list: List<CargoItem>, awbNo: String, flight
         fos?.use {
             workbook.write(it)
             workbook.close()
-            Toast.makeText(context, "Berhasil Export ke folder Download!", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "Berhasil Export menggunakan Template!", Toast.LENGTH_LONG).show()
         } ?: run {
             Toast.makeText(context, "Gagal menyimpan file Excel", Toast.LENGTH_SHORT).show()
         }
     } catch (e: Exception) {
         e.printStackTrace()
-        Toast.makeText(context, "Error: ${e.message}", Toast.LENGTH_LONG).show()
+        Toast.makeText(context, "Error Template: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
