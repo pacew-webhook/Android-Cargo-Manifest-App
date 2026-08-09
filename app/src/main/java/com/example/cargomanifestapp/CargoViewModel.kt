@@ -6,6 +6,8 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -18,7 +20,7 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
-// Helper Model Manifest
+// Helper Model Manifest untuk Export Excel
 data class GroupedManifestItem(
     val pti: String,
     val description: String,
@@ -28,7 +30,7 @@ data class GroupedManifestItem(
     var subTotal: Double
 )
 
-// Helper Model Stowing
+// Helper Model Stowing untuk Export Excel
 data class GroupedStowingItem(
     val noPag: String,
     val description: String,
@@ -38,9 +40,9 @@ data class GroupedStowingItem(
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val cargoDao: CargoDao = CargoDatabase.getDatabase(application).cargoDao()
+    private val dao = CargoDatabase.getDatabase(application).cargoDao()
 
-    val cargoList: StateFlow<List<CargoItem>> = cargoDao.getAllCargo()
+    val cargoList: StateFlow<List<CargoModel>> = dao.getAllCargo()
         .stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -59,7 +61,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         noPag: String
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            val item = CargoItem(
+            val cargo = CargoModel(
                 awbNo = awbNo.trim().uppercase(),
                 flightNo = flightNo.trim().uppercase(),
                 pti = pti.trim().uppercase(),
@@ -70,25 +72,36 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 customer = customer.trim().uppercase(),
                 noPag = noPag.trim().uppercase()
             )
-            cargoDao.insert(item)
+            dao.insertCargo(cargo)
         }
     }
 
-    fun updateCargo(item: CargoItem) {
+    fun updateCargo(cargo: CargoModel) {
         viewModelScope.launch(Dispatchers.IO) {
-            cargoDao.update(item)
+            val updatedCargo = cargo.copy(
+                awbNo = cargo.awbNo.trim().uppercase(),
+                flightNo = cargo.flightNo.trim().uppercase(),
+                pti = cargo.pti.trim().uppercase(),
+                pcsQty = cargo.pcsQty.trim(),
+                weight = cargo.weight.trim(),
+                subTotal = cargo.subTotal.trim(),
+                description = cargo.description.trim().uppercase(),
+                customer = cargo.customer.trim().uppercase(),
+                noPag = cargo.noPag.trim().uppercase()
+            )
+            dao.updateCargo(updatedCargo)
         }
     }
 
-    fun deleteCargo(item: CargoItem) {
+    fun deleteCargo(cargo: CargoModel) {
         viewModelScope.launch(Dispatchers.IO) {
-            cargoDao.delete(item)
+            dao.deleteCargo(cargo)
         }
     }
 
     fun clearAll() {
         viewModelScope.launch(Dispatchers.IO) {
-            cargoDao.deleteAll()
+            dao.deleteAllCargo()
         }
     }
 
@@ -104,11 +117,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // -------------------------------------------------------------
-                // 1. PENGGABUNGAN DATA (AGGREGATION)
-                // -------------------------------------------------------------
-                
-                // Grouping Manifest CARGO berdasarkan DESCRIPTION DAN CUSTOMER SAMA
+                // 1. PENGGABUNGAN DATA (AGGREGATION) BERDASARKAN DESCRIPTION DAN CUSTOMER
                 val groupedManifest = currentList.groupBy {
                     Pair(it.description.trim().uppercase(), it.customer.trim().uppercase())
                 }.map { (keyPair, items) ->
@@ -127,7 +136,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // Grouping Stowing Checklist berdasarkan NO PAG SAMA
+                // Grouping Stowing Checklist berdasarkan NO PAG
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
@@ -141,9 +150,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // -------------------------------------------------------------
                 // 2. OLAH TEMPLATE EXCEL
-                // -------------------------------------------------------------
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream.close()
@@ -157,47 +164,41 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val row4 = sheet.getRow(3) ?: sheet.createRow(3)
                 (row4.getCell(6) ?: row4.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
-                // FLIGHT NO ke Kolom G9 dengan format ": 2Y704"
+                // FLIGHT NO ke Kolom G9
                 val row9 = sheet.getRow(8) ?: sheet.createRow(8)
                 (row9.getCell(6) ?: row9.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
 
-                // -------------------------------------------------------------
-                // 3. MASUKKAN DATA MANIFEST CARGO (Kolom A - G)
-                // -------------------------------------------------------------
-                var manifestRowIndex = 13 // Mulai Baris 14 (Index 13)
+                // 3. MASUKKAN DATA MANIFEST CARGO
+                var manifestRowIndex = 13
                 for ((index, item) in groupedManifest.withIndex()) {
                     val row = sheet.getRow(manifestRowIndex) ?: sheet.createRow(manifestRowIndex)
 
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble()) // A: No
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)              // B: PTI
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty)            // C: Pcs/Qty
-                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight)            // D: Weight
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal)          // E: SubTotal
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)     // F: Description
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)        // G: Customer
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty)
+                    (row.getCell(3) ?: row.createCell(3)).setCellValue(item.weight)
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(item.subTotal)
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
 
                     manifestRowIndex++
                 }
 
-                // -------------------------------------------------------------
-                // 4. MASUKKAN DATA STOWING CHEKLIST (Kolom H - M)
-                // -------------------------------------------------------------
-                var stowingRowIndex = 13 // Mulai Baris 14 (Index 13)
+                // 4. MASUKKAN DATA STOWING CHECKLIST
+                var stowingRowIndex = 13
                 for ((index, item) in groupedStowing.withIndex()) {
                     val row = sheet.getRow(stowingRowIndex) ?: sheet.createRow(stowingRowIndex)
 
-                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // H: No
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // I: NO PAG
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // J: Description
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)        // K: Net Weight
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)       // M: Customer
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
 
                     stowingRowIndex++
                 }
 
-                // -------------------------------------------------------------
-                // 5. SIMPAN DAN BUKA FILE OUTPUT EXCEL
-                // -------------------------------------------------------------
+                // 5. SIMPAN DAN BUKA FILE
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -231,5 +232,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+}
+
+class CargoViewModelFactory(private val application: Application) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(CargoViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return CargoViewModel(application) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }
