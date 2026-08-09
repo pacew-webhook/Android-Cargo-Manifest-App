@@ -71,7 +71,8 @@ class CargoViewModel(private val cargoDao: CargoDao) : ViewModel() {
                     pti = if (pti.isNotBlank()) pti.trim().uppercase() else existingItem.pti,
                     pcsQty = updatedPcs,
                     weight = weight.trim().ifEmpty { existingItem.weight },
-                    subTotal = updatedSubTotal
+                    subTotal = updatedSubTotal,
+                    noPag = cleanNoPag // <-- Ditambahkan agar noPag ikut diperbarui/dipertahankan dengan benar
                 )
                 cargoDao.update(updatedItem)
             } else {
