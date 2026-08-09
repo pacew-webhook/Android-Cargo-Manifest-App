@@ -20,7 +20,6 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
-// Helper Model Manifest untuk Export Excel
 data class GroupedManifestItem(
     val pti: String,
     val description: String,
@@ -30,7 +29,6 @@ data class GroupedManifestItem(
     var subTotal: Double
 )
 
-// Helper Model Stowing untuk Export Excel
 data class GroupedStowingItem(
     val noPag: String,
     val description: String,
@@ -118,20 +116,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val formatter = DataFormatter()
 
-                // Baca Header AWB & Flight No jika tersedia
                 val awbNo = formatter.formatCellValue(sheet.getRow(2)?.getCell(6)).trim().uppercase()
                 val flightRaw = formatter.formatCellValue(sheet.getRow(8)?.getCell(6)).trim().uppercase()
                 val flightNo = flightRaw.removePrefix(":").trim()
 
                 val importedItems = mutableListOf<CargoItem>()
 
-                // Cek baris awal data (baris 13 untuk template, baris 1 untuk file tabel sederhana)
-                val startRow = if (sheet.lastRowNum >= 13) 13 else 1
+                // Mulai membaca dari baris ke-14 (indeks 13) agar aman dari header/formula atas
+                val startRow = 13 
 
                 for (rowIndex in startRow..sheet.lastRowNum) {
                     val row = sheet.getRow(rowIndex) ?: continue
 
-                    // Ambil isi kolom
                     val rawPti = formatter.formatCellValue(row.getCell(1)).trim().uppercase()
                     val pcsQty = formatter.formatCellValue(row.getCell(2)).trim()
                     val weight = formatter.formatCellValue(row.getCell(3)).trim()
@@ -140,10 +136,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val rawCust = formatter.formatCellValue(row.getCell(6)).trim().uppercase()
                     val rawPag = formatter.formatCellValue(row.getCell(8)).trim().uppercase()
 
-                    // Pastikan baris berisi minimal 1 data valid
-                    if (rawPti.isNotBlank() || pcsQty.isNotBlank() || rawDesc.isNotBlank() || rawCust.isNotBlank()) {
-                        
-                        // Format Otomatis Awalan KAL dan PAG
+                    // Filter baris sampah / header / rumus SUM
+                    val isInvalidRow = rawDesc.contains("APPROVED") || 
+                                       rawDesc.contains("SUM(") || 
+                                       pcsQty.contains("SUM(") || 
+                                       (rawPti.isBlank() && pcsQty.isBlank() && rawDesc.isBlank() && rawCust.isBlank())
+
+                    if (!isInvalidRow) {
                         val finalPti = if (rawPti.isBlank()) "" else if (rawPti.startsWith("KAL")) rawPti else "KAL$rawPti"
                         val finalPag = if (rawPag.isBlank() || rawPag == "-") "" else if (rawPag.startsWith("PAG")) rawPag else "PAG$rawPag"
 
@@ -170,7 +169,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } else {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Tidak ada data valid yang ditemukan dalam file!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Tidak ada data valid yang ditemukan mulai baris 14!", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -234,6 +233,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
+                // Memastikan header kolom 1 sampai 11 / teks dokumen tetap aman
                 val row3 = sheet.getRow(2) ?: sheet.createRow(2)
                 (row3.getCell(6) ?: row3.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
