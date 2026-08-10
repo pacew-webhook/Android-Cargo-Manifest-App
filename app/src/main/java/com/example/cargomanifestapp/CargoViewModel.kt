@@ -68,7 +68,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // ================= IMPLEMENTASI IMPORT EXCEL =================
+    // ================= IMPLEMENTASI IMPORT EXCEL (DENGAN EVALUATOR FORMULA) =================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -78,26 +78,63 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val importedList = mutableListOf<CargoItem>()
+                
+                val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
                 // Membaca baris data mulai dari baris ke-14 (indeks 13) sampai baris terakhir
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
                     
-                    val pti = row.getCell(1)?.toString()?.trim() ?: ""
-                    if (pti.isEmpty() || pti.equals("null", ignoreCase = true)) continue 
+                    // Fungsi bantu untuk membaca sel dan mengevaluasi rumus Excel jika ada
+                    fun getCellVal(colIdx: Int): String {
+                        val cell = row.getCell(colIdx) ?: return ""
+                        val evaluated = evaluator.evaluate(cell)
+                        return when {
+                            evaluated != null -> {
+                                when (evaluated.cellType) {
+                                    org.apache.poi.ss.usermodel.CellType.NUMERIC -> {
+                                        val num = evaluated.numberValue
+                                        if (num % 1.0 == 0.0) num.toInt().toString() else num.toString()
+                                    }
+                                    org.apache.poi.ss.usermodel.CellType.STRING -> evaluated.stringValue?.trim() ?: ""
+                                    else -> ""
+                                }
+                            }
+                            else -> {
+                                val str = cell.toString().trim()
+                                if (str.equals("null", ignoreCase = true) || str.startsWith("=")) "" else str
+                            }
+                        }
+                    }
 
-                    val pcsQty = row.getCell(2)?.toString()?.trim() ?: ""
-                    val weight = row.getCell(3)?.toString()?.trim() ?: ""
-                    val subTotal = row.getCell(4)?.toString()?.trim() ?: ""
-                    val description = row.getCell(5)?.toString()?.trim() ?: ""
-                    val customer = row.getCell(6)?.toString()?.trim() ?: ""
-                    val noPag = row.getCell(8)?.toString()?.trim() ?: ""
+                    val pti = getCellVal(1)
+                    val description = getCellVal(5)
+                    
+                    // Lewati jika baris benar-benar kosong (PTI dan Description kosong)
+                    if (pti.isEmpty() && description.isEmpty()) continue
+
+                    val pcsQty = getCellVal(2)
+                    val weight = getCellVal(3)
+                    var subTotal = getCellVal(4)
+                    
+                    // Jika subtotal kosong atau berupa teks rumus, hitung otomatis dari Pcs * Weight
+                    if (subTotal.isEmpty() || subTotal.contains("*")) {
+                        val p = pcsQty.toDoubleOrNull() ?: 0.0
+                        val w = weight.toDoubleOrNull() ?: 0.0
+                        val res = p * w
+                        if (res > 0.0) {
+                            subTotal = if (res % 1.0 == 0.0) res.toInt().toString() else res.toString()
+                        }
+                    }
+
+                    val customer = getCellVal(6)
+                    val noPag = getCellVal(8)
 
                     val item = CargoItem(
                         id = System.currentTimeMillis() + i,
                         awbNo = "",
                         flightNo = "",
-                        pti = pti,
+                        pti = if (pti.isNotBlank()) pti else "KAL00$i",
                         pcsQty = pcsQty,
                         weight = weight,
                         subTotal = subTotal,
@@ -112,7 +149,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (importedList.isNotEmpty()) {
                         _cargoList.value = importedList
-                        Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan rapi!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Tidak ada data valid yang ditemukan pada file.", Toast.LENGTH_SHORT).show()
                     }
