@@ -28,7 +28,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
 
-        // Cari apakah sudah ada data dengan Description, Customer, dan PTI yang sama
         val existingIndex = currentList.indexOfFirst {
             it.description.equals(item.description, ignoreCase = true) &&
             it.customer.equals(item.customer, ignoreCase = true) &&
@@ -36,7 +35,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         if (existingIndex != -1) {
-            // JIKA SAMA: GABUNGKAN DATA
             val existing = currentList[existingIndex]
             val newPcs = parseDoubleOrZero(existing.pcsQty) + parseDoubleOrZero(item.pcsQty)
             val newSubTotal = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(item.subTotal)
@@ -48,7 +46,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             )
             currentList[existingIndex] = updatedItem
         } else {
-            // JIKA BEDA: TAMBAH BARIS BARU
             currentList.add(item)
         }
         _cargoList.value = currentList
@@ -100,7 +97,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // IMPORT DATA DARI EXCEL (DENGAN FILTER & MERGE)
+    // IMPORT DATA DARI EXCEL
     // ==========================================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -125,7 +122,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val customer = getCellString(row, 6, evaluator)
                     val noPag = getCellString(row, 8, evaluator)
 
-                    // ABANGKAN BARIS TOTAL ATAU TANDA TANGAN DARI TEMPLATE
                     if (noCol.contains("TOTAL", ignoreCase = true) ||
                         pti.contains("TOTAL", ignoreCase = true) ||
                         description.contains("TOTAL", ignoreCase = true) ||
@@ -149,7 +145,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         noPag = noPag
                     )
 
-                    // MERGE JIKA SUDAH ADA DATA YANG SAMA DARI HASIL IMPORT
                     val existingIndex = importedList.indexOfFirst {
                         it.description.equals(newItem.description, ignoreCase = true) &&
                         it.customer.equals(newItem.customer, ignoreCase = true) &&
@@ -174,7 +169,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 withContext(Dispatchers.Main) {
                     _cargoList.value = importedList
-                    Toast.makeText(context, "Berhasil import ${importedList.size} data terkelompok!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -198,7 +193,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // EXPORT DATA KE EXCEL (LAYOUT KUNCI/FIXED)
+    // EXPORT DATA KE EXCEL
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -216,19 +211,38 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                val startRow = 13 // Indeks 13 = Row 14 Excel
-                val maxRows = 25  // Slot maksimum per lembar manifest (Row 14 - 38)
+                val startRow = 13 // Baris 14 Excel
+                val dataCount = currentList.size
 
-                // 1. Header Flight
+                // Header Flight
                 sheet.getRow(2)?.getCell(6)?.setCellValue(awbNo)     // Row 3 Col G
                 sheet.getRow(8)?.getCell(6)?.setCellValue(flightNo)  // Row 9 Col G
 
-                // 2. ISI TABEL MANIFEST (KIRI: KOLOM A - G)
-                for (i in 0 until maxRows) {
+                // 1. Dapatkan Pengelompokan Stowing berdasarkan NO PAG yang tidak kosong
+                val stowingGrouped = mutableListOf<CargoItem>()
+                currentList.filter { it.noPag.isNotBlank() }.forEach { item ->
+                    val index = stowingGrouped.indexOfFirst { it.noPag.equals(item.noPag, ignoreCase = true) }
+                    if (index != -1) {
+                        val existing = stowingGrouped[index]
+                        val combinedSub = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(item.subTotal)
+                        stowingGrouped[index] = existing.copy(subTotal = combinedSub.toString())
+                    } else {
+                        stowingGrouped.add(item)
+                    }
+                }
+
+                // 2. Tentukan Berapa Baris Yang Perlu Dikelola (Maksimal antara Data Manifest dan Stowing, minimal 25)
+                val totalRowsToProcess = maxOf(dataCount, stowingGrouped.size, 25)
+
+                // Simpan baris sampel untuk penyeragaman style
+                val sampleRow = sheet.getRow(startRow)
+
+                for (i in 0 until totalRowsToProcess) {
                     val targetRowIdx = startRow + i
                     val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
-                    if (i < currentList.size) {
+                    // ISI MANIFEST KIRI (KOLOM A - G)
+                    if (i < dataCount) {
                         val item = currentList[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
                         val wt = parseDoubleOrZero(item.weight)
@@ -237,80 +251,46 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setNumericCell(row, 0, (i + 1).toDouble())                      // Col A: No
                         setTextCell(row, 1, item.pti)                                    // Col B: PTI
                         setNumericCell(row, 2, pcs)                                      // Col C: Pcs/Cly
-                        if (wt > 0) setNumericCell(row, 3, wt) else setTextCell(row, 3, "") // Col D: Pcs/Qty Wt
+                        if (wt > 0) setNumericCell(row, 3, wt) else setTextCell(row, 3, "") // Col D: Pcs Wt
                         if (subTotalVal > 0) setNumericCell(row, 4, subTotalVal) else setTextCell(row, 4, "") // Col E: Sub Total
                         setTextCell(row, 5, item.description)                            // Col F: Description
                         setTextCell(row, 6, item.customer)                               // Col G: Customer
                     } else {
-                        // Bersihkan sisa baris kosong manifest
-                        setTextCell(row, 0, "")
-                        setTextCell(row, 1, "")
-                        setTextCell(row, 2, "")
-                        setTextCell(row, 3, "")
-                        setTextCell(row, 4, "")
-                        setTextCell(row, 5, "")
-                        setTextCell(row, 6, "")
+                        for (c in 0..6) setTextCell(row, c, "")
                     }
-                }
 
-                // 3. SET RUMUS TOTAL MANIFEST (KIRI) PADA ROW 39 (INDEKS 38)
-                val manifestTotalRow = sheet.getRow(38) ?: sheet.createRow(38)
-                setTextCell(manifestTotalRow, 1, "TOTAL WEIGHT")
-                setFormulaCell(manifestTotalRow, 2, "SUM(C14:C38)")
-                setFormulaCell(manifestTotalRow, 4, "SUM(E14:E38)")
-
-                // 4. KELOMPOKKAN DATA STOWING BERDASARKAN NO PAG (DENGAN SUM NET WEIGHT)
-                val stowingGrouped = mutableListOf<CargoItem>()
-                val rawStowingList = currentList.filter { it.noPag.isNotBlank() }
-
-                rawStowingList.forEach { item ->
-                    val index = stowingGrouped.indexOfFirst { it.noPag.equals(item.noPag, ignoreCase = true) }
-                    if (index != -1) {
-                        val existing = stowingGrouped[index]
-                        val combinedSubTotal = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(item.subTotal)
-                        stowingGrouped[index] = existing.copy(
-                            subTotal = combinedSubTotal.toString()
-                        )
-                    } else {
-                        stowingGrouped.add(item)
-                    }
-                }
-
-                // 5. ISI TABEL STOWING CHECKLIST (KANAN: KOLOM H - M)
-                for (i in 0 until maxRows) {
-                    val targetRowIdx = startRow + i
-                    val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
-
+                    // ISI STOWING CHECKLIST KANAN (KOLOM H - M)
                     if (i < stowingGrouped.size) {
-                        val item = stowingGrouped[i]
-                        val subTotalVal = parseDoubleOrZero(item.subTotal)
+                        val stowingItem = stowingGrouped[i]
+                        val subTotalVal = parseDoubleOrZero(stowingItem.subTotal)
 
-                        setNumericCell(row, 7, (i + 1).toDouble())            // Col H: No
-                        setTextCell(row, 8, item.noPag)                        // Col I: NO PAG
-                        setTextCell(row, 9, item.description)                  // Col J: Description
-                        setNumericCell(row, 10, subTotalVal)                    // Col K: Net Weight
-                        setFormulaCell(row, 11, "K${targetRowIdx + 1}+125")    // Col L: Gross Weight (+125)
-                        setTextCell(row, 12, item.customer)                    // Col M: Customer
+                        setNumericCell(row, 7, (i + 1).toDouble())                      // Col H: No
+                        setTextCell(row, 8, stowingItem.noPag)                           // Col I: NO PAG
+                        setTextCell(row, 9, stowingItem.description)                     // Col J: Description
+                        setNumericCell(row, 10, subTotalVal)                              // Col K: Net
+                        setFormulaCell(row, 11, "K${targetRowIdx + 1}+125")              // Col L: Gross
+                        setTextCell(row, 12, stowingItem.customer)                       // Col M: Customer
                     } else {
-                        // Bersihkan baris kosong stowing
-                        setTextCell(row, 7, "")
-                        setTextCell(row, 8, "")
-                        setTextCell(row, 9, "")
-                        setTextCell(row, 10, "")
-                        setTextCell(row, 11, "")
-                        setTextCell(row, 12, "")
+                        for (c in 7..12) setTextCell(row, c, "")
                     }
                 }
 
-                // 6. SET RUMUS TOTAL STOWING (KANAN) PADA ROW 39 (INDEKS 38)
-                val stowingTotalRow = sheet.getRow(38) ?: sheet.createRow(38)
-                setFormulaCell(stowingTotalRow, 10, "SUM(K14:K38)") // Total Net
-                setFormulaCell(stowingTotalRow, 11, "SUM(L14:L38)") // Total Gross
+                // 3. SET RUMUS TOTAL (PADA BARIS TEPAT SETELAH DATA SELESAI)
+                val lastDataRowExcel = startRow + totalRowsToProcess
+                val totalRowIdx = maxOf(lastDataRowExcel, 38)
+                val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
-                // Evaluasi Semua Rumus Excel
+                // Manifest Total
+                setTextCell(totalRow, 1, "TOTAL WEIGHT")
+                setFormulaCell(totalRow, 2, "SUM(C14:C$lastDataRowExcel)")
+                setFormulaCell(totalRow, 4, "SUM(E14:E$lastDataRowExcel)")
+
+                // Stowing Total
+                setFormulaCell(totalRow, 10, "SUM(K14:K$lastDataRowExcel)")
+                setFormulaCell(totalRow, 11, "SUM(L14:L$lastDataRowExcel)")
+
                 workbook.creationHelper.createFormulaEvaluator().evaluateAll()
 
-                // Simpan & Buka File
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -334,7 +314,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Helper Function
+    // Helper functions
     private fun parseDoubleOrZero(value: String): Double {
         if (value.isBlank()) return 0.0
         val cleanValue = value.replace(",", ".").replace("[^0-9.]".toRegex(), "")
