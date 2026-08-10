@@ -19,15 +19,15 @@ object ExcelUtils {
                 val headerRow1 = sheet.getRow(0) ?: sheet.createRow(0)
                 headerRow1.createCell(1).setCellValue(cargoList.first().noPag)
 
-                // 2. Hitung Grand Total KG dari seluruh CargoItem untuk Sel E1
+                // 2. Hitung Grand Total KG dari seluruh CargoItem untuk Sel E1 (Row index 0, Column index 4)
                 val totalLoot = cargoList.sumOf { item ->
                     item.subTotal.toDoubleOrNull() ?: 0.0
                 }
                 headerRow1.createCell(4).setCellValue(totalLoot)
             }
 
-            // 3. Tulis Data Cargo Item mulai dari Baris A5 (Row index 4)
-            var startRow = 4
+            // 3. Tulis Data Cargo Item mulai dari Baris A4 (Row index 3)
+            var startRow = 3
 
             for ((index, item) in cargoList.withIndex()) {
                 val row = sheet.getRow(startRow) ?: sheet.createRow(startRow)
