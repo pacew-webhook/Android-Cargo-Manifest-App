@@ -68,7 +68,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // ================= IMPORT EXCEL PRESISI TINGGI (ANTI BERANTAKAN) =================
+    // ================= IMPORT EXCEL PRESISI TINGGI =================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -105,12 +105,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
-                    // Kolom 0 adalah Nomor Urut (1, 2, 3, dst.)
                     val noStr = getCellString(row, 0)
-                    // Jika kolom No bukan angka (artinya sudah lewat dari tabel data utama seperti baris total/tanda tangan), hentikan atau lewati
                     val noInt = noStr.toIntOrNull()
                     if (noInt == null || noInt <= 0) {
-                        // Jika sudah masuk area bawah (misal baris total/tanda tangan), skip
                         continue
                     }
 
@@ -121,10 +118,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val description = getCellString(row, 5)
                     val customer = getCellString(row, 6)
 
-                    // Ambil No PAG dari tabel kanan (Kolom 9 / Indeks 9) jika ada pada baris yang sama
-                    val noPag = getCellString(row, 9)
+                    // Membaca No PAG dari Kolom 8 (Indeks 8)
+                    val noPag = getCellString(row, 8)
 
-                    // Kalkulasi otomatis subtotal jika kosong atau berupa rumus excel
                     if (subTotal.isEmpty() || subTotal.contains("*")) {
                         val p = pcsQty.toDoubleOrNull() ?: 0.0
                         val w = weight.toDoubleOrNull() ?: 0.0
@@ -138,13 +134,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         id = System.currentTimeMillis() + i,
                         awbNo = "",
                         flightNo = "",
-                        pti = if (pti.isNotBlank()) pti else "KAL00$i",
+                        pti = if (pti.isNotBlank()) pti else "-",
                         pcsQty = if (pcsQty.isNotBlank()) pcsQty else "0",
                         weight = if (weight.isNotBlank()) weight else "0",
                         subTotal = if (subTotal.isNotBlank()) subTotal else "0",
                         description = if (description.isNotBlank()) description else "-",
                         customer = if (customer.isNotBlank()) customer else "-",
-                        noPag = if (noPag.isNotBlank() && !noPag.startsWith("PAG")) "PAG $noPag" else noPag
+                        noPag = if (noPag.isNotBlank()) noPag else ""
                     )
                     importedList.add(item)
                 }
@@ -153,9 +149,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (importedList.isNotEmpty()) {
                         _cargoList.value = importedList
-                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan rapi!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Tidak ada data valid yang ditemukan.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Tidak ada data valid ditemukan.", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
@@ -167,7 +163,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ================= FUNGSI EXPORT DATA EXCEL =================
+    // ================= FUNGSI EXPORT DATA EXCEL (SANGAT PRESISI) =================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -186,10 +182,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }.map { (keyPair, items) ->
                     val descKey = keyPair.first
                     val custKey = keyPair.second
-                    val uniquePti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    val uniquePti = items.map { it.pti }.filter { it.isNotBlank() && it != "-" }.distinct().joinToString(", ")
                     
                     GroupedManifestItem(
-                        pti = uniquePti,
+                        pti = if (uniquePti.isBlank()) "-" else uniquePti,
                         description = if (descKey.isBlank()) "-" else descKey,
                         customer = if (custKey.isBlank()) "-" else custKey,
                         pcsQty = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 },
@@ -202,12 +198,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
-                    val uniqueDescs = items.map { it.description }.filter { it.isNotBlank() }.distinct().joinToString(", ")
-                    val uniqueCusts = items.map { it.customer }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    val uniqueDescs = items.map { it.description }.filter { it.isNotBlank() && it != "-" }.distinct().joinToString("+")
+                    val uniqueCusts = items.map { it.customer }.filter { it.isNotBlank() && it != "-" }.distinct().joinToString(", ")
                     GroupedStowingItem(
                         noPag = if (pagKey.isBlank()) "-" else pagKey,
-                        description = uniqueDescs,
-                        customer = uniqueCusts,
+                        description = if (uniqueDescs.isBlank()) "-" else uniqueDescs,
+                        customer = if (uniqueCusts.isBlank()) "-" else uniqueCusts,
                         subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     )
                 }
@@ -219,16 +215,16 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Mengisi Header AWB & Flight No
+                // Mengisi Header AWB & Flight No pada baris yang sesuai template
                 val row2 = sheet.getRow(1) ?: sheet.createRow(1)
                 (row2.getCell(7) ?: row2.createCell(7)).setCellValue(awbNo.trim().uppercase())
 
                 val row7 = sheet.getRow(6) ?: sheet.createRow(6)
                 (row7.getCell(7) ?: row7.createCell(7)).setCellValue(flightNo.trim().uppercase())
 
-                val startRow = 13 // Baris awal data (baris ke-14 pada Excel)
+                val startRow = 12 // Baris ke-13 di Excel (Indeks 12)
 
-                // 3. Menulis Data ke Tabel Manifest
+                // 3. Menulis Data ke Tabel Manifest Kiri (Kolom 0 s.d 6)
                 for ((index, item) in groupedManifest.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -242,15 +238,17 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 4. Menulis Data ke Tabel Stowing / PAG
+                // 4. Menulis Data ke Tabel Stowing / PAG Kanan (Sesuai Kolom Template Asli)
+                // Kolom 8 = No PAG, Kolom 9 = Description, Kolom 10 = Weight Net, Kolom 12 = Customer
                 for ((index, item) in groupedStowing.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
 
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue((index + 1).toDouble())
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.noPag)
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.description)
-                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.subTotal)
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble()) // Nomor urut kanan
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)            // No PAG
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)      // Description PAG
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)       // Weight Net PAG
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)       // Customer PAG
                 }
 
                 // Menyimpan File Hasil Export ke Cache Internal
