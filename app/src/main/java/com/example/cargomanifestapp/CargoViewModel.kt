@@ -22,11 +22,68 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
-    // --- MANAJEMEN DATA ---
+    // --- MANAJEMEN DATA (Mendukung Named Arguments dari MainActivity) ---
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
         currentList.add(item)
         _cargoList.value = currentList
+    }
+
+    fun addCargo(
+        awbNo: String = "",
+        flightNo: String = "",
+        pti: String = "",
+        pcsQty: String = "",
+        weight: String = "",
+        subTotal: String = "",
+        description: String = "",
+        customer: String = "",
+        noPag: String = ""
+    ) {
+        val newItem = CargoItem(
+            id = System.currentTimeMillis(),
+            awbNo = awbNo,
+            flightNo = flightNo,
+            pti = pti,
+            pcsQty = pcsQty,
+            weight = weight,
+            subTotal = subTotal,
+            description = description,
+            customer = customer,
+            noPag = noPag
+        )
+        addCargo(newItem)
+    }
+
+    fun updateCargo(
+        id: Long = 0L,
+        awbNo: String = "",
+        flightNo: String = "",
+        pti: String = "",
+        pcsQty: String = "",
+        weight: String = "",
+        subTotal: String = "",
+        description: String = "",
+        customer: String = "",
+        noPag: String = ""
+    ) {
+        val currentList = _cargoList.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == id }
+        if (index != -1) {
+            currentList[index] = CargoItem(
+                id = id,
+                awbNo = awbNo,
+                flightNo = flightNo,
+                pti = pti,
+                pcsQty = pcsQty,
+                weight = weight,
+                subTotal = subTotal,
+                description = description,
+                customer = customer,
+                noPag = noPag
+            )
+            _cargoList.value = currentList
+        }
     }
 
     fun updateCargo(item: CargoItem) {
@@ -48,7 +105,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // --- IMPORT LOGIC (Disesuaikan dengan struktur file Anda) ---
+    // --- IMPORT LOGIC ---
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -60,11 +117,8 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Mulai dari baris ke-13 (indeks 12)
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
-                    
-                    // Gunakan kolom 1 (PTI) sebagai validasi utama
                     val pti = getCellString(row, 1, evaluator)
                     if (pti.isEmpty()) continue 
 
@@ -72,11 +126,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         id = System.currentTimeMillis() + i,
                         pti = pti,
                         pcsQty = getCellString(row, 2, evaluator),
-                        weight = getCellString(row, 4, evaluator), // Kolom E
+                        weight = getCellString(row, 4, evaluator),
                         subTotal = getCellString(row, 4, evaluator),
                         description = getCellString(row, 5, evaluator),
                         customer = getCellString(row, 6, evaluator),
-                        noPag = getCellString(row, 8, evaluator) // Kolom I
+                        noPag = getCellString(row, 8, evaluator)
                     ))
                 }
                 workbook.close()
@@ -103,7 +157,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- EXPORT LOGIC (Sangat Rapi & Terpisah) ---
+    // --- EXPORT LOGIC ---
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -118,17 +172,14 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                // Bersihkan area data lama (Baris 12 s.d 35)
                 for (i in 12..35) {
                     val row = sheet.getRow(i) ?: sheet.createRow(i)
                     for (j in 0..12) { row.getCell(j)?.setCellValue("") }
                 }
 
-                // Isi Header
                 sheet.getRow(1)?.getCell(7)?.setCellValue(awbNo)
                 sheet.getRow(6)?.getCell(7)?.setCellValue(flightNo)
 
-                // 1. Tulis Tabel Manifest (Kiri)
                 var rowIdx = 12
                 for ((key, items) in groupedManifest) {
                     if (rowIdx > 30) break
@@ -140,7 +191,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     rowIdx++
                 }
 
-                // 2. Tulis Tabel Stowing (Kanan) - Kolom I ke atas (Indeks 8)
                 var rightRowIdx = 12
                 var countRight = 0
                 for ((pag, items) in groupedStowing) {
