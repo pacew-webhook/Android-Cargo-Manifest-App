@@ -95,6 +95,11 @@ private fun loadCargoListFromPrefs(context: Context): List<CargoItem> {
     return list
 }
 
+// Enum untuk tipe aksi hapus yang sedang dikonfirmasi
+private enum class DeleteType {
+    NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StowingInputScreen(onBack: () -> Unit) {
@@ -112,6 +117,11 @@ fun StowingInputScreen(onBack: () -> Unit) {
     val currentKgEntries = remember { mutableStateListOf<Double>() }
     val currentTotalKg = currentKgEntries.sum()
 
+    // --- STATE UNTUK DIALOG KONFIRMASI HAPUS ---
+    var deleteType by remember { mutableStateOf(DeleteType.NONE) }
+    var itemIndexToDelete by remember { mutableStateOf<Int?>(null) }
+    var kgIndexToDelete by remember { mutableStateOf<Int?>(null) }
+
     // --- BACA DATA TERAKHIR SAAT HALAMAN DIBUKA ---
     LaunchedEffect(Unit) {
         val savedData = loadCargoListFromPrefs(context)
@@ -119,7 +129,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         cargoList.addAll(savedData)
     }
 
-    // --- OTOMATIS SIMPAN KE HP SETIAP ADA PERUBAHAN DATA ---
+    // Auto Save ke penyimpanan lokal
     fun updateAndSaveCargoList() {
         saveCargoListToPrefs(context, cargoList.toList())
     }
@@ -185,7 +195,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
         }
 
-        // Auto Save ke penyimpanan lokal HP
         updateAndSaveCargoList()
 
         // Reset Form
@@ -196,6 +205,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         editingIndex = null
     }
 
+    // Fungsi edit (langsung jalan tanpa dialog)
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
         editingIndex = indexInOriginalList
         noPag = item.noPag
@@ -212,6 +222,86 @@ fun StowingInputScreen(onBack: () -> Unit) {
         cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
         }.groupBy { it.second.noPag }
+    }
+
+    // --- POP-UP DIALOG KONFIRMASI DELETE ---
+    if (deleteType != DeleteType.NONE) {
+        AlertDialog(
+            onDismissRequest = {
+                deleteType = DeleteType.NONE
+                itemIndexToDelete = null
+                kgIndexToDelete = null
+            },
+            title = { Text("Konfirmasi Hapus", fontWeight = FontWeight.Bold) },
+            text = {
+                val message = when (deleteType) {
+                    DeleteType.RESET_ALL -> "Apakah Anda yakin ingin menghapus SELURUH data stowing?"
+                    DeleteType.CARGO_ITEM -> "Apakah Anda yakin ingin menghapus data customer ini?"
+                    DeleteType.KG_ENTRY -> "Apakah Anda yakin ingin menghapus pecahan KG ini?"
+                    DeleteType.NONE -> ""
+                }
+                Text(message)
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        when (deleteType) {
+                            DeleteType.RESET_ALL -> {
+                                cargoList.clear()
+                                updateAndSaveCargoList()
+                                editingIndex = null
+                                noPag = ""
+                                customer = ""
+                                inputKg = ""
+                                currentKgEntries.clear()
+                                Toast.makeText(context, "Semua data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                            }
+                            DeleteType.CARGO_ITEM -> {
+                                itemIndexToDelete?.let { idx ->
+                                    if (idx in cargoList.indices) {
+                                        if (editingIndex == idx) {
+                                            editingIndex = null
+                                            noPag = ""
+                                            customer = ""
+                                            inputKg = ""
+                                            currentKgEntries.clear()
+                                        }
+                                        cargoList.removeAt(idx)
+                                        updateAndSaveCargoList()
+                                        Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            DeleteType.KG_ENTRY -> {
+                                kgIndexToDelete?.let { idx ->
+                                    if (idx in currentKgEntries.indices) {
+                                        currentKgEntries.removeAt(idx)
+                                    }
+                                }
+                            }
+                            DeleteType.NONE -> {}
+                        }
+                        // Reset State Dialog
+                        deleteType = DeleteType.NONE
+                        itemIndexToDelete = null
+                        kgIndexToDelete = null
+                    }
+                ) {
+                    Text("Hapus", color = Color.Red, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        deleteType = DeleteType.NONE
+                        itemIndexToDelete = null
+                        kgIndexToDelete = null
+                    }
+                ) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 
     Column(
@@ -244,12 +334,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
             }
 
             Row {
-                // Tombol Hapus Semua Data (Reset Session)
+                // Tombol Hapus Semua Data (Memicu Dialog)
                 if (cargoList.isNotEmpty()) {
                     IconButton(onClick = {
-                        cargoList.clear()
-                        updateAndSaveCargoList()
-                        Toast.makeText(context, "Semua data dibersihkan", Toast.LENGTH_SHORT).show()
+                        deleteType = DeleteType.RESET_ALL
                     }) {
                         Icon(
                             imageVector = Icons.Default.Delete,
@@ -413,8 +501,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
+                                    // Hapus elemen KG spesifik (Memicu Dialog)
                                     IconButton(
-                                        onClick = { currentKgEntries.removeAt(index) },
+                                        onClick = {
+                                            kgIndexToDelete = index
+                                            deleteType = DeleteType.KG_ENTRY
+                                        },
                                         modifier = Modifier.size(14.dp)
                                     ) {
                                         Icon(
@@ -582,6 +674,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 }
 
                                 Row {
+                                    // Tombol Edit (Langsung memuat data ke form tanpa dialog)
                                     IconButton(
                                         onClick = { startEditCargoItem(originalIndex, item) },
                                         modifier = Modifier.size(28.dp)
@@ -593,13 +686,11 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
+                                    // Tombol Delete (Memicu Dialog Konfirmasi)
                                     IconButton(
                                         onClick = {
-                                            if (editingIndex == originalIndex) {
-                                                editingIndex = null
-                                            }
-                                            cargoList.removeAt(originalIndex)
-                                            updateAndSaveCargoList()
+                                            itemIndexToDelete = originalIndex
+                                            deleteType = DeleteType.CARGO_ITEM
                                         },
                                         modifier = Modifier.size(28.dp)
                                     ) {
