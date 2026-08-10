@@ -108,9 +108,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
             currentTotalKg.toString()
         }
 
+        // Teks noPag diambil langsung tanpa penambahan string "PAG " otomatis agar tidak ganda
         val newCargoItem = CargoItem(
-            noPag = if (noPag.startsWith("PAG")) noPag else "PAG $noPag",
-            customer = customer.uppercase(),
+            noPag = noPag.uppercase().trim(),
+            customer = customer.uppercase().trim(),
             pcsQty = currentKgEntries.size.toString(),
             weight = formattedWeightList,
             subTotal = formattedTotalKg
@@ -189,7 +190,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         value = noPag,
                         onValueChange = { noPag = it.uppercase() },
                         label = { Text("NO PAG") },
-                        placeholder = { Text("283 MYI") },
+                        placeholder = { Text("001 MYI") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Characters,
@@ -245,7 +246,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- RINCIAN INPUT KG (5 BARIS/KOLOM PER ROW) ---
+                // --- RINCIAN INPUT KG (5 BARIS PER ROW) ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${currentKgEntries.size} Koli):",
@@ -255,7 +256,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(5), // 5 kolom
+                        columns = GridCells.Fixed(5),
                         modifier = Modifier
                             .fillMaxWidth()
                             .heightIn(max = 140.dp),
@@ -365,7 +366,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "${item.noPag} | Customer: ${item.customer}",
+                                text = "NO PAG: ${item.noPag} | Customer: ${item.customer}",
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF381E72)
                             )
