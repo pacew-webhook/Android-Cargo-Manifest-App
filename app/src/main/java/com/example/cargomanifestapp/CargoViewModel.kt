@@ -68,7 +68,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // ================= IMPLEMENTASI IMPORT EXCEL (DENGAN EVALUATOR FORMULA) =================
+    // ================= IMPLEMENTASI IMPORT EXCEL DINAMIS & PINTAR =================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -78,15 +78,38 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val importedList = mutableListOf<CargoItem>()
-                
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Membaca baris data mulai dari baris ke-14 (indeks 13) sampai baris terakhir
-                for (i in 13..sheet.lastRowNum) {
+                // 1. Deteksi letak indeks kolom secara otomatis berdasarkan baris Header
+                var colPti = 1
+                var colPcs = 2
+                var colWeight = 3
+                var colSubTotal = 4
+                var colDesc = 5
+                var colCust = 6
+                var colPag = 8
+
+                for (rIdx in 9..11) {
+                    val headRow = sheet.getRow(rIdx) ?: continue
+                    for (cIdx in 0 until headRow.lastCellNum) {
+                        val cellText = headRow.getCell(cIdx)?.toString()?.trim()?.uppercase() ?: ""
+                        when {
+                            cellText.contains("PTI") -> colPti = cIdx
+                            cellText.contains("PCS") || cellText.contains("QTY") -> colPcs = cIdx
+                            cellText.contains("WEIGHT") || cellText.contains("KG") -> colWeight = cIdx
+                            cellText.contains("SUB") -> colSubTotal = cIdx
+                            cellText.contains("DESC") -> colDesc = cIdx
+                            cellText.contains("COST") || cellText.contains("CUST") -> colCust = cIdx
+                            cellText.contains("PAG") || cellText.contains("PAJ") -> colPag = cIdx
+                        }
+                    }
+                }
+
+                // 2. Membaca baris data mulai dari baris ke-13 (indeks 12)
+                for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
                     
-                    // Fungsi bantu untuk membaca sel dan mengevaluasi rumus Excel jika ada
-                    fun getCellVal(colIdx: Int): String {
+                    fun getVal(colIdx: Int): String {
                         val cell = row.getCell(colIdx) ?: return ""
                         val evaluated = evaluator.evaluate(cell)
                         return when {
@@ -107,17 +130,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
-                    val pti = getCellVal(1)
-                    val description = getCellVal(5)
-                    
-                    // Lewati jika baris benar-benar kosong (PTI dan Description kosong)
-                    if (pti.isEmpty() && description.isEmpty()) continue
+                    val pti = getVal(colPti)
+                    val description = getVal(colDesc)
+                    val customer = getVal(colCust)
 
-                    val pcsQty = getCellVal(2)
-                    val weight = getCellVal(3)
-                    var subTotal = getCellVal(4)
-                    
-                    // Jika subtotal kosong atau berupa teks rumus, hitung otomatis dari Pcs * Weight
+                    // Jika baris benar-benar kosong, lewati
+                    if (pti.isEmpty() && description.isEmpty() && customer.isEmpty()) continue
+
+                    val pcsQty = getVal(colPcs)
+                    val weight = getVal(colWeight)
+                    var subTotal = getVal(colSubTotal)
+
+                    // Kalkulasi otomatis subtotal jika kosong atau berupa rumus
                     if (subTotal.isEmpty() || subTotal.contains("*")) {
                         val p = pcsQty.toDoubleOrNull() ?: 0.0
                         val w = weight.toDoubleOrNull() ?: 0.0
@@ -127,20 +151,19 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
-                    val customer = getCellVal(6)
-                    val noPag = getCellVal(8)
+                    val noPag = getVal(colPag)
 
                     val item = CargoItem(
                         id = System.currentTimeMillis() + i,
                         awbNo = "",
                         flightNo = "",
                         pti = if (pti.isNotBlank()) pti else "KAL00$i",
-                        pcsQty = pcsQty,
-                        weight = weight,
-                        subTotal = subTotal,
-                        description = description,
-                        customer = customer,
-                        noPag = noPag
+                        pcsQty = if (pcsQty.isNotBlank()) pcsQty else "0",
+                        weight = if (weight.isNotBlank()) weight else "0",
+                        subTotal = if (subTotal.isNotBlank()) subTotal else "0",
+                        description = if (description.isNotBlank()) description else "-",
+                        customer = if (customer.isNotBlank()) customer else "-",
+                        noPag = if (noPag.isNotBlank()) noPag else ""
                     )
                     importedList.add(item)
                 }
@@ -149,9 +172,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (importedList.isNotEmpty()) {
                         _cargoList.value = importedList
-                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan rapi!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Berhasil import ${importedList.size} data secara rapi!", Toast.LENGTH_SHORT).show()
                     } else {
-                        Toast.makeText(context, "Tidak ada data valid yang ditemukan pada file.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Tidak ada data valid yang ditemukan.", Toast.LENGTH_SHORT).show()
                     }
                 }
             } catch (e: Exception) {
