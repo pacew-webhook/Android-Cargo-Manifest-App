@@ -8,9 +8,9 @@ import java.io.OutputStream
 
 object ExcelUtils {
 
-    // Daftar lokasi awal Baris untuk setiap Block PAG (Row index 0-based)
-    // B1 -> index 0, B23 -> index 22, B34 -> index 33, B44 -> index 43, B55 -> index 54, dst.
-    private val PAG_ROW_INDEXES = listOf(0, 22, 33, 43, 54, 65, 76)
+    // Daftar lokasi awal Baris untuk setiap Block PAG (Row index 0-based):
+    // B1 -> index 0, B11 -> index 10, B23 -> index 22, B34 -> index 33, B44 -> index 43, B57 -> index 56, dst.
+    private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
 
     fun writeCargoListToExcel(context: Context, uri: Uri, cargoList: List<CargoItem>) {
         try {
@@ -41,7 +41,7 @@ object ExcelUtils {
 
                     // 3. Tulis Setiap Customer dalam PAG Ini (Menyamping / Horizontal)
                     // Customer 1: Kolom A (0), Customer 2: Kolom H (7) -> Lompat 2 kolom (A..E = 5 kolom, + 2 lompat = 7)
-                    val customerStartRow = startPagRowIndex + 2 // Baris nama Customer (misal A3, A25, A36, A46)
+                    val customerStartRow = startPagRowIndex + 2 // Baris nama Customer (misal A3, A13, A25, A36, dst)
                     var currentStartCol = 0                     // Kolom A
 
                     for (item in itemsInPag) {
