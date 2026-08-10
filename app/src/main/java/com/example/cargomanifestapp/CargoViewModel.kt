@@ -53,7 +53,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 1. KELOLA DATA LOCAL (ANTI-DOUBLE DARI MANUAL INPUT)
+    // 1. KELOLA DATA LOCAL (IZINKAN INPUT BEBAS DENGAN NO PAG BERBEDA)
     // ==========================================
     fun addCargo(
         awbNo: String = "", flightNo: String = "", pti: String = "",
@@ -62,17 +62,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val currentList = _cargoList.value.toMutableList()
 
-        // CEK DUPLIKAT SEBELUM DIMASUKKAN KE LIST
-        val isDuplicate = currentList.any {
+        // CEK DUPLIKAT TEREPAT: Hanya blokir jika SELURUH FIELD (termasuk No PAG) SAMA PERSIS
+        val isExactDuplicate = currentList.any {
             it.pti.equals(pti, ignoreCase = true) &&
             it.description.equals(description, ignoreCase = true) &&
             it.pcsQty.equals(pcsQty, ignoreCase = true) &&
             it.customer.equals(customer, ignoreCase = true) &&
-            it.subTotal.equals(subTotal, ignoreCase = true)
+            it.subTotal.equals(subTotal, ignoreCase = true) &&
+            it.noPag.equals(noPag, ignoreCase = true)
         }
 
-        if (isDuplicate) {
-            Toast.makeText(getApplication(), "Data PTI '$pti' dengan spesifikasi sama sudah ada!", Toast.LENGTH_SHORT).show()
+        if (isExactDuplicate) {
+            Toast.makeText(getApplication(), "Data persis sama sudah ada di list!", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -84,6 +85,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         )
         currentList.add(newItem)
         _cargoList.value = currentList
+        Toast.makeText(getApplication(), "Data Berhasil Ditambahkan", Toast.LENGTH_SHORT).show()
     }
 
     fun updateCargo(item: CargoItem) {
@@ -92,6 +94,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         if (index != -1) {
             currentList[index] = item
             _cargoList.value = currentList
+            Toast.makeText(getApplication(), "Data Berhasil Diperbarui", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -108,7 +111,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 2. IMPORT DATA FROM EXCEL (ANTI-DOUBLE & FILTER FOOTER)
+    // 2. IMPORT DATA FROM EXCEL
     // ==========================================
     fun importFromExcel(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -126,8 +129,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val extractedAwb = getCellStringFromCell(awbCell, evaluator)
                 val extractedFlight = getCellStringFromCell(flightCell, evaluator)
-
-                val uniqueKeysInImport = mutableSetOf<String>()
 
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
@@ -151,13 +152,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     if (isTotalRow) continue
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
 
-                    val uniqueKey = "${pti.trim()}_${description.trim()}_${pcsQty.trim()}_${customer.trim()}_${subTotal.trim()}"
-
-                    if (uniqueKeysInImport.contains(uniqueKey)) {
-                        continue
-                    }
-                    uniqueKeysInImport.add(uniqueKey)
-
                     val newItem = CargoItem(
                         id = System.currentTimeMillis() + i + (0..1000).random(),
                         awbNo = extractedAwb,
@@ -179,7 +173,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     _importedAwbNo.value = extractedAwb
                     _importedFlightNo.value = extractedFlight
                     _cargoList.value = importedList
-                    Toast.makeText(context, "Berhasil Import ${_cargoList.value.size} Data (Bebas Duplikat)", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Berhasil Import ${_cargoList.value.size} Data", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -190,13 +184,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (PERBAIKAN TOTAL TERLIPAT & DUPLIKAT)
+    // 3. EXPORT EXCEL (CLEANING TOTAL BARIS 14-38)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentList = cargoList.value
-                if (currentList.isEmpty()) return@launch
+                if (currentList.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Data Kosong! Tambah barang terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
 
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
@@ -204,7 +203,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 inputStream.close()
 
                 val startRow = 13 // Baris 14 di Excel (0-indexed)
-                val templateDataCapacity = 24 // Kapasitas default baris 14-37
+                val templateDataCapacity = 25 // Membersihkan sampai Baris 38 (indeks 37) agar nilai 25/100/2100 hilang!
 
                 val finalAwb = if (awbNo.isNotBlank()) awbNo else _importedAwbNo.value
                 val finalFlight = if (flightNo.isNotBlank()) flightNo else _importedFlightNo.value
@@ -216,22 +215,22 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val maxRows = maxOf(currentList.size, stowingList.size)
                 val sampleRow = sheet.getRow(startRow)
 
-                // 1. CLEANSING TOTAL: Bersihkan seluruh isi data bawaan template dari baris 14 sampai 37
+                // 1. PEMBERSIHAN TOTAL: Kosongkan seluruh sel di area data bawaan templat (Baris 14 s/d Baris 38)
                 for (r in startRow until (startRow + templateDataCapacity)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
                         for (c in 0..12) {
                             val cell = targetRow.getCell(c)
                             if (cell != null) {
-                                cell.setBlank()
+                                cell.setCellValue("")
                             }
                         }
                     }
                 }
 
-                // 2. GESER FOOTER / BARIS TOTAL JIKA DATA > 24 ITEM
-                if (maxRows > templateDataCapacity) {
-                    val extraRowsNeeded = maxRows - templateDataCapacity
+                // 2. GESER FOOTER JIKA DATA > 24 ITEM
+                if (maxRows > templateDataCapacity - 1) {
+                    val extraRowsNeeded = maxRows - (templateDataCapacity - 1)
                     sheet.shiftRows(37, sheet.lastRowNum, extraRowsNeeded, true, true)
                 }
 
@@ -249,7 +248,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         sampleRow?.let { row.height = it.height }
                     }
 
-                    // ISI SISI MANIFEST
+                    // SISI MANIFEST
                     if (i < currentList.size) {
                         val item = currentList[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
@@ -267,7 +266,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
                     }
 
-                    // ISI SISI STOWING
+                    // SISI STOWING
                     if (i < stowingList.size) {
                         val stowing = stowingList[i]
                         val net = parseDoubleOrZero(stowing.subTotal)
@@ -285,15 +284,19 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 4. PENETAPAN BARIS TOTAL PRESISI PADA BARIS 38 (INDEKS 37) ATAU DINAMIS
-                val totalRowIdx = if (maxRows <= templateDataCapacity) 37 else (startRow + maxRows)
+                // 4. SET BARIS TOTAL HANYA DENGAN DATA AKTUAL
+                val totalRowIdx = if (maxRows < templateDataCapacity) 37 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
                 setNumericCell(totalRow, 2, totalManifestPcs)
                 setNumericCell(totalRow, 4, totalManifestWeight)
+                
                 if (stowingList.isNotEmpty()) {
                     setNumericCell(totalRow, 10, totalStowingNet)
                     setNumericCell(totalRow, 11, totalStowingGross)
+                } else {
+                    totalRow.getCell(10)?.setCellValue("")
+                    totalRow.getCell(11)?.setCellValue("")
                 }
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
