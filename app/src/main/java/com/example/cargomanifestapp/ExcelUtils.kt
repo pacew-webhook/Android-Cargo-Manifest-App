@@ -2,92 +2,95 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.net.Uri
+import org.apache.poi.ss.usermodel.CellStyle
+import org.apache.poi.ss.usermodel.FillPatternType
+import org.apache.poi.ss.usermodel.Font
+import org.apache.poi.ss.usermodel.IndexedColors
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.InputStream
-import java.io.OutputStream
 
 object ExcelUtils {
 
-    // Daftar lokasi awal Baris untuk setiap Block PAG (Row index 0-based):
-    // B1 -> index 0, B11 -> index 10, B23 -> index 22, B34 -> index 33, B44 -> index 43, B57 -> index 56, dst.
-    private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
-
     fun writeCargoListToExcel(context: Context, uri: Uri, cargoList: List<CargoItem>) {
-        try {
-            val inputStream: InputStream = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
-            val workbook = XSSFWorkbook(inputStream)
-            val sheet = workbook.getSheetAt(0)
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            val workbook = XSSFWorkbook()
+            val sheet = workbook.createSheet("Stowing Report")
 
-            if (cargoList.isNotEmpty()) {
-                // Grouping data berdasarkan NO PAG unik untuk ditempatkan pada blok PAG yang berbeda
-                val groupedByPag = cargoList.groupBy { it.noPag }
+            // Styles
+            val headerStyle = workbook.createCellStyle().apply {
+                fillForegroundColor = IndexedColors.VIOLET.index
+                fillPattern = FillPatternType.SOLID_FOREGROUND
+                setFont(workbook.createFont().apply {
+                    bold = true
+                    color = IndexedColors.WHITE.index
+                })
+            }
 
-                var pagBlockIndex = 0
+            val boldStyle = workbook.createCellStyle().apply {
+                setFont(workbook.createFont().apply { bold = true })
+            }
 
-                for ((noPag, itemsInPag) in groupedByPag) {
-                    if (pagBlockIndex >= PAG_ROW_INDEXES.size) break
+            // Grouping data berdasarkan NO PAG
+            val groupedCargo = cargoList.groupBy { it.noPag }
 
-                    val startPagRowIndex = PAG_ROW_INDEXES[pagBlockIndex]
+            var currentRow = 1
 
-                    // 1. Tulis NO PAG di Kolom B (Index 1) pada baris PAG
-                    val pagRow = sheet.getRow(startPagRowIndex) ?: sheet.createRow(startPagRowIndex)
-                    val pagCell = pagRow.getCell(1) ?: pagRow.createCell(1)
-                    pagCell.setCellValue(noPag)
+            groupedCargo.forEach { (noPag, itemsInPag) ->
+                // Baris Header PAG
+                val pagRow = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
+                
+                val cellLabel = pagRow.createCell(0)
+                cellLabel.setCellValue("NO PAG:")
+                cellLabel.cellStyle = boldStyle
 
-                    // 2. Tulis TOTAL LOOT PAG di Kolom E (Index 4)
-                    val totalPagKg = itemsInPag.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
-                    val totalCell = pagRow.getCell(4) ?: pagRow.createCell(4)
-                    totalCell.setCellValue(totalPagKg)
+                val cellPagValue = pagRow.createCell(1)
+                cellPagValue.setCellValue(noPag)
+                cellPagValue.cellStyle = headerStyle
 
-                    // 3. Tulis Setiap Customer dalam PAG Ini (Menyamping / Horizontal)
-                    // Customer 1: Kolom A (0), Customer 2: Kolom H (7) -> Lompat 2 kolom (A..E = 5 kolom, + 2 lompat = 7)
-                    val customerStartRow = startPagRowIndex + 2 // Baris nama Customer (misal A3, A13, A25, A36, dst)
-                    var currentStartCol = 0                     // Kolom A
+                currentRow += 2
 
-                    for (item in itemsInPag) {
-                        // A. Tulis Nama Customer
-                        val custRow = sheet.getRow(customerStartRow) ?: sheet.createRow(customerStartRow)
-                        val custCell = custRow.getCell(currentStartCol) ?: custRow.createCell(currentStartCol)
-                        custCell.setCellValue(item.customer)
+                // Kita mulai entry customer dari Kolom 0 (A), lalu setiap customer baru BERGESER 2 KOLOM
+                var currentCol = 0
 
-                        // B. Tulis Daftar KG
-                        val kgValues = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
-                        var currentRow = customerStartRow + 1 // Baris pertama data KG
-                        var colOffset = 0                     // 0..4 (5 kolom per baris)
+                itemsInPag.forEach { item ->
+                    // 1. Tulis Nama Customer & Koli/Subtotal
+                    val custRow = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
+                    
+                    val cellCust = custRow.createCell(currentCol)
+                    cellCust.setCellValue(item.customer)
+                    cellCust.cellStyle = boldStyle
 
-                        for (kg in kgValues) {
-                            val r = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
-                            val targetCol = currentStartCol + colOffset
+                    val cellInfo = custRow.createCell(currentCol + 1)
+                    cellInfo.setCellValue("${item.pcsQty} Koli (${item.subTotal} KG)")
+                    cellInfo.cellStyle = boldStyle
 
-                            val c = r.getCell(targetCol) ?: r.createCell(targetCol)
-                            c.setCellValue(kg)
-
-                            colOffset++
-                            if (colOffset >= 5) { // Jika sudah 5 kolom, pindah baris di bawahnya
-                                colOffset = 0
-                                currentRow++
-                            }
-                        }
-
-                        // C. Pindah ke Customer Berikutnya: Lompat 5 kolom data + 2 kolom kosong = 7 kolom
-                        currentStartCol += 7
+                    // 2. Tulis Rincian KG ke bawah di bawah customer masing-masing
+                    val parsedKg = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+                    
+                    parsedKg.forEachIndexed { index, kg ->
+                        val kgRowIndex = currentRow + 1 + index
+                        val kgRow = sheet.getRow(kgRowIndex) ?: sheet.createRow(kgRowIndex)
+                        
+                        val cellKgLabel = kgRow.createCell(currentCol)
+                        cellKgLabel.setCellValue("Koli ${index + 1}")
+                        
+                        val cellKgValue = kgRow.createCell(currentCol + 1)
+                        cellKgValue.setCellValue(kg)
                     }
 
-                    pagBlockIndex++
+                    // *** PENTING: BERGESER TEPAT 2 KOLOM UNTUK CUSTOMER/ENTRY BERIKUTNYA ***
+                    currentCol += 2
                 }
+
+                // Hitung baris tertinggi yang terpakai di group ini sebelum lanjut ke PAG berikutnya
+                val maxKgCount = itemsInPag.maxOfOrNull { 
+                    it.weight.split(",").size 
+                } ?: 0
+
+                currentRow += (maxKgCount + 3) // Tambahkan jarak antar PAG
             }
 
-            // Simpan file Excel yang telah diperbarui
-            val outputStream: OutputStream? = context.contentResolver.openOutputStream(uri)
-            if (outputStream != null) {
-                workbook.write(outputStream)
-                outputStream.close()
-                workbook.close()
-                inputStream.close()
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            throw e
+            workbook.write(outputStream)
+            workbook.close()
         }
     }
 }
