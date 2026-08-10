@@ -23,8 +23,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
+    // State untuk menyimpan Header Manifest saat di-import
+    private val _importedAwbNo = MutableStateFlow("")
+    val importedAwbNo: StateFlow<String> = _importedAwbNo.asStateFlow()
+
+    private val _importedFlightNo = MutableStateFlow("")
+    val importedFlightNo: StateFlow<String> = _importedFlightNo.asStateFlow()
+
     // ==========================================
-    // 1. TAMBAH & KELOLA DATA LOCAL
+    // 1. KELOLA DATA LOCAL
     // ==========================================
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
@@ -63,10 +70,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearAll() {
         _cargoList.value = emptyList()
+        _importedAwbNo.value = ""
+        _importedFlightNo.value = ""
     }
 
     // ==========================================
-    // 2. IMPORT DATA (MEMBUANG BARIS TOTAL LUAR)
+    // 2. IMPORT DATA (MEMBACA HEADER & FILTER FOOTER)
     // ==========================================
     fun importFromExcel(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -79,7 +88,14 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Membaca mulai baris 14 di Excel (Indeks 13)
+                // A. BACA HEADER (AWB & FLIGHT NO)
+                val awbCell = sheet.getRow(2)?.getCell(6)
+                val flightCell = sheet.getRow(8)?.getCell(6)
+                
+                val extractedAwb = getCellStringFromCell(awbCell, evaluator)
+                val extractedFlight = getCellStringFromCell(flightCell, evaluator)
+
+                // B. BACA DATA ITEM (Mulai baris 14 / Indeks 13)
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
@@ -92,21 +108,23 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val customer = getCellString(row, 6, evaluator)
                     val noPag = getCellString(row, 8, evaluator)
 
-                    // ABAIKAN JIKA MERUPAKAN BARIS TOTAL ATAU FOOTER
+                    // ABAIKAN BARIS TOTAL, FOOTER, DAN TANDA TANGAN
                     val isTotalRow = noCol.contains("TOTAL", true) ||
                             pti.contains("TOTAL", true) ||
                             description.contains("TOTAL", true) ||
                             description.contains("Prepared", true) ||
-                            description.contains("Approved", true)
+                            description.contains("Approved", true) ||
+                            customer.contains("Approved", true)
 
-                    if (isTotalRow) {
-                        continue
-                    }
+                    if (isTotalRow) continue
 
+                    // Abaikan baris kosong
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
 
                     val newItem = CargoItem(
                         id = System.currentTimeMillis() + i + (0..1000).random(),
+                        awbNo = extractedAwb,
+                        flightNo = extractedFlight,
                         pti = pti,
                         pcsQty = pcsQty,
                         weight = pcsWeight,
@@ -121,6 +139,8 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 workbook.close()
 
                 withContext(Dispatchers.Main) {
+                    _importedAwbNo.value = extractedAwb
+                    _importedFlightNo.value = extractedFlight
                     _cargoList.value = importedList
                     Toast.makeText(context, "Berhasil Import ${importedList.size} Data", Toast.LENGTH_SHORT).show()
                 }
@@ -133,7 +153,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (PRESISI, BORDER RAPI, TOTAL DI BAWAH)
+    // 3. EXPORT EXCEL (PRESISI, RAPI & SUPPORT > 24 ITEM)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -147,20 +167,23 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 inputStream.close()
 
                 val startRow = 13 // Baris 14 di Excel (0-indexed)
-                val templateDataCapacity = 24 // Kapasitas default baris data bawaan template (Baris 14-37)
+                val templateDataCapacity = 24 // Kapasitas default template (Baris 14-37)
 
-                // Header
-                sheet.getRow(2)?.getCell(6)?.setCellValue(awbNo)
-                sheet.getRow(8)?.getCell(6)?.setCellValue(flightNo)
+                // Header (Gunakan parameter atau hasil import)
+                val finalAwb = if (awbNo.isNotBlank()) awbNo else _importedAwbNo.value
+                val finalFlight = if (flightNo.isNotBlank()) flightNo else _importedFlightNo.value
 
-                // Stowing List (Filter item yang memiliki NO PAG)
+                sheet.getRow(2)?.getCell(6)?.setCellValue(finalAwb)
+                sheet.getRow(8)?.getCell(6)?.setCellValue(finalFlight)
+
+                // Filter Stowing Checklist (Item yang punya NO PAG)
                 val stowingList = currentList.filter { it.noPag.isNotBlank() }
                 val maxRows = maxOf(currentList.size, stowingList.size)
 
-                // Ambil sampel row untuk menyalin garis border & styling font
+                // Sampel row untuk menyalin style border & font
                 val sampleRow = sheet.getRow(startRow)
 
-                // Bersihkan dahulu slot data bawaan (Baris 14 s/d 37)
+                // Clean-up slot data bawaan (Baris 14-37)
                 for (r in startRow until (startRow + templateDataCapacity)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
@@ -170,7 +193,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // Geser footer templat ke bawah jika jumlah data melebihi kapasitas template (24 item)
+                // Geser Footer jika data barang > 24 baris
                 if (maxRows > templateDataCapacity) {
                     val extraRowsNeeded = maxRows - templateDataCapacity
                     sheet.shiftRows(37, sheet.lastRowNum, extraRowsNeeded, true, true)
@@ -181,7 +204,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 var totalStowingNet = 0.0
                 var totalStowingGross = 0.0
 
-                // Tulis data barang
+                // Isi Data Barang
                 for (i in 0 until maxRows) {
                     val rowIdx = startRow + i
                     var row = sheet.getRow(rowIdx)
@@ -190,7 +213,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         sampleRow?.let { row.height = it.height }
                     }
 
-                    // MANIFEST (SISI KIRI)
+                    // SISI MANIFEST
                     if (i < currentList.size) {
                         val item = currentList[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
@@ -208,7 +231,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
                     }
 
-                    // STOWING (SISI KANAN)
+                    // SISI STOWING
                     if (i < stowingList.size) {
                         val stowing = stowingList[i]
                         val net = parseDoubleOrZero(stowing.subTotal)
@@ -226,7 +249,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // ISI BARIS TOTAL UTAMA DI POSISI TERAKHIR (TANPA TOTAL DI TENGAH DATA)
+                // ISI BARIS TOTAL UTAMA PADA POSISI AKHIR
                 val totalRowIdx = if (maxRows <= templateDataCapacity) 37 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
@@ -235,7 +258,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 setNumericCell(totalRow, 10, totalStowingNet)
                 setNumericCell(totalRow, 11, totalStowingGross)
 
-                // Simpan ke file cache & buka melalui Intent External
+                // Output File
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -259,10 +282,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // HELPER FUNCTIONS
+    // HELPER UTILITY
     // ==========================================
     private fun getCellString(row: Row, colIdx: Int, evaluator: FormulaEvaluator): String {
         val cell = row.getCell(colIdx) ?: return ""
+        return getCellStringFromCell(cell, evaluator)
+    }
+
+    private fun getCellStringFromCell(cell: Cell?, evaluator: FormulaEvaluator): String {
+        if (cell == null) return ""
         val evaluated = evaluator.evaluate(cell)
         return when (evaluated?.cellType) {
             CellType.NUMERIC -> formatNumber(evaluated.numberValue)
