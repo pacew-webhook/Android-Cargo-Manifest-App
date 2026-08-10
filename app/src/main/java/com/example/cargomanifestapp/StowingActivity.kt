@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -61,14 +61,14 @@ fun StowingInputScreen(onBack: () -> Unit) {
     var customer by remember { mutableStateOf("") }
     var inputKg by remember { mutableStateOf("") }
 
-    // State untuk melacak item yang sedang diedit (null jika mode Tambah Baru)
+    // Index item yang sedang diedit dalam cargoList
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
     val currentKgEntries = remember { mutableStateListOf<Double>() }
     val currentTotalKg = currentKgEntries.sum()
 
-    // Launcher untuk export ke template Excel
+    // Launcher Export Excel
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ) { uri ->
@@ -122,11 +122,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         val index = editingIndex
         if (index != null && index in cargoList.indices) {
-            // Mode Edit / Update
             cargoList[index] = newItem
             Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
         } else {
-            // Mode Tambah Baru
             cargoList.add(0, newItem)
             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
         }
@@ -139,17 +137,22 @@ fun StowingInputScreen(onBack: () -> Unit) {
         editingIndex = null
     }
 
-    // Fungsi untuk memuat data item ke form input saat tombol Edit diklik
-    fun startEditCargoItem(index: Int, item: CargoItem) {
-        editingIndex = index
+    fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
+        editingIndex = indexInOriginalList
         noPag = item.noPag
         customer = item.customer
         inputKg = ""
         currentKgEntries.clear()
 
-        // Masukkan rincian KG ke daftar temp input
         val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
         currentKgEntries.addAll(parsedKgList)
+    }
+
+    // Mengelompokkan data berdasarkan NO PAG
+    val groupedCargo = remember(cargoList.toList()) {
+        cargoList.mapIndexed { originalIndex, item ->
+            Pair(originalIndex, item)
+        }.groupBy { it.second.noPag }
     }
 
     Column(
@@ -296,7 +299,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- RINCIAN INPUT KG (5 KOLOM PER BARIS) ---
+                // --- RINCIAN INPUT KG ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${currentKgEntries.size} Koli):",
@@ -394,7 +397,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGO ITEM TERSIMPAN & GRAND TOTAL ---
+        // --- DAFTAR CARGO TERGROUPING ---
         val grandTotalKg = cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
         val grandTotalKoli = cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
 
@@ -412,7 +415,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Daftar Stowing Tersimpan (${cargoList.size})",
+                text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = Color(0xFF381E72)
@@ -436,76 +439,140 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // --- DAFTAR KARTU CARGO DENGAN TOMBOL EDIT & DELETE ---
+        // --- DISPLAY GROUPED CARDS ---
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            itemsIndexed(cargoList) { index, item ->
+            items(groupedCargo.entries.toList()) { group ->
+                val pagKey = group.key
+                val itemsInGroup = group.value // List of Pair(originalIndex, CargoItem)
+
+                val groupTotalKg = itemsInGroup.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
+                val groupTotalKoli = itemsInGroup.sumOf { it.second.pcsQty.toIntOrNull() ?: 0 }
+                val customerName = itemsInGroup.firstOrNull()?.second?.customer ?: ""
+
+                val formattedGroupKg = if (groupTotalKg % 1.0 == 0.0) {
+                    groupTotalKg.toLong().toString()
+                } else {
+                    groupTotalKg.toString()
+                }
+
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (editingIndex == index) Color(0xFFFFF3E0) else Color.White
-                    ),
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
+                        // Group Header
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "NO PAG: ${item.noPag} | Customer: ${item.customer}",
+                                text = "NO PAG: $pagKey | Customer: $customerName",
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF381E72),
-                                modifier = Modifier.weight(1f)
+                                fontSize = 15.sp,
+                                color = Color(0xFF381E72)
                             )
+                        }
 
-                            // Tombol Aksi: Edit & Delete
-                            Row {
-                                IconButton(onClick = { startEditCargoItem(index, item) }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Edit,
-                                        contentDescription = "Edit Data",
-                                        tint = Color(0xFF0288D1)
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = Color.LightGray
+                        )
+
+                        // Rincian sub-item di dalam NO PAG tersebut
+                        itemsInGroup.forEachIndexed { subIndex, pair ->
+                            val originalIndex = pair.first
+                            val item = pair.second
+
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        if (editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Entry #${subIndex + 1} - ${item.pcsQty} Koli (${item.subTotal} KG)",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 13.sp
+                                    )
+                                    Text(
+                                        text = "KG: ${item.weight}",
+                                        fontSize = 11.sp,
+                                        color = Color.DarkGray
                                     )
                                 }
-                                IconButton(onClick = {
-                                    if (editingIndex == index) {
-                                        editingIndex = null
+
+                                Row {
+                                    IconButton(
+                                        onClick = { startEditCargoItem(originalIndex, item) },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Data",
+                                            tint = Color(0xFF0288D1),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
-                                    cargoList.removeAt(index)
-                                }) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Hapus Data",
-                                        tint = Color(0xFFB3261E)
-                                    )
+                                    IconButton(
+                                        onClick = {
+                                            if (editingIndex == originalIndex) {
+                                                editingIndex = null
+                                            }
+                                            cargoList.removeAt(originalIndex)
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Hapus Data",
+                                            tint = Color(0xFFB3261E),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
+                            }
+
+                            if (subIndex < itemsInGroup.size - 1) {
+                                Spacer(modifier = Modifier.height(4.dp))
                             }
                         }
 
-                        Text(
-                            text = "Jumlah Koli: ${item.pcsQty}",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                        Text(
-                            text = "Rincian KG: ${item.weight}",
-                            fontSize = 12.sp,
-                            color = Color.DarkGray
-                        )
+                        Spacer(modifier = Modifier.height(8.dp))
 
-                        Spacer(modifier = Modifier.height(4.dp))
-
-                        Text(
-                            text = "TOTAL: ${item.subTotal} KG",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp,
-                            color = Color(0xFF2E7D32)
-                        )
+                        // Group Summary Footer
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFE8F5E9), shape = RoundedCornerShape(6.dp))
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "TOTAL PAG ($groupTotalKoli Koli):",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF1B5E20)
+                            )
+                            Text(
+                                text = "$formattedGroupKg KG",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF2E7D32)
+                            )
+                        }
                     }
                 }
             }
