@@ -68,7 +68,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // ================= IMPORT EXCEL PRESISI & BERSIH DARI SAMPAH =================
+    // ================= IMPORT EXCEL PRESISI TINGGI (ANTI BERANTAKAN) =================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -80,50 +80,49 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Membaca baris data mulai dari baris ke-13 Excel (Indeks 12)
+                fun getCellString(row: org.apache.poi.ss.usermodel.Row, colIdx: Int): String {
+                    val cell = row.getCell(colIdx) ?: return ""
+                    val evaluated = evaluator.evaluate(cell)
+                    return when {
+                        evaluated != null -> {
+                            when (evaluated.cellType) {
+                                org.apache.poi.ss.usermodel.CellType.NUMERIC -> {
+                                    val num = evaluated.numberValue
+                                    if (num % 1.0 == 0.0) num.toInt().toString() else num.toString()
+                                }
+                                org.apache.poi.ss.usermodel.CellType.STRING -> evaluated.stringValue?.trim() ?: ""
+                                else -> ""
+                            }
+                        }
+                        else -> {
+                            val str = cell.toString().trim()
+                            if (str.equals("null", ignoreCase = true) || str.startsWith("=")) "" else str
+                        }
+                    }
+                }
+
+                // Membaca baris data utama mulai dari baris ke-13 Excel (Indeks 12)
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
-                    fun getVal(colIdx: Int): String {
-                        val cell = row.getCell(colIdx) ?: return ""
-                        val evaluated = evaluator.evaluate(cell)
-                        return when {
-                            evaluated != null -> {
-                                when (evaluated.cellType) {
-                                    org.apache.poi.ss.usermodel.CellType.NUMERIC -> {
-                                        val num = evaluated.numberValue
-                                        if (num % 1.0 == 0.0) num.toInt().toString() else num.toString()
-                                    }
-                                    org.apache.poi.ss.usermodel.CellType.STRING -> evaluated.stringValue?.trim() ?: ""
-                                    else -> ""
-                                }
-                            }
-                            else -> {
-                                val str = cell.toString().trim()
-                                if (str.equals("null", ignoreCase = true) || str.startsWith("=")) "" else str
-                            }
-                        }
+                    // Kolom 0 adalah Nomor Urut (1, 2, 3, dst.)
+                    val noStr = getCellString(row, 0)
+                    // Jika kolom No bukan angka (artinya sudah lewat dari tabel data utama seperti baris total/tanda tangan), hentikan atau lewati
+                    val noInt = noStr.toIntOrNull()
+                    if (noInt == null || noInt <= 0) {
+                        // Jika sudah masuk area bawah (misal baris total/tanda tangan), skip
+                        continue
                     }
 
-                    // Pemetaan Kolom Standar Template Manifest Kiri:
-                    // Kolom 0 = No, Kolom 1 = PTI, Kolom 2 = Pcs/Cly, Kolom 3 = Weight/PcsCly, Kolom 4 = SubTotal, Kolom 5 = Description, Kolom 6 = Customers
-                    // Kolom 8 = No PAG, Kolom 9 = Desc PAG, Kolom 10 = Weight Net PAG, Kolom 11 = Weight Gross PAG, Kolom 12 = Customers PAG
-                    val noCol = getVal(0)
-                    val pti = getVal(1)
-                    val description = getVal(5)
-                    val customer = getVal(6)
+                    val pti = getCellString(row, 1)
+                    val pcsQty = getCellString(row, 2)
+                    val weight = getCellString(row, 3)
+                    var subTotal = getCellString(row, 4)
+                    val description = getCellString(row, 5)
+                    val customer = getCellString(row, 6)
 
-                    // Jika nomor urut (kolom 0) bukan angka atau baris kosong, hentikan atau lewati (cegah baca baris bawah/tanda tangan)
-                    if (noCol.toIntOrNull() == null || pti.isEmpty()) {
-                        // Cek apakah ini baris bawah (seperti Prepared by / Tanda tangan)
-                        if (pti.contains("M NUR") || pti.contains("PREPARED") || pti.contains("APPROVED") || pti.isEmpty()) {
-                            continue
-                        }
-                    }
-
-                    val pcsQty = getVal(2)
-                    val weight = getVal(3)
-                    var subTotal = getVal(4)
+                    // Ambil No PAG dari tabel kanan (Kolom 9 / Indeks 9) jika ada pada baris yang sama
+                    val noPag = getCellString(row, 9)
 
                     // Kalkulasi otomatis subtotal jika kosong atau berupa rumus excel
                     if (subTotal.isEmpty() || subTotal.contains("*")) {
@@ -135,19 +134,17 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
-                    val noPag = getVal(8)
-
                     val item = CargoItem(
                         id = System.currentTimeMillis() + i,
                         awbNo = "",
                         flightNo = "",
-                        pti = pti,
+                        pti = if (pti.isNotBlank()) pti else "KAL00$i",
                         pcsQty = if (pcsQty.isNotBlank()) pcsQty else "0",
                         weight = if (weight.isNotBlank()) weight else "0",
                         subTotal = if (subTotal.isNotBlank()) subTotal else "0",
                         description = if (description.isNotBlank()) description else "-",
                         customer = if (customer.isNotBlank()) customer else "-",
-                        noPag = if (noPag.isNotBlank()) noPag else ""
+                        noPag = if (noPag.isNotBlank() && !noPag.startsWith("PAG")) "PAG $noPag" else noPag
                     )
                     importedList.add(item)
                 }
@@ -156,7 +153,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (importedList.isNotEmpty()) {
                         _cargoList.value = importedList
-                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan sangat rapi!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan rapi!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Tidak ada data valid yang ditemukan.", Toast.LENGTH_SHORT).show()
                     }
