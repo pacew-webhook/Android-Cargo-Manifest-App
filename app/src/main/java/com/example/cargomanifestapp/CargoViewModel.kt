@@ -17,34 +17,6 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
-// Model Data Pendukung
-data class CargoItem(
-    val id: String = "",
-    val pti: String = "",
-    val pcsQty: String = "",
-    val weight: String = "",
-    val subTotal: String = "",
-    val description: String = "",
-    val customer: String = "",
-    val noPag: String = ""
-)
-
-data class GroupedManifestItem(
-    val pti: String,
-    val description: String,
-    val customer: String,
-    val pcsQty: Double,
-    val weight: Double,
-    val subTotal: Double
-)
-
-data class GroupedStowingItem(
-    val noPag: String,
-    val description: String,
-    val customer: String,
-    val subTotal: Double
-)
-
 class CargoViewModel : ViewModel() {
 
     // State utama untuk menampung list data kargo
@@ -79,7 +51,7 @@ class CargoViewModel : ViewModel() {
         _cargoList.value = emptyList()
     }
 
-    // ================= FUNGSI EXPORT DATA EXCEL (YANG DIPERBAIKI) =================
+    // ================= FUNGSI EXPORT DATA EXCEL =================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -140,7 +112,7 @@ class CargoViewModel : ViewModel() {
 
                 val startRow = 12 // Baris awal data dimulai (Baris ke-13 pada Excel)
 
-                // 3. Menulis Data ke Tabel Manifest (Kolom A s.d G / Indeks 0 sampai 6)
+                // 3. Menulis Data ke Tabel Manifest
                 for ((index, item) in groupedManifest.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -154,7 +126,7 @@ class CargoViewModel : ViewModel() {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 4. Menulis Data ke Tabel Stowing / PAG (Kolom H s.d M / Indeks 7 sampai 12 secara presisi)
+                // 4. Menulis Data ke Tabel Stowing / PAG
                 for ((index, item) in groupedStowing.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -162,9 +134,9 @@ class CargoViewModel : ViewModel() {
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal) // Kolom Net
-                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.subTotal) // Kolom Gross
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)  // Kolom Costumers
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)
+                    (row.getCell(11) ?: row.createCell(11)).setCellValue(item.subTotal)
+                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
                 }
 
                 // Menyimpan File Hasil Export ke Cache Internal
@@ -180,7 +152,6 @@ class CargoViewModel : ViewModel() {
                     file
                 )
 
-                // Membuka File Excel Secara Otomatis
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
                         setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -204,3 +175,20 @@ class CargoViewModel : ViewModel() {
         }
     }
 }
+
+// Model data pendukung khusus untuk grouping export Excel
+data class GroupedManifestItem(
+    val pti: String,
+    val description: String,
+    val customer: String,
+    val pcsQty: Double,
+    val weight: Double,
+    val subTotal: Double
+)
+
+data class GroupedStowingItem(
+    val noPag: String,
+    val description: String,
+    val customer: String,
+    val subTotal: Double
+)
