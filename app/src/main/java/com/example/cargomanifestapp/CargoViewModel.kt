@@ -22,9 +22,35 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
+    // ==========================================
+    // TAMBAH DATA (OTOMATIS MERGE JIKA SAMA)
+    // ==========================================
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
-        currentList.add(item)
+
+        // Cari apakah sudah ada data dengan Description, Customer, dan PTI yang sama
+        val existingIndex = currentList.indexOfFirst {
+            it.description.equals(item.description, ignoreCase = true) &&
+            it.customer.equals(item.customer, ignoreCase = true) &&
+            it.pti.equals(item.pti, ignoreCase = true)
+        }
+
+        if (existingIndex != -1) {
+            // JIKA SAMA: GABUNGKAN DATA
+            val existing = currentList[existingIndex]
+            val newPcs = parseDoubleOrZero(existing.pcsQty) + parseDoubleOrZero(item.pcsQty)
+            val newSubTotal = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(item.subTotal)
+
+            val updatedItem = existing.copy(
+                pcsQty = if (newPcs % 1.0 == 0.0) newPcs.toInt().toString() else newPcs.toString(),
+                subTotal = if (newSubTotal % 1.0 == 0.0) newSubTotal.toInt().toString() else newSubTotal.toString(),
+                noPag = if (item.noPag.isNotBlank()) item.noPag else existing.noPag
+            )
+            currentList[existingIndex] = updatedItem
+        } else {
+            // JIKA BEDA: TAMBAH BARIS BARU
+            currentList.add(item)
+        }
         _cargoList.value = currentList
     }
 
@@ -74,7 +100,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // LOGIKA IMPORT DATA DARI EXCEL
+    // IMPORT DATA DARI EXCEL (DENGAN FILTER & MERGE)
     // ==========================================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -90,17 +116,21 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
+                    val noCol = getCellString(row, 0, evaluator)
                     val pti = getCellString(row, 1, evaluator)
                     val pcsQty = getCellString(row, 2, evaluator)
-                    val pcsWeight = getCellString(row, 3, evaluator) // Col D: Pcs/Qty Wt
-                    val subTotal = getCellString(row, 4, evaluator)  // Col E: Sub Total Weight
+                    val pcsWeight = getCellString(row, 3, evaluator)
+                    val subTotal = getCellString(row, 4, evaluator)
                     val description = getCellString(row, 5, evaluator)
                     val customer = getCellString(row, 6, evaluator)
-                    val noPag = getCellString(row, 8, evaluator)     // Col I: NO PAG
+                    val noPag = getCellString(row, 8, evaluator)
 
-                    if (pti.contains("TOTAL", ignoreCase = true) || 
-                        description.contains("TOTAL", ignoreCase = true) || 
-                        description.contains("Prepared by", ignoreCase = true)) {
+                    // ABANGKAN BARIS TOTAL ATAU TANDA TANGAN DARI TEMPLATE
+                    if (noCol.contains("TOTAL", ignoreCase = true) ||
+                        pti.contains("TOTAL", ignoreCase = true) ||
+                        description.contains("TOTAL", ignoreCase = true) ||
+                        description.contains("Prepared", ignoreCase = true) ||
+                        customer.contains("Approved", ignoreCase = true)) {
                         break
                     }
 
@@ -108,24 +138,43 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         continue
                     }
 
-                    importedList.add(
-                        CargoItem(
-                            id = System.currentTimeMillis() + i,
-                            pti = pti,
-                            pcsQty = pcsQty,
-                            weight = pcsWeight,
-                            subTotal = if (subTotal.isNotBlank()) subTotal else pcsWeight,
-                            description = description,
-                            customer = customer,
-                            noPag = noPag
-                        )
+                    val newItem = CargoItem(
+                        id = System.currentTimeMillis() + i,
+                        pti = pti,
+                        pcsQty = pcsQty,
+                        weight = pcsWeight,
+                        subTotal = if (subTotal.isNotBlank()) subTotal else pcsWeight,
+                        description = description,
+                        customer = customer,
+                        noPag = noPag
                     )
+
+                    // MERGE JIKA SUDAH ADA DATA YANG SAMA DARI HASIL IMPORT
+                    val existingIndex = importedList.indexOfFirst {
+                        it.description.equals(newItem.description, ignoreCase = true) &&
+                        it.customer.equals(newItem.customer, ignoreCase = true) &&
+                        it.pti.equals(newItem.pti, ignoreCase = true)
+                    }
+
+                    if (existingIndex != -1) {
+                        val existing = importedList[existingIndex]
+                        val newPcs = parseDoubleOrZero(existing.pcsQty) + parseDoubleOrZero(newItem.pcsQty)
+                        val newSub = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(newItem.subTotal)
+
+                        importedList[existingIndex] = existing.copy(
+                            pcsQty = if (newPcs % 1.0 == 0.0) newPcs.toInt().toString() else newPcs.toString(),
+                            subTotal = if (newSub % 1.0 == 0.0) newSub.toInt().toString() else newSub.toString(),
+                            noPag = if (newItem.noPag.isNotBlank()) newItem.noPag else existing.noPag
+                        )
+                    } else {
+                        importedList.add(newItem)
+                    }
                 }
                 workbook.close()
 
                 withContext(Dispatchers.Main) {
                     _cargoList.value = importedList
-                    Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Berhasil import ${importedList.size} data terkelompok!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
@@ -149,7 +198,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // LOGIKA EXPORT DATA KE EXCEL
+    // EXPORT DATA KE EXCEL (LAYOUT KUNCI/FIXED)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -167,107 +216,83 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                val startRow = 13 // Indeks 13 = Row 14 di Excel
-                val defaultTemplateRows = 25
-                val dataSize = currentList.size
+                val startRow = 13 // Indeks 13 = Row 14 Excel
+                val maxRows = 25  // Slot maksimum per lembar manifest (Row 14 - 38)
 
-                // Header Penerbangan
+                // 1. Header Flight
                 sheet.getRow(2)?.getCell(6)?.setCellValue(awbNo)     // Row 3 Col G
                 sheet.getRow(8)?.getCell(6)?.setCellValue(flightNo)  // Row 9 Col G
 
-                // 1. Penanganan Jumlah Baris Manifest (Kiri)
-                if (dataSize > defaultTemplateRows) {
-                    val extraRows = dataSize - defaultTemplateRows
-                    sheet.shiftRows(startRow + defaultTemplateRows, sheet.lastRowNum, extraRows, true, false)
-                } else {
-                    val defaultTotalRow = sheet.getRow(38)
-                    if (defaultTotalRow != null && dataSize < defaultTemplateRows) {
-                        for (c in 0..6) {
-                            defaultTotalRow.getCell(c)?.setCellValue("")
-                        }
-                    }
-                }
-
-                val sampleRow = sheet.getRow(startRow)
-
-                // 2. Tulis Data Manifest Cargo (Kolom A - G)
-                currentList.forEachIndexed { index, item ->
-                    val targetRowIdx = startRow + index
-                    val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
-
-                    if (sampleRow != null) {
-                        for (c in 0..6) {
-                            val sampleCell = sampleRow.getCell(c)
-                            val cell = row.getCell(c) ?: row.createCell(c)
-                            if (sampleCell?.cellStyle != null) {
-                                cell.cellStyle = sampleCell.cellStyle
-                            }
-                        }
-                    }
-
-                    val pcs = parseDoubleOrZero(item.pcsQty)
-                    val wt = parseDoubleOrZero(item.weight)
-                    val subTotalVal = if (item.subTotal.isNotBlank()) {
-                        parseDoubleOrZero(item.subTotal)
-                    } else if (pcs > 0 && wt > 0) {
-                        pcs * wt
-                    } else {
-                        0.0
-                    }
-
-                    setNumericCell(row, 0, (index + 1).toDouble())  // Col A: No
-                    setTextCell(row, 1, item.pti)                    // Col B: PTI
-                    setNumericCell(row, 2, pcs)                      // Col C: Pcs/Cly
-                    
-                    if (wt > 0) setNumericCell(row, 3, wt) else setTextCell(row, 3, "") // Col D: Pcs/Qty Wt
-                    if (subTotalVal > 0) setNumericCell(row, 4, subTotalVal) else setTextCell(row, 4, "") // Col E: Sub Total
-                    
-                    setTextCell(row, 5, item.description)            // Col F: Description
-                    setTextCell(row, 6, item.customer)               // Col G: Customer
-                }
-
-                // 3. Bersihkan sisa baris kosong template jika data < 25
-                if (dataSize < defaultTemplateRows) {
-                    for (i in dataSize until defaultTemplateRows) {
-                        val emptyRowIdx = startRow + i
-                        val row = sheet.getRow(emptyRowIdx)
-                        if (row != null) {
-                            for (c in 0..6) {
-                                row.getCell(c)?.setCellValue("")
-                            }
-                        }
-                    }
-                }
-
-                // 4. Baris Total Weight Manifest Kiri
-                val manifestTotalRowIdx = if (dataSize >= defaultTemplateRows) (startRow + dataSize) else (startRow + defaultTemplateRows)
-                val manifestTotalRow = sheet.getRow(manifestTotalRowIdx) ?: sheet.createRow(manifestTotalRowIdx)
-                val lastDataRowExcel = startRow + dataSize
-
-                setTextCell(manifestTotalRow, 1, "TOTAL WEIGHT")
-                setFormulaCell(manifestTotalRow, 2, "SUM(C14:C$lastDataRowExcel)")
-                setFormulaCell(manifestTotalRow, 4, "SUM(E14:E$lastDataRowExcel)")
-
-                // 5. Tabel Stowing Checklist (Kanan: Kolom H - M)
-                val stowingList = currentList.filter { it.noPag.isNotBlank() }
-
-                for (i in 0 until defaultTemplateRows) {
+                // 2. ISI TABEL MANIFEST (KIRI: KOLOM A - G)
+                for (i in 0 until maxRows) {
                     val targetRowIdx = startRow + i
                     val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
-                    if (i < stowingList.size) {
-                        val item = stowingList[i]
+                    if (i < currentList.size) {
+                        val item = currentList[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
                         val wt = parseDoubleOrZero(item.weight)
                         val subTotalVal = if (item.subTotal.isNotBlank()) parseDoubleOrZero(item.subTotal) else (pcs * wt)
 
+                        setNumericCell(row, 0, (i + 1).toDouble())                      // Col A: No
+                        setTextCell(row, 1, item.pti)                                    // Col B: PTI
+                        setNumericCell(row, 2, pcs)                                      // Col C: Pcs/Cly
+                        if (wt > 0) setNumericCell(row, 3, wt) else setTextCell(row, 3, "") // Col D: Pcs/Qty Wt
+                        if (subTotalVal > 0) setNumericCell(row, 4, subTotalVal) else setTextCell(row, 4, "") // Col E: Sub Total
+                        setTextCell(row, 5, item.description)                            // Col F: Description
+                        setTextCell(row, 6, item.customer)                               // Col G: Customer
+                    } else {
+                        // Bersihkan sisa baris kosong manifest
+                        setTextCell(row, 0, "")
+                        setTextCell(row, 1, "")
+                        setTextCell(row, 2, "")
+                        setTextCell(row, 3, "")
+                        setTextCell(row, 4, "")
+                        setTextCell(row, 5, "")
+                        setTextCell(row, 6, "")
+                    }
+                }
+
+                // 3. SET RUMUS TOTAL MANIFEST (KIRI) PADA ROW 39 (INDEKS 38)
+                val manifestTotalRow = sheet.getRow(38) ?: sheet.createRow(38)
+                setTextCell(manifestTotalRow, 1, "TOTAL WEIGHT")
+                setFormulaCell(manifestTotalRow, 2, "SUM(C14:C38)")
+                setFormulaCell(manifestTotalRow, 4, "SUM(E14:E38)")
+
+                // 4. KELOMPOKKAN DATA STOWING BERDASARKAN NO PAG (DENGAN SUM NET WEIGHT)
+                val stowingGrouped = mutableListOf<CargoItem>()
+                val rawStowingList = currentList.filter { it.noPag.isNotBlank() }
+
+                rawStowingList.forEach { item ->
+                    val index = stowingGrouped.indexOfFirst { it.noPag.equals(item.noPag, ignoreCase = true) }
+                    if (index != -1) {
+                        val existing = stowingGrouped[index]
+                        val combinedSubTotal = parseDoubleOrZero(existing.subTotal) + parseDoubleOrZero(item.subTotal)
+                        stowingGrouped[index] = existing.copy(
+                            subTotal = combinedSubTotal.toString()
+                        )
+                    } else {
+                        stowingGrouped.add(item)
+                    }
+                }
+
+                // 5. ISI TABEL STOWING CHECKLIST (KANAN: KOLOM H - M)
+                for (i in 0 until maxRows) {
+                    val targetRowIdx = startRow + i
+                    val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
+
+                    if (i < stowingGrouped.size) {
+                        val item = stowingGrouped[i]
+                        val subTotalVal = parseDoubleOrZero(item.subTotal)
+
                         setNumericCell(row, 7, (i + 1).toDouble())            // Col H: No
                         setTextCell(row, 8, item.noPag)                        // Col I: NO PAG
                         setTextCell(row, 9, item.description)                  // Col J: Description
-                        setNumericCell(row, 10, subTotalVal)                    // Col K: Net
-                        setFormulaCell(row, 11, "K${targetRowIdx + 1}+125")    // Col L: Gross
+                        setNumericCell(row, 10, subTotalVal)                    // Col K: Net Weight
+                        setFormulaCell(row, 11, "K${targetRowIdx + 1}+125")    // Col L: Gross Weight (+125)
                         setTextCell(row, 12, item.customer)                    // Col M: Customer
                     } else {
+                        // Bersihkan baris kosong stowing
                         setTextCell(row, 7, "")
                         setTextCell(row, 8, "")
                         setTextCell(row, 9, "")
@@ -277,14 +302,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 6. Total Stowing Checklist
-                val stowingTotalRowIdx = 38 
-                val stowingTotalRow = sheet.getRow(stowingTotalRowIdx) ?: sheet.createRow(stowingTotalRowIdx)
-                setFormulaCell(stowingTotalRow, 10, "SUM(K14:K38)")
-                setFormulaCell(stowingTotalRow, 11, "SUM(L14:L38)")
+                // 6. SET RUMUS TOTAL STOWING (KANAN) PADA ROW 39 (INDEKS 38)
+                val stowingTotalRow = sheet.getRow(38) ?: sheet.createRow(38)
+                setFormulaCell(stowingTotalRow, 10, "SUM(K14:K38)") // Total Net
+                setFormulaCell(stowingTotalRow, 11, "SUM(L14:L38)") // Total Gross
 
+                // Evaluasi Semua Rumus Excel
                 workbook.creationHelper.createFormulaEvaluator().evaluateAll()
 
+                // Simpan & Buka File
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -308,7 +334,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // Helper functions di dalam kelas CargoViewModel
+    // Helper Function
     private fun parseDoubleOrZero(value: String): Double {
         if (value.isBlank()) return 0.0
         val cleanValue = value.replace(",", ".").replace("[^0-9.]".toRegex(), "")
