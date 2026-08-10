@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -7,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,6 +28,7 @@ import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +38,17 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+// ==========================================
+// ENUM STATE NAVIGASI HALAMAN DILOKAL MAINACTION
+// ==========================================
+enum class Screen {
+    MAIN_MENU,
+    MANIFEST_CARGO
+}
+
+// ==========================================
+// MAIN ACTIVITY
+// ==========================================
 class MainActivity : ComponentActivity() {
 
     private val viewModel: CargoViewModel by viewModels {
@@ -42,7 +58,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            var currentScreen by remember { mutableStateOf(Screen.MAIN_MENU) }
+            val context = LocalContext.current
+            var currentScreen by remember { mutableStateOf<Screen>(Screen.MAIN_MENU) }
 
             MaterialTheme {
                 Surface(
@@ -56,17 +73,13 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.MANIFEST_CARGO
                                 },
                                 onNavigateToStowing = {
-                                    currentScreen = Screen.STOWING_PALLET
+                                    // Membuka StowingActivity secara sistem
+                                    val intent = Intent(context, StowingActivity::class.java)
+                                    context.startActivity(intent)
                                 }
                             )
                         }
                         Screen.MANIFEST_CARGO -> {
-                            CargoAppScreen(
-                                viewModel = viewModel,
-                                onBackToMenu = { currentScreen = Screen.MAIN_MENU }
-                            )
-                        }
-                        Screen.STOWING_PALLET -> {
                             CargoAppScreen(
                                 viewModel = viewModel,
                                 onBackToMenu = { currentScreen = Screen.MAIN_MENU }
@@ -79,6 +92,133 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+// ==========================================
+// TAMPILAN MAIN MENU SCREEN
+// ==========================================
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainMenuScreen(
+    onNavigateToManifest: () -> Unit,
+    onNavigateToStowing: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = "Manifest Cargo App",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF673AB7)
+                )
+            )
+        }
+    ) { paddingValues ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(paddingValues)
+                .background(Color(0xFFF5F5F5))
+                .padding(20.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = "Pilih Menu Utama",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF333333),
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+
+            MenuCard(
+                title = "Data Manifest Cargo",
+                subtitle = "Kelola data cargo, PTI, Pcs/Qty, & Weight",
+                icon = Icons.Default.List,
+                iconBackgroundColor = Color(0xFFE8DEF8),
+                iconTintColor = Color(0xFF673AB7),
+                onClick = onNavigateToManifest
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            MenuCard(
+                title = "Data Stowingan Palet",
+                subtitle = "Kelola daftar NO PAG, Stowing Checklist, & Tare",
+                icon = Icons.Default.ShoppingCart,
+                iconBackgroundColor = Color(0xFFD0BCFF),
+                iconTintColor = Color(0xFF381E72),
+                onClick = onNavigateToStowing
+            )
+        }
+    }
+}
+
+@Composable
+fun MenuCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    iconBackgroundColor: Color,
+    iconTintColor: Color,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        shape = RoundedCornerShape(16.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(56.dp)
+                    .background(iconBackgroundColor, shape = RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    tint = iconTintColor,
+                    modifier = Modifier.size(32.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(16.dp))
+
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF1D1B20)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = subtitle,
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+            }
+        }
+    }
+}
+
+// ==========================================
+// TAMPILAN HALAMAN MANIFEST CARGO
+// ==========================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CargoAppScreen(
@@ -99,7 +239,6 @@ fun CargoAppScreen(
         }
     }
 
-    // Menggunakan Long? agar sinkron dengan id database CargoItem
     var selectedCargoId by remember { mutableStateOf<Long?>(null) }
 
     var awbNo by remember { mutableStateOf("") }
@@ -402,7 +541,7 @@ fun CargoAppScreen(
                                 weight = weight,
                                 subTotal = subTotal,
                                 description = description,
-                                customer = customer,
+                          customer = customer,
                                 noPag = finalPag
                             )
                             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
@@ -505,7 +644,7 @@ fun CargoAppScreen(
                             selectedCargoId = item.id
                             pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
-              weight = item.weight
+                            weight = item.weight
                             subTotalInput = item.subTotal
                             description = item.description
                             customer = item.customer
