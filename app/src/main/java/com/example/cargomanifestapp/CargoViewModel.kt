@@ -117,8 +117,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     var subTotal = getCellString(row, 4)
                     val description = getCellString(row, 5)
                     val customer = getCellString(row, 6)
-
-                    // Membaca No PAG dari Kolom 8 (Indeks 8)
                     val noPag = getCellString(row, 8)
 
                     if (subTotal.isEmpty() || subTotal.contains("*")) {
@@ -163,7 +161,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // ================= FUNGSI EXPORT DATA EXCEL (SANGAT PRESISI) =================
+    // ================= FUNGSI EXPORT DATA EXCEL (TERPISAH & AMAN) =================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -194,14 +192,14 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // 2. Grouping Data Stowing / PAG (Tabel Sisi Kanan)
-                val groupedStowing = currentList.groupBy {
+                // 2. Grouping Data Stowing / PAG (Tabel Sisi Kanan - Hanya item yang punya No PAG valid)
+                val groupedStowing = currentList.filter { it.noPag.isNotBlank() && !it.noPag.equals("-", ignoreCase = true) }.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
                     val uniqueDescs = items.map { it.description }.filter { it.isNotBlank() && it != "-" }.distinct().joinToString("+")
                     val uniqueCusts = items.map { it.customer }.filter { it.isNotBlank() && it != "-" }.distinct().joinToString(", ")
                     GroupedStowingItem(
-                        noPag = if (pagKey.isBlank()) "-" else pagKey,
+                        noPag = pagKey,
                         description = if (uniqueDescs.isBlank()) "-" else uniqueDescs,
                         customer = if (uniqueCusts.isBlank()) "-" else uniqueCusts,
                         subTotal = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
@@ -215,7 +213,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Mengisi Header AWB & Flight No pada baris yang sesuai template
+                // Mengisi Header AWB & Flight No
                 val row2 = sheet.getRow(1) ?: sheet.createRow(1)
                 (row2.getCell(7) ?: row2.createCell(7)).setCellValue(awbNo.trim().uppercase())
 
@@ -238,9 +236,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 4. Menulis Data ke Tabel Stowing / PAG Kanan (Sesuai Kolom Template Asli)
-                // Kolom 8 = No PAG, Kolom 9 = Description, Kolom 10 = Weight Net, Kolom 12 = Customer
+                // 4. Menulis Data ke Tabel Stowing / PAG Kanan secara Independen (Maksimal 9 baris sesuai template)
                 for ((index, item) in groupedStowing.withIndex()) {
+                    if (index >= 9) break // Batasi maksimal 9 baris agar tidak merusak baris tanda tangan di bawahnya
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
 
