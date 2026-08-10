@@ -39,7 +39,7 @@ object ExcelUtils {
 
                     // 3. Tulis Customer & Grid KG
                     val customerStartRow = startPagRowIndex + 2 // Baris nama Customer
-                    var currentStartCol = 0                     // Mulai Kolom A
+                    var currentStartCol = 0                     // Mulai dari Kolom A (Index 0)
 
                     for (item in itemsInPag) {
                         // A. Tulis Nama Customer
@@ -47,10 +47,10 @@ object ExcelUtils {
                         val custCell = custRow.getCell(currentStartCol) ?: custRow.createCell(currentStartCol)
                         custCell.setCellValue(item.customer)
 
-                        // B. Tulis Daftar KG bergeser ke kanan, setiap 5 data pindah ke bawah
+                        // B. Tulis Daftar KG (2 Kolom ke samping: Kolom 0 & Kolom 1 dari posisi customer)
                         val kgValues = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
                         var currentRow = customerStartRow + 1 // Baris pertama data KG
-                        var colOffset = 0                     // Offset kolom (0 sampai 4)
+                        var colOffset = 0                     // Offset 0 dan 1 (2 kolom ke samping)
 
                         for (kg in kgValues) {
                             val r = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
@@ -60,15 +60,16 @@ object ExcelUtils {
                             c.setCellValue(kg)
 
                             colOffset++
-                            // Jika sudah 5 kolom (0..4), reset ke 0 dan turun 1 baris ke bawah
-                            if (colOffset >= 5) {
+                            // Jika sudah terisi 2 kolom ke samping, pindah ke baris di bawahnya
+                            if (colOffset >= 2) {
                                 colOffset = 0
                                 currentRow++
                             }
                         }
 
-                        // C. Customer berikutnya melompat 7 kolom (5 kolom grid + 2 kolom sela)
-                        currentStartCol += 7
+                        // C. Customer berikutnya hanya bergeser 2 kolom (Kolom A-B -> Kolom C-D -> Kolom E-F)
+                        // Ubah ke += 3 jika ingin memberikan jarak 1 kolom kosong antar customer
+                        currentStartCol += 2 
                     }
 
                     pagBlockIndex++
