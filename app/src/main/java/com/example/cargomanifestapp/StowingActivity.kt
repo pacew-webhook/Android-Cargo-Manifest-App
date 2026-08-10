@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -34,6 +35,8 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.json.JSONArray
+import org.json.JSONObject
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -49,6 +52,47 @@ class StowingActivity : ComponentActivity() {
             }
         }
     }
+}
+
+// --- HELPER UNTUK AUTO-SAVE & LOAD LOCAL STORAGE ---
+private fun saveCargoListToPrefs(context: Context, list: List<CargoItem>) {
+    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+    val jsonArray = JSONArray()
+    for (item in list) {
+        val obj = JSONObject().apply {
+            put("noPag", item.noPag)
+            put("customer", item.customer)
+            put("pcsQty", item.pcsQty)
+            put("weight", item.weight)
+            put("subTotal", item.subTotal)
+        }
+        jsonArray.put(obj)
+    }
+    prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
+}
+
+private fun loadCargoListFromPrefs(context: Context): List<CargoItem> {
+    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+    val jsonString = prefs.getString("saved_cargo_list", null) ?: return emptyList()
+    val list = mutableListOf<CargoItem>()
+    try {
+        val jsonArray = JSONArray(jsonString)
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            list.add(
+                CargoItem(
+                    noPag = obj.getString("noPag"),
+                    customer = obj.getString("customer"),
+                    pcsQty = obj.getString("pcsQty"),
+                    weight = obj.getString("weight"),
+                    subTotal = obj.getString("subTotal")
+                )
+            )
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return list
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +111,18 @@ fun StowingInputScreen(onBack: () -> Unit) {
     val cargoList = remember { mutableStateListOf<CargoItem>() }
     val currentKgEntries = remember { mutableStateListOf<Double>() }
     val currentTotalKg = currentKgEntries.sum()
+
+    // --- BACA DATA TERAKHIR SAAT HALAMAN DIBUKA ---
+    LaunchedEffect(Unit) {
+        val savedData = loadCargoListFromPrefs(context)
+        cargoList.clear()
+        cargoList.addAll(savedData)
+    }
+
+    // --- OTOMATIS SIMPAN KE HP SETIAP ADA PERUBAHAN DATA ---
+    fun updateAndSaveCargoList() {
+        saveCargoListToPrefs(context, cargoList.toList())
+    }
 
     // Launcher Export Excel
     val exportLauncher = rememberLauncherForActivityResult(
@@ -129,6 +185,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
         }
 
+        // Auto Save ke penyimpanan lokal HP
+        updateAndSaveCargoList()
+
         // Reset Form
         noPag = ""
         customer = ""
@@ -184,18 +243,35 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 )
             }
 
-            IconButton(onClick = {
+            Row {
+                // Tombol Hapus Semua Data (Reset Session)
                 if (cargoList.isNotEmpty()) {
-                    exportLauncher.launch("Stowing_Report_${System.currentTimeMillis()}.xlsx")
-                } else {
-                    Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                    IconButton(onClick = {
+                        cargoList.clear()
+                        updateAndSaveCargoList()
+                        Toast.makeText(context, "Semua data dibersihkan", Toast.LENGTH_SHORT).show()
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Reset Data",
+                            tint = Color.Red
+                        )
+                    }
                 }
-            }) {
-                Icon(
-                    imageVector = Icons.Default.Share,
-                    contentDescription = "Export Excel",
-                    tint = Color(0xFF2E7D32)
-                )
+
+                IconButton(onClick = {
+                    if (cargoList.isNotEmpty()) {
+                        exportLauncher.launch("Stowing_Report_${System.currentTimeMillis()}.xlsx")
+                    } else {
+                        Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Export Excel",
+                        tint = Color(0xFF2E7D32)
+                    )
+                }
             }
         }
 
@@ -446,7 +522,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         ) {
             items(groupedCargo.entries.toList()) { group ->
                 val pagKey = group.key
-                val itemsInGroup = group.value // List of Pair(originalIndex, CargoItem)
+                val itemsInGroup = group.value
 
                 val groupTotalKg = itemsInGroup.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
                 val groupTotalKoli = itemsInGroup.sumOf { it.second.pcsQty.toIntOrNull() ?: 0 }
@@ -464,7 +540,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        // Header Group: Menampilkan NO PAG
                         Text(
                             text = "NO PAG: $pagKey",
                             fontWeight = FontWeight.Bold,
@@ -477,7 +552,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             color = Color.LightGray
                         )
 
-                        // Rincian sub-item (Entry diganti Nama Customer)
                         itemsInGroup.forEachIndexed { subIndex, pair ->
                             val originalIndex = pair.first
                             val item = pair.second
@@ -494,7 +568,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    // Menggunakan Nama Customer pengganti Entry #1, #2
                                     Text(
                                         text = "${item.customer} - ${item.pcsQty} Koli (${item.subTotal} KG)",
                                         fontWeight = FontWeight.Bold,
@@ -526,6 +599,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                                 editingIndex = null
                                             }
                                             cargoList.removeAt(originalIndex)
+                                            updateAndSaveCargoList()
                                         },
                                         modifier = Modifier.size(28.dp)
                                     ) {
@@ -546,7 +620,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                         Spacer(modifier = Modifier.height(8.dp))
 
-                        // Group Summary Footer
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
