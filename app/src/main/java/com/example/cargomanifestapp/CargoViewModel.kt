@@ -35,7 +35,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         description: String, customer: String, noPag: String
     ) {
         val newItem = CargoItem(
-            id = System.currentTimeMillis(), // Generate ID unik berbasis waktu
+            id = System.currentTimeMillis(),
             awbNo = awbNo,
             flightNo = flightNo,
             pti = pti,
@@ -76,15 +76,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream?.close()
 
-                val sheet = workbook.getSheetAt(0) // Membaca sheet pertama
+                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 val importedList = mutableListOf<CargoItem>()
 
-                // Membaca baris data mulai dari baris ke-13 (indeks 12) sampai baris terakhir
-                for (i in 12..sheet.lastRowNum) {
+                // Membaca baris data mulai dari baris ke-14 (indeks 13) sampai baris terakhir
+                for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
                     
                     val pti = row.getCell(1)?.toString()?.trim() ?: ""
-                    if (pti.isEmpty()) continue // Lewati jika baris kosong
+                    if (pti.isEmpty() || pti.equals("null", ignoreCase = true)) continue 
 
                     val pcsQty = row.getCell(2)?.toString()?.trim() ?: ""
                     val weight = row.getCell(3)?.toString()?.trim() ?: ""
@@ -180,12 +180,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Mengisi Header AWB & Flight No
                 val row2 = sheet.getRow(1) ?: sheet.createRow(1)
-                (row2.getCell(6) ?: row2.createCell(6)).setCellValue(awbNo.trim().uppercase())
+                (row2.getCell(7) ?: row2.createCell(7)).setCellValue(awbNo.trim().uppercase())
 
-                val row8 = sheet.getRow(7) ?: sheet.createRow(7)
-                (row8.getCell(6) ?: row8.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
+                val row7 = sheet.getRow(6) ?: sheet.createRow(6)
+                (row7.getCell(7) ?: row7.createCell(7)).setCellValue(flightNo.trim().uppercase())
 
-                val startRow = 12 // Baris ke-13 pada Excel
+                val startRow = 13 // Baris awal data (baris ke-14 pada Excel)
 
                 // 3. Menulis Data ke Tabel Manifest
                 for ((index, item) in groupedManifest.withIndex()) {
@@ -206,12 +206,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
 
-                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.subTotal)
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue((index + 1).toDouble())
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.noPag)
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(item.description)
                     (row.getCell(11) ?: row.createCell(11)).setCellValue(item.subTotal)
-                    (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
                 }
 
                 // Menyimpan File Hasil Export ke Cache Internal
