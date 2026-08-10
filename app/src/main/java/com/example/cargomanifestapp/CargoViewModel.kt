@@ -65,6 +65,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         addCargo(newItem)
     }
 
+    // ==========================================
+    // FUNGSI UPDATE CARGO (DIBUAT KEMBALI)
+    // ==========================================
+    fun updateCargo(item: CargoItem) {
+        val currentList = _cargoList.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == item.id }
+        if (index != -1) {
+            currentList[index] = item
+            _cargoList.value = currentList
+        }
+    }
+
     fun deleteCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
         currentList.removeAll { it.id == item.id }
@@ -186,7 +198,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // Variabel Hitung Total Langsung dari App (Bukan Formula Excel)
+                // Variabel Hitung Total Langsung dari App
                 var totalManifestPcs = 0.0
                 var totalManifestWeight = 0.0
                 var totalStowingNet = 0.0
@@ -234,7 +246,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // ISI BARIS TOTAL LANGSUNG DENGAN ANGKA AKURAT (Baris setelah data terakhir atau Baris 38)
+                // ISI BARIS TOTAL LANGSUNG DENGAN ANGKA AKURAT
                 val totalRowIdx = maxOf(startRow + maxRows, 38)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
