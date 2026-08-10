@@ -73,7 +73,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // --- IMPORT LOGIC ---
+    // --- IMPORT LOGIC REVISI (MENGAMBIL SELURUH DATA TANPA TERPOTONG) ---
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -85,7 +85,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Membaca baris data mulai dari indeks 12 (baris 13 Excel)
+                // Mulai membaca dari baris indeks 12 (baris ke-13 Excel)
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
@@ -96,9 +96,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val customer = getCellString(row, 6, evaluator)
                     val noPag = getCellString(row, 8, evaluator)
 
-                    // Jika baris kosong atau mencapai area summary, lewatkan
-                    if (pti.isEmpty() && description.isEmpty() && noPag.isEmpty()) continue
-                    if (pti.equals("TOTAL", ignoreCase = true) || description.contains("BOX NASI", ignoreCase = true)) break
+                    // Berhenti jika sudah menyentuh teks Total atau Footer
+                    if (pti.contains("TOTAL", ignoreCase = true) || description.contains("TOTAL", ignoreCase = true) || description.contains("Prepared by", ignoreCase = true)) {
+                        break
+                    }
+
+                    // Hanya lewati jika SELURUH kolom penting bernilai kosong
+                    if (pti.isBlank() && description.isBlank() && noPag.isBlank() && pcsQty.isBlank()) {
+                        continue
+                    }
 
                     importedList.add(
                         CargoItem(
@@ -140,7 +146,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- EXPORT LOGIC PRESISI SESUAI TEMPLATE MY INDO AIRLINES ---
+    // --- EXPORT LOGIC REVISI (PRESISI SESUAI TEMPLATE MY INDO AIRLINES) ---
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -157,69 +163,63 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                val stowingList = currentList.filter { it.noPag.isNotBlank() }
-                val maxDataRows = maxOf(currentList.size, stowingList.size)
                 val startRow = 12
-                val maxTemplateRows = 21 // Baris 12 s.d. 32 di template asli (21 baris)
 
-                // Jika data melebihi slot template bawaan, sisipkan baris baru sebelum area Summary (baris 33)
-                if (maxDataRows > maxTemplateRows) {
-                    val rowsToInsert = maxDataRows - maxTemplateRows
-                    sheet.shiftRows(33, sheet.lastRowNum, rowsToInsert, true, true)
-                }
-
-                // Bersihkan isi sel pada area data agar tidak membayang
-                val totalRowsToProcess = maxOf(maxDataRows, maxTemplateRows)
-                for (i in 0 until totalRowsToProcess) {
-                    val row = sheet.getRow(startRow + i) ?: sheet.createRow(startRow + i)
-                    for (col in 0..11) {
-                        row.getCell(col)?.setCellValue("")
-                    }
-                }
-
-                // Isi Header Flight & AWB
+                // Isi Header AWB dan Flight No
                 sheet.getRow(1)?.getCell(7)?.setCellValue(awbNo)
                 sheet.getRow(6)?.getCell(7)?.setCellValue(flightNo)
 
-                // 1. TULIS TABEL MANIFEST (KIRI: Kolom A - G)
+                // 1. TULIS TABEL MANIFEST (KIRI)
                 currentList.forEachIndexed { index, item ->
-                    val row = sheet.getRow(startRow + index) ?: sheet.createRow(startRow + index)
+                    val targetRowIdx = startRow + index
+                    val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
                     // Kolom A (0): No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
                     // Kolom B (1): PTI
                     (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
                     // Kolom C (2): Pcs/Cly
-                    val pcs = item.pcsQty.toDoubleOrNull() ?: 0.0
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(pcs)
+                    val pcs = item.pcsQty.toDoubleOrNull()
+                    if (pcs != null) {
+                        (row.getCell(2) ?: row.createCell(2)).setCellValue(pcs)
+                    } else {
+                        (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty)
+                    }
                     // Kolom E (4): WEIGHT (Kg)
-                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull() ?: 0.0
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(weight)
+                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull()
+                    if (weight != null) {
+                        (row.getCell(4) ?: row.createCell(4)).setCellValue(weight)
+                    } else {
+                        (row.getCell(4) ?: row.createCell(4)).setCellValue(item.weight)
+                    }
                     // Kolom F (5): DESCRIPTION
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
                     // Kolom G (6): COSTUMERS
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 2. TULIS TABEL STOWING (KANAN: Kolom H - K)
+                // 2. TULIS TABEL STOWING (KANAN) - HANYA ITEM YANG MEMILIKI NO PAG
+                val stowingList = currentList.filter { it.noPag.isNotBlank() }
                 stowingList.forEachIndexed { index, item ->
-                    val row = sheet.getRow(startRow + index) ?: sheet.createRow(startRow + index)
+                    val targetRowIdx = startRow + index
+                    val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
-                    // Kolom H (7): No
+                    // Kolom H (7): No Stowing
                     (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
                     // Kolom I (8): NO PAG
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
                     // Kolom J (9): DESCRIPTION
                     (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
                     // Kolom K (10): WEIGHT (Kg)
-                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull() ?: 0.0
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(weight)
+                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull()
+                    if (weight != null) {
+                        (row.getCell(10) ?: row.createCell(10)).setCellValue(weight)
+                    } else {
+                        (row.getCell(10) ?: row.createCell(10)).setCellValue(item.weight)
+                    }
                 }
 
-                // Evaluasi ulang semua rumus Excel (Total SUM)
-                workbook.creationHelper.createFormulaEvaluator().evaluateAll()
-
-                // Simpan dan Buka
+                // Simpan File dan Tampilkan
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
