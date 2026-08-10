@@ -68,7 +68,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // ================= IMPLEMENTASI IMPORT EXCEL DINAMIS & PINTAR =================
+    // ================= IMPORT EXCEL PRESISI & BERSIH DARI SAMPAH =================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -80,35 +80,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // 1. Deteksi letak indeks kolom secara otomatis berdasarkan baris Header
-                var colPti = 1
-                var colPcs = 2
-                var colWeight = 3
-                var colSubTotal = 4
-                var colDesc = 5
-                var colCust = 6
-                var colPag = 8
-
-                for (rIdx in 9..11) {
-                    val headRow = sheet.getRow(rIdx) ?: continue
-                    for (cIdx in 0 until headRow.lastCellNum) {
-                        val cellText = headRow.getCell(cIdx)?.toString()?.trim()?.uppercase() ?: ""
-                        when {
-                            cellText.contains("PTI") -> colPti = cIdx
-                            cellText.contains("PCS") || cellText.contains("QTY") -> colPcs = cIdx
-                            cellText.contains("WEIGHT") || cellText.contains("KG") -> colWeight = cIdx
-                            cellText.contains("SUB") -> colSubTotal = cIdx
-                            cellText.contains("DESC") -> colDesc = cIdx
-                            cellText.contains("COST") || cellText.contains("CUST") -> colCust = cIdx
-                            cellText.contains("PAG") || cellText.contains("PAJ") -> colPag = cIdx
-                        }
-                    }
-                }
-
-                // 2. Membaca baris data mulai dari baris ke-13 (indeks 12)
+                // Membaca baris data mulai dari baris ke-13 Excel (Indeks 12)
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
-                    
+
                     fun getVal(colIdx: Int): String {
                         val cell = row.getCell(colIdx) ?: return ""
                         val evaluated = evaluator.evaluate(cell)
@@ -130,18 +105,27 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
-                    val pti = getVal(colPti)
-                    val description = getVal(colDesc)
-                    val customer = getVal(colCust)
+                    // Pemetaan Kolom Standar Template Manifest Kiri:
+                    // Kolom 0 = No, Kolom 1 = PTI, Kolom 2 = Pcs/Cly, Kolom 3 = Weight/PcsCly, Kolom 4 = SubTotal, Kolom 5 = Description, Kolom 6 = Customers
+                    // Kolom 8 = No PAG, Kolom 9 = Desc PAG, Kolom 10 = Weight Net PAG, Kolom 11 = Weight Gross PAG, Kolom 12 = Customers PAG
+                    val noCol = getVal(0)
+                    val pti = getVal(1)
+                    val description = getVal(5)
+                    val customer = getVal(6)
 
-                    // Jika baris benar-benar kosong, lewati
-                    if (pti.isEmpty() && description.isEmpty() && customer.isEmpty()) continue
+                    // Jika nomor urut (kolom 0) bukan angka atau baris kosong, hentikan atau lewati (cegah baca baris bawah/tanda tangan)
+                    if (noCol.toIntOrNull() == null || pti.isEmpty()) {
+                        // Cek apakah ini baris bawah (seperti Prepared by / Tanda tangan)
+                        if (pti.contains("M NUR") || pti.contains("PREPARED") || pti.contains("APPROVED") || pti.isEmpty()) {
+                            continue
+                        }
+                    }
 
-                    val pcsQty = getVal(colPcs)
-                    val weight = getVal(colWeight)
-                    var subTotal = getVal(colSubTotal)
+                    val pcsQty = getVal(2)
+                    val weight = getVal(3)
+                    var subTotal = getVal(4)
 
-                    // Kalkulasi otomatis subtotal jika kosong atau berupa rumus
+                    // Kalkulasi otomatis subtotal jika kosong atau berupa rumus excel
                     if (subTotal.isEmpty() || subTotal.contains("*")) {
                         val p = pcsQty.toDoubleOrNull() ?: 0.0
                         val w = weight.toDoubleOrNull() ?: 0.0
@@ -151,13 +135,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
 
-                    val noPag = getVal(colPag)
+                    val noPag = getVal(8)
 
                     val item = CargoItem(
                         id = System.currentTimeMillis() + i,
                         awbNo = "",
                         flightNo = "",
-                        pti = if (pti.isNotBlank()) pti else "KAL00$i",
+                        pti = pti,
                         pcsQty = if (pcsQty.isNotBlank()) pcsQty else "0",
                         weight = if (weight.isNotBlank()) weight else "0",
                         subTotal = if (subTotal.isNotBlank()) subTotal else "0",
@@ -172,7 +156,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     if (importedList.isNotEmpty()) {
                         _cargoList.value = importedList
-                        Toast.makeText(context, "Berhasil import ${importedList.size} data secara rapi!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Berhasil import ${importedList.size} data dengan sangat rapi!", Toast.LENGTH_SHORT).show()
                     } else {
                         Toast.makeText(context, "Tidak ada data valid yang ditemukan.", Toast.LENGTH_SHORT).show()
                     }
