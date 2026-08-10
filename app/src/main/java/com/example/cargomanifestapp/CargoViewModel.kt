@@ -73,7 +73,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // --- LOGIC IMPORT FROM EXCEL ---
+    // --- IMPORT LOGIC DENGAN PEMBACAAN KOLOM PRESISI ---
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -85,32 +85,42 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Data mulai dari baris indeks 12 (baris ke-13 di Excel)
+                // Membaca data dari baris indeks 12 (Baris ke-13 Excel) sampai baris terakhir
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
-                    
-                    val pti = getCellString(row, 1, evaluator)
-                    if (pti.isEmpty()) continue 
 
-                    importedList.add(CargoItem(
-                        id = System.currentTimeMillis() + i,
-                        pti = pti,
-                        pcsQty = getCellString(row, 2, evaluator),
-                        weight = getCellString(row, 4, evaluator),
-                        subTotal = getCellString(row, 4, evaluator),
-                        description = getCellString(row, 5, evaluator),
-                        customer = getCellString(row, 6, evaluator),
-                        noPag = getCellString(row, 8, evaluator)
-                    ))
+                    val pti = getCellString(row, 1, evaluator)
+                    val pcsQty = getCellString(row, 2, evaluator)
+                    val weight = getCellString(row, 4, evaluator)
+                    val description = getCellString(row, 5, evaluator)
+                    val customer = getCellString(row, 6, evaluator)
+                    val noPag = getCellString(row, 8, evaluator)
+
+                    // Lewati jika baris kosong total
+                    if (pti.isEmpty() && description.isEmpty() && noPag.isEmpty()) continue
+
+                    importedList.add(
+                        CargoItem(
+                            id = System.currentTimeMillis() + i,
+                            pti = pti,
+                            pcsQty = pcsQty,
+                            weight = weight,
+                            subTotal = weight,
+                            description = description,
+                            customer = customer,
+                            noPag = noPag
+                        )
+                    )
                 }
                 workbook.close()
-                withContext(Dispatchers.Main) { 
+
+                withContext(Dispatchers.Main) {
                     _cargoList.value = importedList
                     Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { 
-                    Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show() 
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Error Import: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -129,7 +139,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- LOGIC EXPORT TO EXCEL ---
+    // --- EXPORT LOGIC BARIS DEMI BARIS (TANPA MERUSAK SUSUNAN DATA) ---
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -141,91 +151,68 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // Grouping Manifest berdasarkan Description & Customer
-                val groupedManifest = currentList.groupBy { Pair(it.description.trim(), it.customer.trim()) }
-
-                // Filter & Grouping Stowing berdasarkan No PAG (Mencegah terabaikannya string kosong/spasi)
-                val groupedStowing = currentList
-                    .filter { it.noPag.isNotBlank() }
-                    .groupBy { it.noPag.trim() }
-
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                // Hitung batas dinamis baris yang harus dibersihkan agar tidak ada data lama menumpuk
-                val maxRowsNeeded = maxOf(groupedManifest.size, groupedStowing.size)
-                val endRowIndex = maxOf(12 + maxRowsNeeded, 40)
-
-                // Bersihkan area data lama dari baris 12 hingga baris akhir
-                for (i in 12..endRowIndex) {
+                // Bersihkan area lama dari baris 12 hingga 200 agar tidak ada data membayang
+                for (i in 12..200) {
                     val row = sheet.getRow(i) ?: continue
-                    for (j in 0..12) { 
-                        row.getCell(j)?.setCellValue("") 
+                    for (j in 0..12) {
+                        row.getCell(j)?.setCellValue("")
                     }
                 }
 
-                // Isi Header AWB dan Flight No
+                // Isi Header Flight & AWB
                 sheet.getRow(1)?.getCell(7)?.setCellValue(awbNo)
                 sheet.getRow(6)?.getCell(7)?.setCellValue(flightNo)
 
-                // 1. Tulis Tabel Manifest (Kiri) mulai baris 12 (indeks 12)
+                // 1. Tulis Data Manifest (Kiri - Sesuai daftar asli di aplikasi)
                 var rowIdx = 12
-                var manifestCount = 1
-                for ((key, items) in groupedManifest) {
+                currentList.forEachIndexed { index, item ->
                     val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
-                    
-                    // No
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue(manifestCount.toDouble())
-                    
-                    // PTI (Gabungkan PTI unik jika ada lebih dari 1 di dalam grup)
-                    val combinedPti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(combinedPti)
-                    
-                    // Pcs/Cly
-                    val totalPcs = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 }
-                    (row.getCell(2) ?: row.createCell(2)).setCellValue(if (totalPcs > 0) totalPcs else 0.0)
-                    
-                    // Weight / SubTotal (Kolom 4 / E)
-                    val totalWeight = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-                    (row.getCell(4) ?: row.createCell(4)).setCellValue(totalWeight)
-                    
-                    // Description (Kolom 5 / F)
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(key.first)
-                    
-                    // Customers (Kolom 6 / G)
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(key.second)
+
+                    // Kolom A (0): No
+                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
+                    // Kolom B (1): PTI
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
+                    // Kolom C (2): Pcs/Qty
+                    val pcs = item.pcsQty.toDoubleOrNull()
+                    if (pcs != null && pcs > 0) {
+                        (row.getCell(2) ?: row.createCell(2)).setCellValue(pcs)
+                    }
+                    // Kolom E (4): Weight / SubTotal
+                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull() ?: 0.0
+                    (row.getCell(4) ?: row.createCell(4)).setCellValue(weight)
+                    // Kolom F (5): Description
+                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
+                    // Kolom G (6): Customer
+                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
 
                     rowIdx++
-                    manifestCount++
                 }
 
-                // 2. Tulis Tabel Stowing (Kanan) mulai baris 12, Kolom H (Indeks 7)
-                var rightRowIdx = 12
-                var stowingCount = 1
-                for ((pag, items) in groupedStowing) {
-                    val row = sheet.getRow(rightRowIdx) ?: sheet.createRow(rightRowIdx)
-                    
-                    // No Stowing (Kolom 7 / H)
-                    (row.getCell(7) ?: row.createCell(7)).setCellValue(stowingCount.toDouble())
-                    
-                    // No PAG (Kolom 8 / I)
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(pag)
-                    
-                    // Description Stowing (Kolom 9 / J) -> Gabungkan deskripsi barang unik dalam PAG tersebut
-                    val combinedDesc = items.map { it.description }.filter { it.isNotBlank() }.distinct().joinToString(", ")
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc)
-                    
-                    // Weight Stowing (Kolom 10 / K)
-                    val totalPagWeight = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
-                    (row.getCell(10) ?: row.createCell(10)).setCellValue(totalPagWeight)
+                // 2. Tulis Data Stowing Checklist (Kanan - Hanya item yang memiliki NO PAG)
+                val stowingItems = currentList.filter { it.noPag.isNotBlank() }
+                var stowingRowIdx = 12
+                stowingItems.forEachIndexed { index, item ->
+                    val row = sheet.getRow(stowingRowIdx) ?: sheet.createRow(stowingRowIdx)
 
-                    rightRowIdx++
-                    stowingCount++
+                    // Kolom H (7): No Stowing
+                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
+                    // Kolom I (8): NO PAG
+                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
+                    // Kolom J (9): Description
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
+                    // Kolom K (10): Weight
+                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull() ?: 0.0
+                    (row.getCell(10) ?: row.createCell(10)).setCellValue(weight)
+
+                    stowingRowIdx++
                 }
 
-                // Simpan File ke Cache dan Buka via Intent
+                // Simpan File ke Cache dan Tampilkan via Intent
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
