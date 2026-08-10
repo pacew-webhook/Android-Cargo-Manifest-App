@@ -113,10 +113,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
     
-    // Menggunakan Double? agar item yang dihapus bisa bernilai null (menyisa kotak kosong)
+    // Menggunakan Double? agar item yang dihapus bernilai null (posisi tetap ada, tetapi kosong)
     val currentKgEntries = remember { mutableStateListOf<Double?>() }
     
-    // Total KG hanya menghitung item yang tidak null
+    // Total KG hanya menghitung item yang aktif (tidak null)
     val currentActiveEntries = currentKgEntries.filterNotNull()
     val currentTotalKg = currentActiveEntries.sum()
 
@@ -148,10 +148,20 @@ fun StowingInputScreen(onBack: () -> Unit) {
         }
     }
 
+    // --- LOGIKA MENAMBAH ITEM (Mengisi Kotak Kosong Terlebih Dahulu) ---
     fun addKgEntry() {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
-            currentKgEntries.add(kgVal)
+            // Cek apakah ada posisi yang kosong (null)
+            val emptyIndex = currentKgEntries.indexOfFirst { it == null }
+            
+            if (emptyIndex != -1) {
+                // Isi posisi kosong pertama yang ditemukan (misal posisi ke-3)
+                currentKgEntries[emptyIndex] = kgVal
+            } else {
+                // Jika tidak ada posisi kosong, tambahkan di posisi paling belakang
+                currentKgEntries.add(kgVal)
+            }
             inputKg = ""
         } else {
             Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
@@ -168,7 +178,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
             return
         }
 
-        // Hanya mengambil data KG yang aktif (bukan null/kosong)
+        // Hanya mengambil item KG aktif
         val formattedWeightList = currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
@@ -274,7 +284,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             DeleteType.KG_ENTRY -> {
                                 kgIndexToDelete?.let { idx ->
                                     if (idx in currentKgEntries.indices) {
-                                        // Mengubah nilai menjadi NULL sehingga posisinya tetap ada tapi tampil kosong
+                                        // Mengubah nilai item menjadi NULL agar posisinya tetap ada tapi tampil kosong
                                         currentKgEntries[idx] = null
                                     }
                                 }
@@ -480,7 +490,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     ) {
                         itemsIndexed(currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
-                                // Tampilan Kotak jika berisi data
+                                // Tampilan Kotak jika ada nilai KG
                                 Box(
                                     modifier = Modifier
                                         .background(
@@ -516,7 +526,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                     }
                                 }
                             } else {
-                                // Tampilan Kotak Kosong (Tetap mempertahankan posisi grid)
+                                // Tampilan Kotak Kosong (Mencadangkan ruang grid agar tidak bergeser)
                                 Box(
                                     modifier = Modifier
                                         .height(28.dp)
