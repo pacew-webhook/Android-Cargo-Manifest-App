@@ -53,7 +53,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 1. KELOLA DATA LOCAL (IZINKAN INPUT BEBAS DENGAN NO PAG BERBEDA)
+    // 1. KELOLA DATA LOCAL (INPUT FLEKSIBEL DI APP)
     // ==========================================
     fun addCargo(
         awbNo: String = "", flightNo: String = "", pti: String = "",
@@ -62,7 +62,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     ) {
         val currentList = _cargoList.value.toMutableList()
 
-        // CEK DUPLIKAT TEREPAT: Hanya blokir jika SELURUH FIELD (termasuk No PAG) SAMA PERSIS
         val isExactDuplicate = currentList.any {
             it.pti.equals(pti, ignoreCase = true) &&
             it.description.equals(description, ignoreCase = true) &&
@@ -184,18 +183,42 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (CLEANING TOTAL BARIS 14-38)
+    // 3. EXPORT EXCEL (DENGAN GROUPING SAMA DI MANIFEST & NO PAG STOWING)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val currentList = cargoList.value
-                if (currentList.isEmpty()) {
+                val rawList = cargoList.value
+                if (rawList.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Data Kosong! Tambah barang terlebih dahulu.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Data Kosong!", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
+
+                // A. GROUPING MANIFEST: Gabungkan item dengan PTI + Description + Customer yang sama
+                val groupedManifest = rawList.groupBy { 
+                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" 
+                }.map { (_, items) ->
+                    val totalPcs = items.sumOf { parseDoubleOrZero(it.pcsQty) }
+                    val totalWeight = items.sumOf { parseDoubleOrZero(it.subTotal) }
+                    val firstItem = items.first()
+                    
+                    firstItem.copy(
+                        pcsQty = formatNumber(totalPcs),
+                        subTotal = formatNumber(totalWeight),
+                        weight = if (totalPcs > 0) formatNumber(totalWeight / totalPcs) else firstItem.weight
+                    )
+                }
+
+                // B. GROUPING STOWING: Gabungkan item dengan NO PAG yang sama
+                val groupedStowing = rawList.filter { it.noPag.isNotBlank() }
+                    .groupBy { "${it.noPag.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" }
+                    .map { (_, items) ->
+                        val totalNet = items.sumOf { parseDoubleOrZero(it.subTotal) }
+                        val firstItem = items.first()
+                        firstItem.copy(subTotal = formatNumber(totalNet))
+                    }
 
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
@@ -203,7 +226,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 inputStream.close()
 
                 val startRow = 13 // Baris 14 di Excel (0-indexed)
-                val templateDataCapacity = 25 // Membersihkan sampai Baris 38 (indeks 37) agar nilai 25/100/2100 hilang!
+                val templateDataCapacity = 24 // Kapasitas default baris 14 s/d 37
 
                 val finalAwb = if (awbNo.isNotBlank()) awbNo else _importedAwbNo.value
                 val finalFlight = if (flightNo.isNotBlank()) flightNo else _importedFlightNo.value
@@ -211,12 +234,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 sheet.getRow(2)?.getCell(6)?.setCellValue(finalAwb)
                 sheet.getRow(8)?.getCell(6)?.setCellValue(finalFlight)
 
-                val stowingList = currentList.filter { it.noPag.isNotBlank() }
-                val maxRows = maxOf(currentList.size, stowingList.size)
+                val maxRows = maxOf(groupedManifest.size, groupedStowing.size)
                 val sampleRow = sheet.getRow(startRow)
 
-                // 1. PEMBERSIHAN TOTAL: Kosongkan seluruh sel di area data bawaan templat (Baris 14 s/d Baris 38)
-                for (r in startRow until (startRow + templateDataCapacity)) {
+                // 1. CLEANSING TOTAL: Bersihkan seluruh isi sel dari baris 14 sampai 38 (Kolom 0 s/d 12)
+                for (r in startRow until (startRow + templateDataCapacity + 1)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
                         for (c in 0..12) {
@@ -228,9 +250,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 2. GESER FOOTER JIKA DATA > 24 ITEM
-                if (maxRows > templateDataCapacity - 1) {
-                    val extraRowsNeeded = maxRows - (templateDataCapacity - 1)
+                // 2. SHIFT ROWS JIKA DATA LEBIH DARI KAPASITAS TEMPLATE
+                if (maxRows > templateDataCapacity) {
+                    val extraRowsNeeded = maxRows - templateDataCapacity
                     sheet.shiftRows(37, sheet.lastRowNum, extraRowsNeeded, true, true)
                 }
 
@@ -239,7 +261,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 var totalStowingNet = 0.0
                 var totalStowingGross = 0.0
 
-                // 3. ISI DATA REAL
+                // 3. ISI DATA TERAGREGASI KE EXCEL
                 for (i in 0 until maxRows) {
                     val rowIdx = startRow + i
                     var row = sheet.getRow(rowIdx)
@@ -248,9 +270,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         sampleRow?.let { row.height = it.height }
                     }
 
-                    // SISI MANIFEST
-                    if (i < currentList.size) {
-                        val item = currentList[i]
+                    // A. ISI SISI MANIFEST
+                    if (i < groupedManifest.size) {
+                        val item = groupedManifest[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
                         val subTotal = parseDoubleOrZero(item.subTotal)
 
@@ -266,11 +288,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
                     }
 
-                    // SISI STOWING
-                    if (i < stowingList.size) {
-                        val stowing = stowingList[i]
+                    // B. ISI SISI STOWING CHECKLIST
+                    if (i < groupedStowing.size) {
+                        val stowing = groupedStowing[i]
                         val net = parseDoubleOrZero(stowing.subTotal)
-                        val gross = net + 125.0
+                        val gross = net + 125.0 // Tare kontainer
 
                         totalStowingNet += net
                         totalStowingGross += gross
@@ -284,19 +306,16 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // 4. SET BARIS TOTAL HANYA DENGAN DATA AKTUAL
-                val totalRowIdx = if (maxRows < templateDataCapacity) 37 else (startRow + maxRows)
+                // 4. SET BARIS TOTAL AKTUAL
+                val totalRowIdx = if (maxRows <= templateDataCapacity) 37 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
                 setNumericCell(totalRow, 2, totalManifestPcs)
                 setNumericCell(totalRow, 4, totalManifestWeight)
-                
-                if (stowingList.isNotEmpty()) {
+
+                if (groupedStowing.isNotEmpty()) {
                     setNumericCell(totalRow, 10, totalStowingNet)
                     setNumericCell(totalRow, 11, totalStowingGross)
-                } else {
-                    totalRow.getCell(10)?.setCellValue("")
-                    totalRow.getCell(11)?.setCellValue("")
                 }
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
