@@ -3,6 +3,7 @@ package com.example.cargomanifestapp
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.widget.Toast
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
@@ -23,7 +24,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
     // ==========================================
-    // 1. TAMBAH DATA (SELALU BUAT BARIS BARU)
+    // 1. TAMBAH & KELOLA DATA LOCAL
     // ==========================================
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
@@ -65,9 +66,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 2. IMPORT DATA (ABAIKAN BARIS TOTAL)
+    // 2. IMPORT DATA (MEMBUANG BARIS TOTAL LUAR)
     // ==========================================
-    fun importFromExcel(context: Context, uri: android.net.Uri) {
+    fun importFromExcel(context: Context, uri: Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val inputStream = context.contentResolver.openInputStream(uri)
@@ -78,6 +79,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
+                // Membaca mulai baris 14 di Excel (Indeks 13)
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
@@ -131,7 +133,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (MENGIKUTI TOTAL DI BAWAH)
+    // 3. EXPORT EXCEL (PRESISI, BORDER RAPI, TOTAL DI BAWAH)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -144,22 +146,22 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                val startRow = 13 // Baris 14 di Excel
-                
+                val startRow = 13 // Baris 14 di Excel (0-indexed)
+                val templateDataCapacity = 24 // Kapasitas default baris data bawaan template (Baris 14-37)
+
                 // Header
                 sheet.getRow(2)?.getCell(6)?.setCellValue(awbNo)
                 sheet.getRow(8)?.getCell(6)?.setCellValue(flightNo)
 
-                // Stowing List (Filter yang punya NO PAG)
+                // Stowing List (Filter item yang memiliki NO PAG)
                 val stowingList = currentList.filter { it.noPag.isNotBlank() }
+                val maxRows = maxOf(currentList.size, stowingList.size)
 
-                var totalManifestPcs = 0.0
-                var totalManifestWeight = 0.0
-                var totalStowingNet = 0.0
-                var totalStowingGross = 0.0
+                // Ambil sampel row untuk menyalin garis border & styling font
+                val sampleRow = sheet.getRow(startRow)
 
-                // Bersihkan baris slot data (Baris 14 s/d 37 / Indeks 13 s/d 36)
-                for (r in startRow until 37) {
+                // Bersihkan dahulu slot data bawaan (Baris 14 s/d 37)
+                for (r in startRow until (startRow + templateDataCapacity)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
                         for (c in 0..12) {
@@ -168,14 +170,27 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                val maxRows = maxOf(currentList.size, stowingList.size)
+                // Geser footer templat ke bawah jika jumlah data melebihi kapasitas template (24 item)
+                if (maxRows > templateDataCapacity) {
+                    val extraRowsNeeded = maxRows - templateDataCapacity
+                    sheet.shiftRows(37, sheet.lastRowNum, extraRowsNeeded, true, true)
+                }
 
-                // ISI DATA SAJA (TANPA SISIPAN TOTAL DI TENGAH)
+                var totalManifestPcs = 0.0
+                var totalManifestWeight = 0.0
+                var totalStowingNet = 0.0
+                var totalStowingGross = 0.0
+
+                // Tulis data barang
                 for (i in 0 until maxRows) {
                     val rowIdx = startRow + i
-                    val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
+                    var row = sheet.getRow(rowIdx)
+                    if (row == null) {
+                        row = sheet.createRow(rowIdx)
+                        sampleRow?.let { row.height = it.height }
+                    }
 
-                    // MANIFEST (KIRI)
+                    // MANIFEST (SISI KIRI)
                     if (i < currentList.size) {
                         val item = currentList[i]
                         val pcs = parseDoubleOrZero(item.pcsQty)
@@ -184,16 +199,16 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         totalManifestPcs += pcs
                         totalManifestWeight += subTotal
 
-                        setNumericCell(row, 0, (i + 1).toDouble())
-                        setTextCell(row, 1, item.pti)
-                        setNumericCell(row, 2, pcs)
-                        setNumericCell(row, 3, parseDoubleOrZero(item.weight))
-                        setNumericCell(row, 4, subTotal)
-                        setTextCell(row, 5, item.description)
-                        setTextCell(row, 6, item.customer)
+                        setStyledNumericCell(row, 0, (i + 1).toDouble(), sampleRow?.getCell(0))
+                        setStyledTextCell(row, 1, item.pti, sampleRow?.getCell(1))
+                        setStyledNumericCell(row, 2, pcs, sampleRow?.getCell(2))
+                        setStyledNumericCell(row, 3, parseDoubleOrZero(item.weight), sampleRow?.getCell(3))
+                        setStyledNumericCell(row, 4, subTotal, sampleRow?.getCell(4))
+                        setStyledTextCell(row, 5, item.description, sampleRow?.getCell(5))
+                        setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
                     }
 
-                    // STOWING (KANAN)
+                    // STOWING (SISI KANAN)
                     if (i < stowingList.size) {
                         val stowing = stowingList[i]
                         val net = parseDoubleOrZero(stowing.subTotal)
@@ -202,17 +217,17 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         totalStowingNet += net
                         totalStowingGross += gross
 
-                        setNumericCell(row, 7, (i + 1).toDouble())
-                        setTextCell(row, 8, stowing.noPag)
-                        setTextCell(row, 9, stowing.description)
-                        setNumericCell(row, 10, net)
-                        setNumericCell(row, 11, gross)
-                        setTextCell(row, 12, stowing.customer)
+                        setStyledNumericCell(row, 7, (i + 1).toDouble(), sampleRow?.getCell(7))
+                        setStyledTextCell(row, 8, stowing.noPag, sampleRow?.getCell(8))
+                        setStyledTextCell(row, 9, stowing.description, sampleRow?.getCell(9))
+                        setStyledNumericCell(row, 10, net, sampleRow?.getCell(10))
+                        setStyledNumericCell(row, 11, gross, sampleRow?.getCell(11))
+                        setStyledTextCell(row, 12, stowing.customer, sampleRow?.getCell(12))
                     }
                 }
 
-                // ISI HANYA KEPADA BARIS TOTAL DI BAWAH (BARIS 38 / INDEKS 37 ATAU BARIS SETELAH DATA JIKA > 25 BARIS)
-                val totalRowIdx = if (maxRows <= 24) 37 else (startRow + maxRows)
+                // ISI BARIS TOTAL UTAMA DI POSISI TERAKHIR (TANPA TOTAL DI TENGAH DATA)
+                val totalRowIdx = if (maxRows <= templateDataCapacity) 37 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
                 setNumericCell(totalRow, 2, totalManifestPcs)
@@ -220,6 +235,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 setNumericCell(totalRow, 10, totalStowingNet)
                 setNumericCell(totalRow, 11, totalStowingGross)
 
+                // Simpan ke file cache & buka melalui Intent External
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -242,6 +258,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ==========================================
+    // HELPER FUNCTIONS
+    // ==========================================
     private fun getCellString(row: Row, colIdx: Int, evaluator: FormulaEvaluator): String {
         val cell = row.getCell(colIdx) ?: return ""
         val evaluated = evaluator.evaluate(cell)
@@ -267,8 +286,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         cell.setCellValue(value)
     }
 
-    private fun setTextCell(row: Row, col: Int, value: String) {
+    private fun setStyledNumericCell(row: Row, col: Int, value: Double, sampleCell: Cell?) {
         val cell = row.getCell(col) ?: row.createCell(col)
         cell.setCellValue(value)
+        sampleCell?.cellStyle?.let { cell.cellStyle = it }
+    }
+
+    private fun setStyledTextCell(row: Row, col: Int, value: String, sampleCell: Cell?) {
+        val cell = row.getCell(col) ?: row.createCell(col)
+        cell.setCellValue(value)
+        sampleCell?.cellStyle?.let { cell.cellStyle = it }
     }
 }
