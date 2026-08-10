@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -18,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +32,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.File
+import java.io.FileOutputStream
+import java.io.InputStream
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,20 +58,21 @@ class StowingActivity : ComponentActivity() {
 fun StowingInputScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    // Field Form
+    // Field Form Input
     var noPag by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var inputKg by remember { mutableStateOf("") }
 
-    // List simpanan CargoItem untuk tampilan daftar
+    // List simpanan CargoItem utama
     val cargoList = remember { mutableStateListOf<CargoItem>() }
 
-    // List rincian KG per koli yang sedang diinput
+    // List rincian KG sementara untuk customer/PAG yang sedang diisi
     val currentKgEntries = remember { mutableStateListOf<Double>() }
 
-    // Perhitungan Total KG Real-time
+    // Hitung Total KG Real-time
     val currentTotalKg = currentKgEntries.sum()
 
+    // Fungsi Menambah Angka KG ke Daftar Sementara
     fun addKgEntry() {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
@@ -76,9 +83,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
         }
     }
 
+    // Fungsi Menyimpan Input Form ke List CargoItem
     fun saveCargoItem() {
         if (noPag.isBlank() || customer.isBlank()) {
-            Toast.makeText(context, "Mohon isi No PAG dan Customer", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "Mohon isi NO PAG dan Customer", Toast.LENGTH_SHORT).show()
             return
         }
         if (currentKgEntries.isEmpty()) {
@@ -86,19 +94,19 @@ fun StowingInputScreen(onBack: () -> Unit) {
             return
         }
 
-        // Format Rincian KG menjadi String (contoh: "10, 10, 48, 64")
+        // Format Rincian KG menjadi String (Contoh: "10, 10, 48, 64")
         val formattedWeightList = currentKgEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
 
-        // Format Total KG menjadi String
+        // Format Total KG
         val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) {
             currentTotalKg.toInt().toString()
         } else {
             currentTotalKg.toString()
         }
 
-        // Mapping ke Model CargoItem Anda
+        // Mapping Data ke Entity CargoItem Anda
         val newCargoItem = CargoItem(
             noPag = if (noPag.startsWith("PAG")) noPag else "PAG $noPag",
             customer = customer.uppercase(),
@@ -109,10 +117,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         cargoList.add(0, newCargoItem)
 
-        // Reset Form
+        // Reset Input Form
         inputKg = ""
         currentKgEntries.clear()
-        Toast.makeText(context, "Data CargoItem berhasil disimpan!", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
     }
 
     Column(
@@ -120,29 +128,41 @@ fun StowingInputScreen(onBack: () -> Unit) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // Header
+        // --- HEADER ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = "Kembali",
-                    tint = Color(0xFF381E72)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Kembali",
+                        tint = Color(0xFF381E72)
+                    )
+                }
+                Text(
+                    text = "Form Stowing Cargo",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF381E72)
                 )
             }
-            Text(
-                text = "Form Stowing Cargo",
-                fontSize = 20.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF381E72)
-            )
+
+            // Tombol Export Excel Template
+            IconButton(onClick = { exportToExcelTemplate(context, cargoList) }) {
+                Icon(
+                    imageVector = Icons.Default.Share,
+                    contentDescription = "Export Excel",
+                    tint = Color(0xFF2E7D32)
+                )
+            }
         }
 
-        // Input Form Card
+        // --- CARD FORM INPUT ---
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
@@ -150,7 +170,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Text(
-                    text = "Input PAG & Customer",
+                    text = "Input PAG, Customer & KG",
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = Color(0xFF381E72)
@@ -190,7 +210,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Input KG & Button Add
+                // Input Berat (KG) & Tombol Tambah
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -223,7 +243,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Daftar KG sementara yang diinput
+                // Grid Rincian Nilai KG
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${currentKgEntries.size} Koli):",
@@ -278,7 +298,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                     Spacer(modifier = Modifier.height(8.dp))
 
-                    // Container Total KG Otomatis
+                    // Card Tampilan Total KG Real-time
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -318,9 +338,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Daftar CargoItem yang Tersimpan
+        // --- DAFTAR CARGOITEM TERSEMPAN ---
         Text(
-            text = "Daftar Cargo Stowing (${cargoList.size})",
+            text = "Daftar Stowing Tersimpan (${cargoList.size})",
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
             color = Color(0xFF381E72)
@@ -359,7 +379,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         }
 
                         Text(
-                            text = "Jumlah: ${item.pcsQty} Koli",
+                            text = "Jumlah Koli: ${item.pcsQty}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Medium
                         )
@@ -381,5 +401,54 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+// --- FUNGSI EXPORT DATA KE TEMPLATE EXCEL ---
+fun exportToExcelTemplate(context: Context, cargoList: List<CargoItem>) {
+    if (cargoList.isEmpty()) {
+        Toast.makeText(context, "Tidak ada data untuk di-export", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    try {
+        // 1. Ambil template Excel dari folder assets
+        val inputStream: InputStream = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
+        val workbook = XSSFWorkbook(inputStream)
+        val sheet = workbook.getSheetAt(0) // Menggunakan Sheet Pertama
+
+        var startRow = 4 // Sesuaikan dengan baris awal data di Excel Template Anda
+
+        // 2. Tulis Data CargoItem ke Cell Excel
+        for ((index, item) in cargoList.withIndex()) {
+            val row = sheet.getRow(startRow) ?: sheet.createRow(startRow)
+
+            // Mengisi sel berdasarkan kolom Excel
+            row.createCell(0).setCellValue((index + 1).toDouble()) // Kolom No
+            row.createCell(1).setCellValue(item.noPag)            // Kolom NO PAG
+            row.createCell(2).setCellValue(item.customer)         // Kolom Customer
+            row.createCell(3).setCellValue(item.weight)           // Kolom Rincian KG
+            row.createCell(4).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0) // Kolom Total KG
+
+            startRow++
+        }
+
+        inputStream.close()
+
+        // 3. Simpan File Baru Hasil Output
+        val outFile = File(
+            context.getExternalFilesDir(null),
+            "Stowing_Report_${System.currentTimeMillis()}.xlsx"
+        )
+        val outputStream = FileOutputStream(outFile)
+        workbook.write(outputStream)
+        outputStream.close()
+        workbook.close()
+
+        Toast.makeText(context, "Export Berhasil: ${outFile.name}", Toast.LENGTH_LONG).show()
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
     }
 }
