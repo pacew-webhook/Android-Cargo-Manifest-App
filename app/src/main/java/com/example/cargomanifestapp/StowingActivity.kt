@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -95,7 +95,6 @@ private fun loadCargoListFromPrefs(context: Context): List<CargoItem> {
     return list
 }
 
-// Enum untuk tipe aksi hapus yang sedang dikonfirmasi
 private enum class DeleteType {
     NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
 }
@@ -110,31 +109,32 @@ fun StowingInputScreen(onBack: () -> Unit) {
     var customer by remember { mutableStateOf("") }
     var inputKg by remember { mutableStateOf("") }
 
-    // Index item yang sedang diedit
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
-    val currentKgEntries = remember { mutableStateListOf<Double>() }
-    val currentTotalKg = currentKgEntries.sum()
+    
+    // Menggunakan Double? agar item yang dihapus bisa bernilai null (menyisa kotak kosong)
+    val currentKgEntries = remember { mutableStateListOf<Double?>() }
+    
+    // Total KG hanya menghitung item yang tidak null
+    val currentActiveEntries = currentKgEntries.filterNotNull()
+    val currentTotalKg = currentActiveEntries.sum()
 
-    // --- STATE UNTUK DIALOG KONFIRMASI HAPUS ---
+    // State Dialog Hapus
     var deleteType by remember { mutableStateOf(DeleteType.NONE) }
     var itemIndexToDelete by remember { mutableStateOf<Int?>(null) }
     var kgIndexToDelete by remember { mutableStateOf<Int?>(null) }
 
-    // --- BACA DATA TERAKHIR SAAT HALAMAN DIBUKA ---
     LaunchedEffect(Unit) {
         val savedData = loadCargoListFromPrefs(context)
         cargoList.clear()
         cargoList.addAll(savedData)
     }
 
-    // Auto Save ke penyimpanan lokal
     fun updateAndSaveCargoList() {
         saveCargoListToPrefs(context, cargoList.toList())
     }
 
-    // Launcher Export Excel
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ) { uri ->
@@ -163,12 +163,13 @@ fun StowingInputScreen(onBack: () -> Unit) {
             Toast.makeText(context, "Mohon isi NO PAG dan Customer", Toast.LENGTH_SHORT).show()
             return
         }
-        if (currentKgEntries.isEmpty()) {
+        if (currentActiveEntries.isEmpty()) {
             Toast.makeText(context, "Masukkan minimal 1 nilai KG", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val formattedWeightList = currentKgEntries.joinToString(", ") {
+        // Hanya mengambil data KG yang aktif (bukan null/kosong)
+        val formattedWeightList = currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
 
@@ -181,7 +182,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         val newItem = CargoItem(
             noPag = noPag.uppercase().trim(),
             customer = customer.uppercase().trim(),
-            pcsQty = currentKgEntries.size.toString(),
+            pcsQty = currentActiveEntries.size.toString(),
             weight = formattedWeightList,
             subTotal = formattedTotalKg
         )
@@ -205,7 +206,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
         editingIndex = null
     }
 
-    // Fungsi edit (langsung jalan tanpa dialog)
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
         editingIndex = indexInOriginalList
         noPag = item.noPag
@@ -217,7 +217,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
         currentKgEntries.addAll(parsedKgList)
     }
 
-    // Pengelompokan data berdasarkan NO PAG
     val groupedCargo = remember(cargoList.toList()) {
         cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
@@ -275,13 +274,13 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             DeleteType.KG_ENTRY -> {
                                 kgIndexToDelete?.let { idx ->
                                     if (idx in currentKgEntries.indices) {
-                                        currentKgEntries.removeAt(idx)
+                                        // Mengubah nilai menjadi NULL sehingga posisinya tetap ada tapi tampil kosong
+                                        currentKgEntries[idx] = null
                                     }
                                 }
                             }
                             DeleteType.NONE -> {}
                         }
-                        // Reset State Dialog
                         deleteType = DeleteType.NONE
                         itemIndexToDelete = null
                         kgIndexToDelete = null
@@ -334,7 +333,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
             }
 
             Row {
-                // Tombol Hapus Semua Data (Memicu Dialog)
                 if (cargoList.isNotEmpty()) {
                     IconButton(onClick = {
                         deleteType = DeleteType.RESET_ALL
@@ -466,7 +464,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 // --- RINCIAN INPUT KG ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
-                        text = "Rincian Input KG (${currentKgEntries.size} Koli):",
+                        text = "Rincian Input KG (${currentActiveEntries.size} Koli):",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -480,42 +478,50 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(currentKgEntries.indices.toList()) { index ->
-                            val itemVal = currentKgEntries[index]
-                            Box(
-                                modifier = Modifier
-                                    .background(
-                                        Color(0xFFE8DEF8),
-                                        shape = RoundedCornerShape(6.dp)
-                                    )
-                                    .padding(vertical = 4.dp, horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = if (itemVal % 1.0 == 0.0) "${itemVal.toInt()}" else "$itemVal",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold
-                                    )
-                                    // Hapus elemen KG spesifik (Memicu Dialog)
-                                    IconButton(
-                                        onClick = {
-                                            kgIndexToDelete = index
-                                            deleteType = DeleteType.KG_ENTRY
-                                        },
-                                        modifier = Modifier.size(14.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Hapus",
-                                            tint = Color.Red
+                        itemsIndexed(currentKgEntries) { index, itemVal ->
+                            if (itemVal != null) {
+                                // Tampilan Kotak jika berisi data
+                                Box(
+                                    modifier = Modifier
+                                        .background(
+                                            Color(0xFFE8DEF8),
+                                            shape = RoundedCornerShape(6.dp)
                                         )
+                                        .padding(vertical = 4.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = if (itemVal % 1.0 == 0.0) "${itemVal.toInt()}" else "$itemVal",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        IconButton(
+                                            onClick = {
+                                                kgIndexToDelete = index
+                                                deleteType = DeleteType.KG_ENTRY
+                                            },
+                                            modifier = Modifier.size(14.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Hapus",
+                                                tint = Color.Red
+                                            )
+                                        }
                                     }
                                 }
+                            } else {
+                                // Tampilan Kotak Kosong (Tetap mempertahankan posisi grid)
+                                Box(
+                                    modifier = Modifier
+                                        .height(28.dp)
+                                        .fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -607,7 +613,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // --- DISPLAY GROUPED CARDS ---
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -674,7 +679,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 }
 
                                 Row {
-                                    // Tombol Edit (Langsung memuat data ke form tanpa dialog)
                                     IconButton(
                                         onClick = { startEditCargoItem(originalIndex, item) },
                                         modifier = Modifier.size(28.dp)
@@ -686,7 +690,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                             modifier = Modifier.size(18.dp)
                                         )
                                     }
-                                    // Tombol Delete (Memicu Dialog Konfirmasi)
                                     IconButton(
                                         onClick = {
                                             itemIndexToDelete = originalIndex
