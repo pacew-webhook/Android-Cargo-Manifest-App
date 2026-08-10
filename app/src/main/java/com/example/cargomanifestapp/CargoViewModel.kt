@@ -20,54 +20,65 @@ import java.io.FileOutputStream
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
-    // State utama untuk menampung list data kargo
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
-    // ================= FUNGSI CRUD & DATABASE SUPPORT =================
-    
+    // Fungsi Add menerima CargoItem langsung
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
         currentList.add(item)
         _cargoList.value = currentList
     }
 
-    fun updateCargo(id: Long, item: CargoItem) {
+    // Fungsi Add overload jika dipanggil dengan parameter satuan
+    fun addCargo(
+        awbNo: String, flightNo: String, pti: String,
+        pcsQty: String, weight: String, subTotal: String,
+        description: String, customer: String, noPag: String
+    ) {
+        val newItem = CargoItem(
+            id = 0L,
+            awbNo = awbNo,
+            flightNo = flightNo,
+            pti = pti,
+            pcsQty = pcsQty,
+            weight = weight,
+            subTotal = subTotal,
+            description = description,
+            customer = customer,
+            noPag = noPag
+        )
+        addCargo(newItem)
+    }
+
+    fun updateCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
-        val index = currentList.indexOfFirst { it.id == id }
+        val index = currentList.indexOfFirst { it.id == item.id }
         if (index != -1) {
-            currentList[index] = item.copy(id = id)
+            currentList[index] = item
             _cargoList.value = currentList
         }
     }
 
-    fun deleteCargo(id: Long) {
+    // Menggunakan Long untuk parameter delete
+    fun deleteCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
-        currentList.removeAll { it.id == id }
+        currentList.removeAll { it.id == item.id }
         _cargoList.value = currentList
     }
 
-    fun clearData() {
+    fun clearAll() {
         _cargoList.value = emptyList()
     }
 
-    // Alias untuk clearAll agar sesuai dengan MainActivity
-    fun clearAll() {
-        clearData()
-    }
-
-    // Fungsi placeholder importFromExcel jika dipanggil dari MainActivity
     fun importFromExcel(context: Context, uri: android.net.Uri) {
-        // Implementasikan logika import excel jika sudah ada, atau biarkan kosong sementara agar tidak error
         Toast.makeText(context, "Fitur Import dipanggil", Toast.LENGTH_SHORT).show()
     }
 
-    // ================= FUNGSI EXPORT DATA EXCEL =================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentList = cargoList.value
-
                 if (currentList.isEmpty()) {
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context, "Tidak ada data untuk diexport!", Toast.LENGTH_SHORT).show()
@@ -75,7 +86,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // 1. Grouping Data Manifest (Tabel Sisi Kiri)
                 val groupedManifest = currentList.groupBy {
                     Pair(it.description.trim().uppercase(), it.customer.trim().uppercase())
                 }.map { (keyPair, items) ->
@@ -93,7 +103,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // 2. Grouping Data Stowing / PAG (Tabel Sisi Kanan)
                 val groupedStowing = currentList.groupBy {
                     it.noPag.trim().uppercase()
                 }.map { (pagKey, items) ->
@@ -107,23 +116,20 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
 
-                // Membuka Template Excel dari Assets
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 inputStream.close()
 
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-                // Mengisi Header AWB & Flight No
                 val row2 = sheet.getRow(1) ?: sheet.createRow(1)
                 (row2.getCell(6) ?: row2.createCell(6)).setCellValue(awbNo.trim().uppercase())
 
                 val row8 = sheet.getRow(7) ?: sheet.createRow(7)
                 (row8.getCell(6) ?: row8.createCell(6)).setCellValue(": ${flightNo.trim().uppercase()}")
 
-                val startRow = 12 // Baris awal data dimulai (Baris ke-13 pada Excel)
+                val startRow = 12
 
-                // 3. Menulis Data ke Tabel Manifest
                 for ((index, item) in groupedManifest.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -137,7 +143,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
                 }
 
-                // 4. Menulis Data ke Tabel Stowing / PAG
                 for ((index, item) in groupedStowing.withIndex()) {
                     val currentRowIndex = startRow + index
                     val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
@@ -150,7 +155,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     (row.getCell(12) ?: row.createCell(12)).setCellValue(item.customer)
                 }
 
-                // Menyimpan File Hasil Export ke Cache Internal
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -176,18 +180,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 e.printStackTrace()
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        "Gagal Export: ${e.localizedMessage}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }
     }
 }
 
-// Model data pendukung khusus untuk grouping export Excel
 data class GroupedManifestItem(
     val pti: String,
     val description: String,
