@@ -64,7 +64,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
     val currentKgEntries = remember { mutableStateListOf<Double>() }
     val currentTotalKg = currentKgEntries.sum()
 
-    // --- LAUNCHER EXPORT (Manifest Style) ---
+    // Launcher untuk export ke template Excel
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ) { uri ->
@@ -189,7 +189,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         value = noPag,
                         onValueChange = { noPag = it.uppercase() },
                         label = { Text("NO PAG") },
-                        placeholder = { Text("0288") },
+                        placeholder = { Text("283 MYI") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Characters,
@@ -201,7 +201,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         value = customer,
                         onValueChange = { customer = it.uppercase() },
                         label = { Text("Customer") },
-                        placeholder = { Text("AULIA") },
+                        placeholder = { Text("ULIN") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Characters,
@@ -245,7 +245,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Grid Rincian Input KG
+                // --- RINCIAN INPUT KG (5 BARIS/KOLOM PER ROW) ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${currentKgEntries.size} Koli):",
@@ -255,10 +255,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     Spacer(modifier = Modifier.height(4.dp))
 
                     LazyVerticalGrid(
-                        columns = GridCells.Fixed(4),
+                        columns = GridCells.Fixed(5), // 5 kolom
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 120.dp),
+                            .heightIn(max = 140.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
@@ -270,7 +270,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                         Color(0xFFE8DEF8),
                                         shape = RoundedCornerShape(6.dp)
                                     )
-                                    .padding(vertical = 4.dp, horizontal = 6.dp),
+                                    .padding(vertical = 4.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Row(
@@ -280,12 +280,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 ) {
                                     Text(
                                         text = if (itemVal % 1.0 == 0.0) "${itemVal.toInt()}" else "$itemVal",
-                                        fontSize = 12.sp,
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                     IconButton(
                                         onClick = { currentKgEntries.removeAt(index) },
-                                        modifier = Modifier.size(16.dp)
+                                        modifier = Modifier.size(14.dp)
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.Delete,
@@ -338,7 +338,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGOITEM TERSEMPAN ---
+        // --- DAFTAR CARGO ITEM TERSEMPAN ---
         Text(
             text = "Daftar Stowing Tersimpan (${cargoList.size})",
             fontWeight = FontWeight.Bold,
