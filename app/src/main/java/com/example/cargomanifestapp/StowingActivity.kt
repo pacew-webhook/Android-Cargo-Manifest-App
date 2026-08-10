@@ -12,7 +12,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -59,6 +60,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
     var noPag by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var inputKg by remember { mutableStateOf("") }
+
+    // State untuk melacak item yang sedang diedit (null jika mode Tambah Baru)
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
     val currentKgEntries = remember { mutableStateListOf<Double>() }
@@ -108,7 +112,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
             currentTotalKg.toString()
         }
 
-        val newCargoItem = CargoItem(
+        val newItem = CargoItem(
             noPag = noPag.uppercase().trim(),
             customer = customer.uppercase().trim(),
             pcsQty = currentKgEntries.size.toString(),
@@ -116,10 +120,36 @@ fun StowingInputScreen(onBack: () -> Unit) {
             subTotal = formattedTotalKg
         )
 
-        cargoList.add(0, newCargoItem)
+        val index = editingIndex
+        if (index != null && index in cargoList.indices) {
+            // Mode Edit / Update
+            cargoList[index] = newItem
+            Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
+        } else {
+            // Mode Tambah Baru
+            cargoList.add(0, newItem)
+            Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
+        }
+
+        // Reset Form
+        noPag = ""
+        customer = ""
         inputKg = ""
         currentKgEntries.clear()
-        Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
+        editingIndex = null
+    }
+
+    // Fungsi untuk memuat data item ke form input saat tombol Edit diklik
+    fun startEditCargoItem(index: Int, item: CargoItem) {
+        editingIndex = index
+        noPag = item.noPag
+        customer = item.customer
+        inputKg = ""
+        currentKgEntries.clear()
+
+        // Masukkan rincian KG ke daftar temp input
+        val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+        currentKgEntries.addAll(parsedKgList)
     }
 
     Column(
@@ -169,16 +199,37 @@ fun StowingInputScreen(onBack: () -> Unit) {
         // --- CARD FORM INPUT ---
         Card(
             modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+            colors = CardDefaults.cardColors(
+                containerColor = if (editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)
+            ),
             shape = RoundedCornerShape(12.dp)
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
-                Text(
-                    text = "Input PAG, Customer & KG",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color(0xFF381E72)
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer & KG",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
+                    )
+
+                    if (editingIndex != null) {
+                        TextButton(onClick = {
+                            editingIndex = null
+                            noPag = ""
+                            customer = ""
+                            inputKg = ""
+                            currentKgEntries.clear()
+                        }) {
+                            Text("Batal Edit", color = Color.Red, fontSize = 12.sp)
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -328,17 +379,22 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 Button(
                     onClick = { saveCargoItem() },
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF2E7D32)
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Simpan ke Cargo Table", fontWeight = FontWeight.Bold)
+                    Text(
+                        text = if (editingIndex != null) "Update Data Stowing" else "Simpan ke Cargo Table",
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGO ITEM TERSIMPAN & GRAND TOTAL (AKUMULASI SEMUA DATA) ---
+        // --- DAFTAR CARGO ITEM TERSIMPAN & GRAND TOTAL ---
         val grandTotalKg = cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
         val grandTotalKoli = cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
 
@@ -380,16 +436,18 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        // --- LIST KARTU DATA CARGO ---
+        // --- DAFTAR KARTU CARGO DENGAN TOMBOL EDIT & DELETE ---
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(cargoList) { item ->
+            itemsIndexed(cargoList) { index, item ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (editingIndex == index) Color(0xFFFFF3E0) else Color.White
+                    ),
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
@@ -401,14 +459,31 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             Text(
                                 text = "NO PAG: ${item.noPag} | Customer: ${item.customer}",
                                 fontWeight = FontWeight.Bold,
-                                color = Color(0xFF381E72)
+                                color = Color(0xFF381E72),
+                                modifier = Modifier.weight(1f)
                             )
-                            IconButton(onClick = { cargoList.remove(item) }) {
-                                Icon(
-                                    imageVector = Icons.Default.Delete,
-                                    contentDescription = "Hapus",
-                                    tint = Color(0xFFB3261E)
-                                )
+
+                            // Tombol Aksi: Edit & Delete
+                            Row {
+                                IconButton(onClick = { startEditCargoItem(index, item) }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Edit,
+                                        contentDescription = "Edit Data",
+                                        tint = Color(0xFF0288D1)
+                                    )
+                                }
+                                IconButton(onClick = {
+                                    if (editingIndex == index) {
+                                        editingIndex = null
+                                    }
+                                    cargoList.removeAt(index)
+                                }) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Hapus Data",
+                                        tint = Color(0xFFB3261E)
+                                    )
+                                }
                             }
                         }
 
