@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,11 +42,38 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            Surface(
-                modifier = Modifier.fillMaxSize(),
-                color = MaterialTheme.colorScheme.background
-            ) {
-                CargoAppScreen(viewModel = viewModel)
+            var currentScreen by remember { mutableStateOf(Screen.MAIN_MENU) }
+
+            MaterialTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background
+                ) {
+                    when (currentScreen) {
+                        Screen.MAIN_MENU -> {
+                            MainMenuScreen(
+                                onNavigateToManifest = {
+                                    currentScreen = Screen.MANIFEST_CARGO
+                                },
+                                onNavigateToStowing = {
+                                    currentScreen = Screen.STOWING_PALLET
+                                }
+                            )
+                        }
+                        Screen.MANIFEST_CARGO -> {
+                            CargoAppScreen(
+                                viewModel = viewModel,
+                                onBackToMenu = { currentScreen = Screen.MAIN_MENU }
+                            )
+                        }
+                        Screen.STOWING_PALLET -> {
+                            CargoAppScreen(
+                                viewModel = viewModel,
+                                onBackToMenu = { currentScreen = Screen.MAIN_MENU }
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -52,7 +81,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CargoAppScreen(viewModel: CargoViewModel) {
+fun CargoAppScreen(
+    viewModel: CargoViewModel,
+    onBackToMenu: () -> Unit = {}
+) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val cargoList by viewModel.cargoList.collectAsState()
@@ -181,13 +213,26 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Text(
-            text = "Manifest Cargo App",
-            fontSize = 22.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color(0xFF6200EE),
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            IconButton(onClick = onBackToMenu) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                    contentDescription = "Kembali ke Menu",
+                    tint = Color(0xFF6200EE)
+                )
+            }
+            Text(
+                text = "Manifest Cargo App",
+                fontSize = 22.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF6200EE)
+            )
+        }
 
         Column(
             modifier = Modifier.fillMaxWidth()
@@ -460,7 +505,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             selectedCargoId = item.id
                             pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
-                            weight = item.weight
+              weight = item.weight
                             subTotalInput = item.subTotal
                             description = item.description
                             customer = item.customer
@@ -497,9 +542,9 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 itemToDelete = item
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                contentPadding = PaddingValues(horizontal = 8.dp)
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Text("Hapus", fontSize = 11.sp, color = Color.White)
+                            Text("Hapus", fontSize = 12.sp)
                         }
                     }
                 }
