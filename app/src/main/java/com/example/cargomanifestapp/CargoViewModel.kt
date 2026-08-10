@@ -73,7 +73,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // --- IMPORT LOGIC YANG DISEMPURNAKAN ---
+    // --- LOGIC IMPORT FROM EXCEL ---
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -109,7 +109,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     Toast.makeText(context, "Berhasil import ${importedList.size} data!", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show() }
+                withContext(Dispatchers.Main) { 
+                    Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show() 
+                }
             }
         }
     }
@@ -127,24 +129,38 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- EXPORT LOGIC YANG DISEMPURNAKAN ---
+    // --- LOGIC EXPORT TO EXCEL ---
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 val currentList = cargoList.value
-                if (currentList.isEmpty()) return@launch
+                if (currentList.isEmpty()) {
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, "Tidak ada data untuk di-export", Toast.LENGTH_SHORT).show()
+                    }
+                    return@launch
+                }
 
+                // Grouping Manifest berdasarkan Description & Customer
                 val groupedManifest = currentList.groupBy { Pair(it.description.trim(), it.customer.trim()) }
-                val groupedStowing = currentList.filter { it.noPag.isNotEmpty() }.groupBy { it.noPag.trim() }
+
+                // Filter & Grouping Stowing berdasarkan No PAG (Mencegah terabaikannya string kosong/spasi)
+                val groupedStowing = currentList
+                    .filter { it.noPag.isNotBlank() }
+                    .groupBy { it.noPag.trim() }
 
                 val inputStream = context.assets.open("template_manifest.xlsx")
                 val workbook: Workbook = WorkbookFactory.create(inputStream)
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
-                // Bersihkan area data lama (Baris 12 s.d 40)
-                for (i in 12..40) {
-                    val row = sheet.getRow(i) ?: sheet.createRow(i)
+                // Hitung batas dinamis baris yang harus dibersihkan agar tidak ada data lama menumpuk
+                val maxRowsNeeded = maxOf(groupedManifest.size, groupedStowing.size)
+                val endRowIndex = maxOf(12 + maxRowsNeeded, 40)
+
+                // Bersihkan area data lama dari baris 12 hingga baris akhir
+                for (i in 12..endRowIndex) {
+                    val row = sheet.getRow(i) ?: continue
                     for (j in 0..12) { 
                         row.getCell(j)?.setCellValue("") 
                     }
@@ -158,23 +174,26 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 var rowIdx = 12
                 var manifestCount = 1
                 for ((key, items) in groupedManifest) {
-                    if (rowIdx > 35) break
                     val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
                     
                     // No
                     (row.getCell(0) ?: row.createCell(0)).setCellValue(manifestCount.toDouble())
-                    // PTI (Ambil dari item pertama di group jika ada)
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(items.firstOrNull()?.pti ?: "")
+                    
+                    // PTI (Gabungkan PTI unik jika ada lebih dari 1 di dalam grup)
+                    val combinedPti = items.map { it.pti }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    (row.getCell(1) ?: row.createCell(1)).setCellValue(combinedPti)
+                    
                     // Pcs/Cly
                     val totalPcs = items.sumOf { it.pcsQty.toDoubleOrNull() ?: 0.0 }
-                    if (totalPcs > 0) {
-                        (row.getCell(2) ?: row.createCell(2)).setCellValue(totalPcs)
-                    }
+                    (row.getCell(2) ?: row.createCell(2)).setCellValue(if (totalPcs > 0) totalPcs else 0.0)
+                    
                     // Weight / SubTotal (Kolom 4 / E)
                     val totalWeight = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     (row.getCell(4) ?: row.createCell(4)).setCellValue(totalWeight)
+                    
                     // Description (Kolom 5 / F)
                     (row.getCell(5) ?: row.createCell(5)).setCellValue(key.first)
+                    
                     // Customers (Kolom 6 / G)
                     (row.getCell(6) ?: row.createCell(6)).setCellValue(key.second)
 
@@ -182,19 +201,22 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     manifestCount++
                 }
 
-                // 2. Tulis Tabel Stowing (Kanan) mulai baris 12, Kolom I (Indeks 8)
+                // 2. Tulis Tabel Stowing (Kanan) mulai baris 12, Kolom H (Indeks 7)
                 var rightRowIdx = 12
                 var stowingCount = 1
                 for ((pag, items) in groupedStowing) {
-                    if (stowingCount > 15) break
                     val row = sheet.getRow(rightRowIdx) ?: sheet.createRow(rightRowIdx)
                     
                     // No Stowing (Kolom 7 / H)
                     (row.getCell(7) ?: row.createCell(7)).setCellValue(stowingCount.toDouble())
+                    
                     // No PAG (Kolom 8 / I)
                     (row.getCell(8) ?: row.createCell(8)).setCellValue(pag)
-                    // Description Stowing (Kolom 9 / J)
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(items.firstOrNull()?.description ?: "")
+                    
+                    // Description Stowing (Kolom 9 / J) -> Gabungkan deskripsi barang unik dalam PAG tersebut
+                    val combinedDesc = items.map { it.description }.filter { it.isNotBlank() }.distinct().joinToString(", ")
+                    (row.getCell(9) ?: row.createCell(9)).setCellValue(combinedDesc)
+                    
                     // Weight Stowing (Kolom 10 / K)
                     val totalPagWeight = items.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
                     (row.getCell(10) ?: row.createCell(10)).setCellValue(totalPagWeight)
@@ -203,6 +225,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     stowingCount++
                 }
 
+                // Simpan File ke Cache dan Buka via Intent
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 val outputStream = FileOutputStream(file)
                 workbook.write(outputStream)
@@ -219,6 +242,9 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
