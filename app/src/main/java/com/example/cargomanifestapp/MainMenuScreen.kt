@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -48,6 +50,15 @@ fun MainMenuScreen(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // --- LOGO APLIKASI ---
+            Image(
+                painter = painterResource(id = R.drawable.logo_app), // Ambil file logo dari res/drawable/logo_app.png
+                contentDescription = "Logo Aplikasi",
+                modifier = Modifier
+                    .size(120.dp) // Ukuran logo (bisa disesuaikan)
+                    .padding(bottom = 16.dp)
+            )
+
             Text(
                 text = "Pilih Menu Utama",
                 fontSize = 22.sp,
