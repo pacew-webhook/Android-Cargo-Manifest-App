@@ -61,7 +61,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
     var customer by remember { mutableStateOf("") }
     var inputKg by remember { mutableStateOf("") }
 
-    // Index item yang sedang diedit dalam cargoList
+    // Index item yang sedang diedit
     var editingIndex by remember { mutableStateOf<Int?>(null) }
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
@@ -148,7 +148,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         currentKgEntries.addAll(parsedKgList)
     }
 
-    // Mengelompokkan data berdasarkan NO PAG
+    // Pengelompokan data berdasarkan NO PAG
     val groupedCargo = remember(cargoList.toList()) {
         cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
@@ -450,7 +450,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 val groupTotalKg = itemsInGroup.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
                 val groupTotalKoli = itemsInGroup.sumOf { it.second.pcsQty.toIntOrNull() ?: 0 }
-                val customerName = itemsInGroup.firstOrNull()?.second?.customer ?: ""
 
                 val formattedGroupKg = if (groupTotalKg % 1.0 == 0.0) {
                     groupTotalKg.toLong().toString()
@@ -465,26 +464,20 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        // Group Header
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "NO PAG: $pagKey | Customer: $customerName",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = Color(0xFF381E72)
-                            )
-                        }
+                        // Header Group: Menampilkan NO PAG
+                        Text(
+                            text = "NO PAG: $pagKey",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF381E72)
+                        )
 
                         HorizontalDivider(
                             modifier = Modifier.padding(vertical = 8.dp),
                             color = Color.LightGray
                         )
 
-                        // Rincian sub-item di dalam NO PAG tersebut
+                        // Rincian sub-item (Entry diganti Nama Customer)
                         itemsInGroup.forEachIndexed { subIndex, pair ->
                             val originalIndex = pair.first
                             val item = pair.second
@@ -501,10 +494,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
+                                    // Menggunakan Nama Customer pengganti Entry #1, #2
                                     Text(
-                                        text = "Entry #${subIndex + 1} - ${item.pcsQty} Koli (${item.subTotal} KG)",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 13.sp
+                                        text = "${item.customer} - ${item.pcsQty} Koli (${item.subTotal} KG)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = Color(0xFF381E72)
                                     )
                                     Text(
                                         text = "KG: ${item.weight}",
