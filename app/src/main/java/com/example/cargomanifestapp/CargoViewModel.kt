@@ -1,10 +1,11 @@
 package com.example.cargomanifestapp
 
+import android.app.Application
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,13 +18,13 @@ import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.io.File
 import java.io.FileOutputStream
 
-class CargoViewModel : ViewModel() {
+class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     // State utama untuk menampung list data kargo
     private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
     val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
 
-    // ================= FUNGSI TAMBAHAN / STATE LAINNYA =================
+    // ================= FUNGSI CRUD & DATABASE SUPPORT =================
     
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
@@ -31,24 +32,34 @@ class CargoViewModel : ViewModel() {
         _cargoList.value = currentList
     }
 
-    fun updateCargo(index: Int, item: CargoItem) {
+    fun updateCargo(id: Long, item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
-        if (index in currentList.indices) {
-            currentList[index] = item
+        val index = currentList.indexOfFirst { it.id == id }
+        if (index != -1) {
+            currentList[index] = item.copy(id = id)
             _cargoList.value = currentList
         }
     }
 
-    fun deleteCargo(index: Int) {
+    fun deleteCargo(id: Long) {
         val currentList = _cargoList.value.toMutableList()
-        if (index in currentList.indices) {
-            currentList.removeAt(index)
-            _cargoList.value = currentList
-        }
+        currentList.removeAll { it.id == id }
+        _cargoList.value = currentList
     }
 
     fun clearData() {
         _cargoList.value = emptyList()
+    }
+
+    // Alias untuk clearAll agar sesuai dengan MainActivity
+    fun clearAll() {
+        clearData()
+    }
+
+    // Fungsi placeholder importFromExcel jika dipanggil dari MainActivity
+    fun importFromExcel(context: Context, uri: android.net.Uri) {
+        // Implementasikan logika import excel jika sudah ada, atau biarkan kosong sementara agar tidak error
+        Toast.makeText(context, "Fitur Import dipanggil", Toast.LENGTH_SHORT).show()
     }
 
     // ================= FUNGSI EXPORT DATA EXCEL =================
