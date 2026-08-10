@@ -27,7 +27,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     // ==========================================
     fun addCargo(item: CargoItem) {
         val currentList = _cargoList.value.toMutableList()
-        // Langsung tambahkan sebagai data baru tanpa mergening/penggabungan
         currentList.add(item)
         _cargoList.value = currentList
     }
@@ -66,7 +65,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 2. IMPORT DATA DARI EXCEL (TETAP BARIS BARU)
+    // 2. IMPORT DATA (ABAIKAN BARIS TOTAL)
     // ==========================================
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -82,6 +81,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
+                    val noCol = getCellString(row, 0, evaluator)
                     val pti = getCellString(row, 1, evaluator)
                     val pcsQty = getCellString(row, 2, evaluator)
                     val pcsWeight = getCellString(row, 3, evaluator)
@@ -90,9 +90,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val customer = getCellString(row, 6, evaluator)
                     val noPag = getCellString(row, 8, evaluator)
 
-                    // Berhenti jika menemukan kata TOTAL atau Footer
-                    if (pti.contains("TOTAL", true) || description.contains("TOTAL", true) || description.contains("Prepared", true)) {
-                        break
+                    // ABAIKAN JIKA MERUPAKAN BARIS TOTAL ATAU FOOTER
+                    val isTotalRow = noCol.contains("TOTAL", true) ||
+                            pti.contains("TOTAL", true) ||
+                            description.contains("TOTAL", true) ||
+                            description.contains("Prepared", true) ||
+                            description.contains("Approved", true)
+
+                    if (isTotalRow) {
+                        continue // Lewati baris total agar tidak tersimpan sebagai data
                     }
 
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
@@ -108,7 +114,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         noPag = noPag
                     )
 
-                    // Setiap baris di-import sebagai item terpisah
                     importedList.add(newItem)
                 }
                 workbook.close()
@@ -126,7 +131,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (PERBAIKAN TOTAL DOUBLE)
+    // 3. EXPORT EXCEL (HANYA 1 BARIS TOTAL)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -145,7 +150,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 sheet.getRow(2)?.getCell(6)?.setCellValue(awbNo)
                 sheet.getRow(8)?.getCell(6)?.setCellValue(flightNo)
 
-                // Stowing Checklist (Filter yang punya NO PAG)
+                // Stowing List (Filter yang punya NO PAG)
                 val stowingList = currentList.filter { it.noPag.isNotBlank() }
 
                 var totalManifestPcs = 0.0
@@ -155,8 +160,8 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val maxRows = maxOf(currentList.size, stowingList.size)
 
-                // Bersihkan baris lama dari indeks 13 hingga 50 agar tidak ada sisa total template
-                for (r in startRow..(startRow + maxOf(maxRows, 35))) {
+                // BERSIHKAN BARIS TEMPLATE (BARIS 13 SAMPAI 60) DARI SISA TOTAL LAMA
+                for (r in startRow..60) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
                         for (c in 0..12) {
@@ -166,6 +171,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                // ISI DATA MANIFEST DAN STOWING
                 for (i in 0 until maxRows) {
                     val rowIdx = startRow + i
                     val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
@@ -206,8 +212,8 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // TULIS TOTAL TEPAT DI BAWAH BARIS TERAKHIR DATA
-                val totalRowIdx = startRow + maxRows
+                // TULIS HANYA 1 BARIS TOTAL (LANGSUNG DILENGKAPI TEKS & ANGKA)
+                val totalRowIdx = if (maxRows < 25) 38 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
                 setTextCell(totalRow, 1, "TOTAL WEIGHT")
