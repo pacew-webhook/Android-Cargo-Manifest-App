@@ -38,8 +38,8 @@ object ExcelUtils {
                     totalCell.setCellValue(totalPagKg)
 
                     // 3. Tulis Customer & Grid KG
-                    val customerStartRow = startPagRowIndex + 2 // Baris nama Customer
-                    var currentStartCol = 0                     // Mulai dari Kolom A (Index 0)
+                    val customerStartRow = startPagRowIndex + 2 // Baris nama Customer (Row index 2, 12, dst)
+                    var currentStartCol = 0                     // Mulai Kolom A (Index 0)
 
                     for (item in itemsInPag) {
                         // A. Tulis Nama Customer
@@ -47,10 +47,10 @@ object ExcelUtils {
                         val custCell = custRow.getCell(currentStartCol) ?: custRow.createCell(currentStartCol)
                         custCell.setCellValue(item.customer)
 
-                        // B. Tulis Daftar KG (2 Kolom ke samping: Kolom 0 & Kolom 1 dari posisi customer)
+                        // B. Tulis Daftar KG (Mengisi 5 kolom A, B, C, D, E ke samping, lalu turun 1 baris)
                         val kgValues = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
-                        var currentRow = customerStartRow + 1 // Baris pertama data KG
-                        var colOffset = 0                     // Offset 0 dan 1 (2 kolom ke samping)
+                        var currentRow = customerStartRow + 1 // Baris pertama data KG (Row index 3, 13, dst)
+                        var colOffset = 0                     // Offset kolom (0..4 = 5 Kolom ke samping)
 
                         for (kg in kgValues) {
                             val r = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
@@ -60,16 +60,16 @@ object ExcelUtils {
                             c.setCellValue(kg)
 
                             colOffset++
-                            // Jika sudah terisi 2 kolom ke samping, pindah ke baris di bawahnya
-                            if (colOffset >= 2) {
+                            // Jika sudah terisi 5 kolom (A..E), pindah baris ke bawah dan reset kolom ke awal
+                            if (colOffset >= 5) {
                                 colOffset = 0
                                 currentRow++
                             }
                         }
 
-                        // C. Customer berikutnya hanya bergeser 2 kolom (Kolom A-B -> Kolom C-D -> Kolom E-F)
-                        // Ubah ke += 3 jika ingin memberikan jarak 1 kolom kosong antar customer
-                        currentStartCol += 2 
+                        // C. Pindah ke Customer Berikutnya di PAG ini
+                        // Jika dalam 1 PAG ada customer lain, bergeser 7 kolom ke kanan (atau sesuaikan dengan layout template)
+                        currentStartCol += 7
                     }
 
                     pagBlockIndex++
