@@ -73,7 +73,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         _cargoList.value = emptyList()
     }
 
-    // --- IMPORT LOGIC REVISI (MENGAMBIL SELURUH DATA TANPA TERPOTONG) ---
+    // --- IMPORT LOGIC ---
     fun importFromExcel(context: Context, uri: android.net.Uri) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -85,7 +85,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val importedList = mutableListOf<CargoItem>()
                 val evaluator = workbook.creationHelper.createFormulaEvaluator()
 
-                // Mulai membaca dari baris indeks 12 (baris ke-13 Excel)
                 for (i in 12..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
@@ -96,12 +95,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val customer = getCellString(row, 6, evaluator)
                     val noPag = getCellString(row, 8, evaluator)
 
-                    // Berhenti jika sudah menyentuh teks Total atau Footer
-                    if (pti.contains("TOTAL", ignoreCase = true) || description.contains("TOTAL", ignoreCase = true) || description.contains("Prepared by", ignoreCase = true)) {
+                    if (pti.contains("TOTAL", ignoreCase = true) || 
+                        description.contains("TOTAL", ignoreCase = true) || 
+                        description.contains("Prepared by", ignoreCase = true)) {
                         break
                     }
 
-                    // Hanya lewati jika SELURUH kolom penting bernilai kosong
                     if (pti.isBlank() && description.isBlank() && noPag.isBlank() && pcsQty.isBlank()) {
                         continue
                     }
@@ -146,7 +145,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- EXPORT LOGIC REVISI (PRESISI SESUAI TEMPLATE MY INDO AIRLINES) ---
+    // --- EXPORT LOGIC (SISTEM SHIFT + COPY STYLE SUPAYA TIDAK MERUSAK FOOTER) ---
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
@@ -163,7 +162,32 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
                 inputStream.close()
 
+                val stowingList = currentList.filter { it.noPag.isNotBlank() }
                 val startRow = 12
+                val templateMaxRows = 21 // Slot baris bawaan template (baris 12 s.d. 32)
+                val maxDataCount = maxOf(currentList.size, stowingList.size)
+
+                // Jika jumlah data melebihi slot bawaan, sisipkan baris baru di atas Footer (baris 33)
+                if (maxDataCount > templateMaxRows) {
+                    val additionalRows = maxDataCount - templateMaxRows
+                    sheet.shiftRows(33, sheet.lastRowNum, additionalRows, true, true)
+
+                    // Ambil contoh baris acuan (baris 12) untuk menduplikasi Style & Border
+                    val sampleRow = sheet.getRow(startRow)
+                    for (i in 0 until additionalRows) {
+                        val newRowIdx = 33 + i
+                        val newRow = sheet.createRow(newRowIdx)
+                        if (sampleRow != null) {
+                            for (c in 0 until 12) {
+                                val sampleCell = sampleRow.getCell(c)
+                                val newCell = newRow.createCell(c)
+                                if (sampleCell?.cellStyle != null) {
+                                    newCell.cellStyle = sampleCell.cellStyle
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Isi Header AWB dan Flight No
                 sheet.getRow(1)?.getCell(7)?.setCellValue(awbNo)
@@ -174,50 +198,27 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val targetRowIdx = startRow + index
                     val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
-                    // Kolom A (0): No
-                    (row.getCell(0) ?: row.createCell(0)).setCellValue((index + 1).toDouble())
-                    // Kolom B (1): PTI
-                    (row.getCell(1) ?: row.createCell(1)).setCellValue(item.pti)
-                    // Kolom C (2): Pcs/Cly
-                    val pcs = item.pcsQty.toDoubleOrNull()
-                    if (pcs != null) {
-                        (row.getCell(2) ?: row.createCell(2)).setCellValue(pcs)
-                    } else {
-                        (row.getCell(2) ?: row.createCell(2)).setCellValue(item.pcsQty)
-                    }
-                    // Kolom E (4): WEIGHT (Kg)
-                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull()
-                    if (weight != null) {
-                        (row.getCell(4) ?: row.createCell(4)).setCellValue(weight)
-                    } else {
-                        (row.getCell(4) ?: row.createCell(4)).setCellValue(item.weight)
-                    }
-                    // Kolom F (5): DESCRIPTION
-                    (row.getCell(5) ?: row.createCell(5)).setCellValue(item.description)
-                    // Kolom G (6): COSTUMERS
-                    (row.getCell(6) ?: row.createCell(6)).setCellValue(item.customer)
+                    setNumericOrText(row, 0, (index + 1).toDouble()) // No
+                    setTextCell(row, 1, item.pti)                    // PTI
+                    setNumericOrText(row, 2, item.pcsQty)            // Pcs/Cly
+                    setNumericOrText(row, 4, if (item.subTotal.isNotBlank()) item.subTotal else item.weight) // Weight
+                    setTextCell(row, 5, item.description)            // Description
+                    setTextCell(row, 6, item.customer)               // Customer
                 }
 
-                // 2. TULIS TABEL STOWING (KANAN) - HANYA ITEM YANG MEMILIKI NO PAG
-                val stowingList = currentList.filter { it.noPag.isNotBlank() }
+                // 2. TULIS TABEL STOWING (KANAN)
                 stowingList.forEachIndexed { index, item ->
                     val targetRowIdx = startRow + index
                     val row = sheet.getRow(targetRowIdx) ?: sheet.createRow(targetRowIdx)
 
-                    // Kolom H (7): No Stowing
-                    (row.getCell(7) ?: row.createCell(7)).setCellValue((index + 1).toDouble())
-                    // Kolom I (8): NO PAG
-                    (row.getCell(8) ?: row.createCell(8)).setCellValue(item.noPag)
-                    // Kolom J (9): DESCRIPTION
-                    (row.getCell(9) ?: row.createCell(9)).setCellValue(item.description)
-                    // Kolom K (10): WEIGHT (Kg)
-                    val weight = item.subTotal.toDoubleOrNull() ?: item.weight.toDoubleOrNull()
-                    if (weight != null) {
-                        (row.getCell(10) ?: row.createCell(10)).setCellValue(weight)
-                    } else {
-                        (row.getCell(10) ?: row.createCell(10)).setCellValue(item.weight)
-                    }
+                    setNumericOrText(row, 7, (index + 1).toDouble()) // No
+                    setTextCell(row, 8, item.noPag)                  // NO PAG
+                    setTextCell(row, 9, item.description)            // Description
+                    setNumericOrText(row, 10, if (item.subTotal.isNotBlank()) item.subTotal else item.weight) // Weight
                 }
+
+                // Recalculate rumus TOTAL jika ada
+                workbook.creationHelper.createFormulaEvaluator().evaluateAll()
 
                 // Simpan File dan Tampilkan
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
@@ -241,5 +242,21 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+    }
+
+    private fun setNumericOrText(row: Row, col: Int, value: Any) {
+        val cell = row.getCell(col) ?: row.createCell(col)
+        when (value) {
+            is Double -> cell.setCellValue(value)
+            is String -> {
+                val num = value.toDoubleOrNull()
+                if (num != null) cell.setCellValue(num) else cell.setCellValue(value)
+            }
+        }
+    }
+
+    private fun setTextCell(row: Row, col: Int, value: String) {
+        val cell = row.getCell(col) ?: row.createCell(col)
+        cell.setCellValue(value)
     }
 }
