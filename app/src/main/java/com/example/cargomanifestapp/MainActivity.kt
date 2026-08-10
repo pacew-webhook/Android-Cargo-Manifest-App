@@ -67,7 +67,8 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
         }
     }
 
-    var selectedCargoId by remember { mutableStateOf<Int?>(null) }
+    // Menggunakan Long? agar sinkron dengan id database CargoItem
+    var selectedCargoId by remember { mutableStateOf<Long?>(null) }
 
     var awbNo by remember { mutableStateOf("") }
     var flightNo by remember { mutableStateOf("") }
@@ -79,7 +80,6 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
 
-    // Sub Total yang bisa diketik manual / diisi otomatis
     var subTotalInput by remember { mutableStateOf("") }
 
     val calculatedSubTotal = remember(pcsQty, weight) {
@@ -276,7 +276,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                 OutlinedTextField(
                     value = subTotalInput,
                     onValueChange = { subTotalInput = it },
-                    readOnly = false, // Dapat diisi/diketik manual
+                    readOnly = false,
                     label = { Text("Sub Total (Kg)") },
                     placeholder = { Text(calculatedSubTotal.ifEmpty { "Manual/Auto" }) },
                     keyboardOptions = numberNextKeyboardOptions,
@@ -461,7 +461,7 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                             pti = item.pti.removePrefix("KAL").trim()
                             pcsQty = item.pcsQty
                             weight = item.weight
-                            subTotalInput = item.subTotal // Masukkan nilai sub total ke input saat diedit
+                            subTotalInput = item.subTotal
                             description = item.description
                             customer = item.customer
                             noPag = item.noPag.removePrefix("PAG").trim()
@@ -490,16 +490,16 @@ fun CargoAppScreen(viewModel: CargoViewModel) {
                                 fontSize = 13.sp,
                                 color = Color.Gray
                             )
-}
+                        }
 
                         Button(
                             onClick = {
                                 itemToDelete = item
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                            shape = RoundedCornerShape(8.dp)
+                contentPadding = PaddingValues(horizontal = 8.dp)
                         ) {
-                            Text("Hapus", fontSize = 12.sp)
+                            Text("Hapus", fontSize = 11.sp, color = Color.White)
                         }
                     }
                 }
