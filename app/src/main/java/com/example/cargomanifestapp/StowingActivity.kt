@@ -108,7 +108,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
             currentTotalKg.toString()
         }
 
-        // Teks noPag diambil langsung tanpa penambahan string "PAG " otomatis agar tidak ganda
         val newCargoItem = CargoItem(
             noPag = noPag.uppercase().trim(),
             customer = customer.uppercase().trim(),
@@ -246,7 +245,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- RINCIAN INPUT KG (5 BARIS PER ROW) ---
+                // --- RINCIAN INPUT KG (5 KOLOM PER BARIS) ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${currentKgEntries.size} Koli):",
@@ -339,15 +338,49 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGO ITEM TERSEMPAN ---
-        Text(
-            text = "Daftar Stowing Tersimpan (${cargoList.size})",
-            fontWeight = FontWeight.Bold,
-            fontSize = 15.sp,
-            color = Color(0xFF381E72)
-        )
+        // --- DAFTAR CARGO ITEM TERSIMPAN & GRAND TOTAL (AKUMULASI SEMUA DATA) ---
+        val grandTotalKg = cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        val grandTotalKoli = cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
+
+        val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
+            grandTotalKg.toLong().toString()
+        } else {
+            grandTotalKg.toString()
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Daftar Stowing Tersimpan (${cargoList.size})",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color(0xFF381E72)
+            )
+
+            if (cargoList.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF2E7D32),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        text = "Total: $formattedGrandTotal KG ($grandTotalKoli Koli)",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+        }
+
         Spacer(modifier = Modifier.height(6.dp))
 
+        // --- LIST KARTU DATA CARGO ---
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(8.dp)
