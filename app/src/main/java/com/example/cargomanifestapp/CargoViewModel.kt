@@ -98,7 +98,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                             description.contains("Approved", true)
 
                     if (isTotalRow) {
-                        continue // Lewati baris total agar tidak tersimpan sebagai data
+                        continue
                     }
 
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
@@ -131,7 +131,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     // ==========================================
-    // 3. EXPORT EXCEL (HANYA 1 BARIS TOTAL)
+    // 3. EXPORT EXCEL (MENGIKUTI TOTAL DI BAWAH)
     // ==========================================
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -158,20 +158,19 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 var totalStowingNet = 0.0
                 var totalStowingGross = 0.0
 
-                val maxRows = maxOf(currentList.size, stowingList.size)
-
-                // BERSIHKAN BARIS TEMPLATE (BARIS 13 SAMPAI 60) DARI SISA TOTAL LAMA
-                for (r in startRow..60) {
+                // Bersihkan baris slot data (Baris 14 s/d 37 / Indeks 13 s/d 36)
+                for (r in startRow until 37) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
                         for (c in 0..12) {
-                            val cell = targetRow.getCell(c)
-                            cell?.setCellValue("")
+                            targetRow.getCell(c)?.setCellValue("")
                         }
                     }
                 }
 
-                // ISI DATA MANIFEST DAN STOWING
+                val maxRows = maxOf(currentList.size, stowingList.size)
+
+                // ISI DATA SAJA (TANPA SISIPAN TOTAL DI TENGAH)
                 for (i in 0 until maxRows) {
                     val rowIdx = startRow + i
                     val row = sheet.getRow(rowIdx) ?: sheet.createRow(rowIdx)
@@ -212,11 +211,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
-                // TULIS HANYA 1 BARIS TOTAL (LANGSUNG DILENGKAPI TEKS & ANGKA)
-                val totalRowIdx = if (maxRows < 25) 38 else (startRow + maxRows)
+                // ISI HANYA KEPADA BARIS TOTAL DI BAWAH (BARIS 38 / INDEKS 37 ATAU BARIS SETELAH DATA JIKA > 25 BARIS)
+                val totalRowIdx = if (maxRows <= 24) 37 else (startRow + maxRows)
                 val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
 
-                setTextCell(totalRow, 1, "TOTAL WEIGHT")
                 setNumericCell(totalRow, 2, totalManifestPcs)
                 setNumericCell(totalRow, 4, totalManifestWeight)
                 setNumericCell(totalRow, 10, totalStowingNet)
