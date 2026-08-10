@@ -15,33 +15,52 @@ object ExcelUtils {
             val sheet = workbook.getSheetAt(0)
 
             if (cargoList.isNotEmpty()) {
-                // 1. Set NO PAG Header di Sel B1 (Row index 0, Column index 1)
-                val headerRow1 = sheet.getRow(0) ?: sheet.createRow(0)
-                headerRow1.createCell(1).setCellValue(cargoList.first().noPag)
+                val firstItem = cargoList.first()
 
-                // 2. Hitung Grand Total KG dari seluruh CargoItem untuk Sel E1 (Row index 0, Column index 4)
-                val totalLoot = cargoList.sumOf { item ->
+                // 1. NO PAG di B1 (Baris Index 0, Kolom Index 1 / B)
+                val row1 = sheet.getRow(0) ?: sheet.createRow(0)
+                row1.createCell(1).setCellValue(firstItem.noPag)
+
+                // 2. TOTAL LOOT di E1 (Baris Index 0, Kolom Index 4 / E)
+                val grandTotalKg = cargoList.sumOf { item ->
                     item.subTotal.toDoubleOrNull() ?: 0.0
                 }
-                headerRow1.createCell(4).setCellValue(totalLoot)
+                row1.createCell(4).setCellValue(grandTotalKg)
+
+                // 3. Customer di A3 (Baris Index 2, Kolom Index 0 / A)
+                val row3 = sheet.getRow(2) ?: sheet.createRow(2)
+                row3.createCell(0).setCellValue(firstItem.customer)
+
+                // 4. Input Nilai KG per Sel (Mulai dari A4 -> Row Index 3)
+                // Mengumpulkan semua nilai KG individual dari data stowing
+                var currentBatchStartRow = 3 // Baris A4
+
+                for (item in cargoList) {
+                    // Ambil list angka KG (pisahkan berdasarkan koma)
+                    val kgValues = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+
+                    var currentRowIndex = currentBatchStartRow
+                    var currentColIndex = 0 // 0 = Kolom A, 1 = B, 2 = C, 3 = D, 4 = E
+
+                    for (kg in kgValues) {
+                        val row = sheet.getRow(currentRowIndex) ?: sheet.createRow(currentRowIndex)
+                        row.createCell(currentColIndex).setCellValue(kg)
+
+                        currentColIndex++
+
+                        // Jika sudah mencapai 5 kolom (A-E / index 4), pindah ke baris di bawahnya
+                        if (currentColIndex > 4) {
+                            currentColIndex = 0
+                            currentRowIndex++
+                        }
+                    }
+
+                    // Menyiapkan offset baris untuk batch berikutnya jika ada
+                    currentBatchStartRow = if (currentColIndex == 0) currentRowIndex else currentRowIndex + 1
+                }
             }
 
-            // 3. Tulis Data Cargo Item mulai dari Baris A4 (Row index 3)
-            var startRow = 3
-
-            for ((index, item) in cargoList.withIndex()) {
-                val row = sheet.getRow(startRow) ?: sheet.createRow(startRow)
-
-                row.createCell(0).setCellValue((index + 1).toDouble())                 // Kolom A: No
-                row.createCell(1).setCellValue(item.noPag)                             // Kolom B: NO PAG
-                row.createCell(2).setCellValue(item.customer)                          // Kolom C: Customer
-                row.createCell(3).setCellValue(item.weight)                            // Kolom D: Rincian KG
-                row.createCell(4).setCellValue(item.subTotal.toDoubleOrNull() ?: 0.0)  // Kolom E: Total KG
-
-                startRow++
-            }
-
-            // 4. Simpan ke file Output Excel
+            // 5. Simpan perubahan ke file Excel
             val outputStream: OutputStream? = context.contentResolver.openOutputStream(uri)
             if (outputStream != null) {
                 workbook.write(outputStream)
