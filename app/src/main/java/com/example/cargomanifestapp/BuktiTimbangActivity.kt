@@ -36,9 +36,19 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import java.io.File
 import java.io.FileOutputStream
+import java.text.DecimalFormat
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+// Extension Function untuk format angka: 50 -> "50", 50.5 -> "50.5"
+fun Double.toCleanString(): String {
+    return if (this % 1.0 == 0.0) {
+        this.toLong().toString()
+    } else {
+        DecimalFormat("#.##").format(this)
+    }
+}
 
 class BuktiTimbangActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,7 +61,7 @@ class BuktiTimbangActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BtbScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
@@ -67,7 +77,6 @@ fun BtbScreen(onBackClick: () -> Unit) {
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
     var editingId by remember { mutableStateOf<String?>(null) }
 
-    // Focus Requester untuk Navigasi Keyboard Smooth
     val customerFocus = remember { FocusRequester() }
     val trademarkFocus = remember { FocusRequester() }
     val barangFocus = remember { FocusRequester() }
@@ -142,7 +151,6 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             daftarTimbangan = daftarTimbangan
                         )
 
-                        // Fitur Pintar: Ekspor data aktif jika form tidak kosong, atau daftar terakhir jika ada
                         if (daftarTimbangan.isNotEmpty()) {
                             exportAndShare(activeData)
                         } else if (savedBtbList.isNotEmpty()) {
@@ -241,23 +249,27 @@ fun BtbScreen(onBackClick: () -> Unit) {
 
                         if (daftarTimbangan.isNotEmpty()) {
                             Text(
-                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum()} KG",
+                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2E7D32)
                             )
 
-                            // Tampilan Chip Timbangan
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                daftarTimbangan.forEachIndexed { index, weight ->
-                                    SuggestionChip(
-                                        onClick = {
-                                            daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
-                                        },
-                                        label = { Text("$weight") },
-                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
-                                    )
-                                }
+                            // Tampilan Chip Timbangan Otomatis Pindah Baris (FlowRow)
+                            ContextualFlowRow(
+                                itemCount = daftarTimbangan.size,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) { index ->
+                                val weight = daftarTimbangan[index]
+                                SuggestionChip(
+                                    onClick = {
+                                        daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
+                                    },
+                                    label = { Text(weight.toCleanString()) },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
+                                )
                             }
                         }
 
@@ -318,7 +330,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("${btb.customerName} (${btb.trademarks.ifEmpty { "-" }})", fontWeight = FontWeight.Bold)
                             Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
-                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
                         Row {
                             IconButton(onClick = {
