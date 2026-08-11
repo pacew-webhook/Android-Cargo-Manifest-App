@@ -2,6 +2,7 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.net.Uri
+import org.apache.poi.ss.usermodel.BorderStyle
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 
@@ -38,7 +39,7 @@ object BtbExcelWriter {
     }
 
     /**
-     * Helper multi data (Revisi total di kolom F & format angka tanpa .00)
+     * Helper multi data (Revisi: hilangkan titik & tambahkan border pada data baru)
      */
     fun fillBtbTemplateMulti(
         context: Context,
@@ -51,24 +52,44 @@ object BtbExcelWriter {
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
-        // Format angka "0.##" agar angka bulat tidak menampilkan .00 (contoh: 12 -> 12, 12.5 -> 12.5)
-        val cleanNumericStyle = workbook.createCellStyle().apply {
-            dataFormat = workbook.createDataFormat().getFormat("0.##")
+        // Style untuk Angka (Format General agar tidak ada titik di akhir angka bulat)
+        val generalNumericStyle = workbook.createCellStyle().apply {
+            dataFormat = workbook.createDataFormat().getFormat("General")
+            borderTop = BorderStyle.THIN
+            borderBottom = BorderStyle.THIN
+            borderLeft = BorderStyle.THIN
+            borderRight = BorderStyle.THIN
         }
 
-        // Helper untuk menulis Teks (String) ke sel secara aman
-        fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
+        // Style untuk Header / Label Barang Baru (dengan Border)
+        val headerLabelStyle = workbook.createCellStyle().apply {
+            borderTop = BorderStyle.THIN
+            borderBottom = BorderStyle.THIN
+            borderLeft = BorderStyle.THIN
+            borderRight = BorderStyle.THIN
+        }
+
+        // Helper untuk menulis Teks (String) ke sel secara aman +opsional border
+        fun setCellValue(rowIndex: Int, colIndex: Int, value: String, applyBorder: Boolean = false) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
+            if (applyBorder) {
+                cell.cellStyle = headerLabelStyle
+            }
         }
 
-        // Helper untuk menulis Angka dengan format tanpa .00
-        fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
+        // Helper untuk menulis Angka tanpa titik di akhir + dengan border
+        fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double, applyBorder: Boolean = true) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
+            
+            // Masukkan nilai angka murni
             cell.setCellValue(value)
-            cell.cellStyle = cleanNumericStyle
+            
+            if (applyBorder) {
+                cell.cellStyle = generalNumericStyle
+            }
         }
 
         // =============================================================
@@ -93,18 +114,27 @@ object BtbExcelWriter {
                 currentRow += 4
             }
 
-            // Input Trademark + Jenis Barang di Kolom A (A9, A14, dst.)
+            // Input Trademark + Jenis Barang di Kolom A (A9, A14, dst.) dengan Border
             val labelBarang = if (btb.trademarks.isNotEmpty()) "${btb.trademarks} - ${btb.jenisBarang}" else btb.jenisBarang
-            setCellValue(currentRow, 0, labelBarang)
+            setCellValue(currentRow, 0, labelBarang, applyBorder = (index > 0))
+
+            // Beri border untuk sel A s/d E pada baris label barang jika data baru
+            if (index > 0) {
+                for (c in 1..4) {
+                    val row = sheet.getRow(currentRow) ?: sheet.createRow(currentRow)
+                    val cell = row.getCell(c) ?: row.createCell(c)
+                    cell.cellStyle = headerLabelStyle
+                }
+            }
 
             // Input Grid Data Timbangan tepat di bawah label barang
             var itemRow = currentRow + 1
-            val firstDataRow = itemRow // Simpan baris pertama data untuk meletakkan total di Kolom F
+            val firstDataRow = itemRow // Simpan baris pertama untuk meletakkan total di Kolom F
             val maxCols = 5 // Kolom A s/d E (Index 0..4)
             var colIndex = 0
 
             btb.daftarTimbangan.forEach { berat ->
-                setCellNumericValue(itemRow, colIndex, berat)
+                setCellNumericValue(itemRow, colIndex, berat, applyBorder = true)
                 colIndex++
                 if (colIndex >= maxCols) {
                     colIndex = 0
@@ -112,9 +142,8 @@ object BtbExcelWriter {
                 }
             }
 
-            // REVISI: Pindahkan/Tulis total per data ke Kolom F (Col index 5)
-            // di baris pertama tempat data timbangan dimasukkan
-            setCellNumericValue(firstDataRow, 5, btb.totalBerat)
+            // Pindahkan/Tulis total per data ke Kolom F (Col index 5) tanpa titik & dengan border
+            setCellNumericValue(firstDataRow, 5, btb.totalBerat, applyBorder = true)
 
             // Update posisi currentRow ke baris terakhir yang terisi
             currentRow = if (colIndex > 0) itemRow else itemRow - 1
@@ -126,7 +155,12 @@ object BtbExcelWriter {
         val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
         val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
         cellTotal.cellFormula = "SUM(A10:E23)"
-        cellTotal.cellStyle = cleanNumericStyle
+        
+        // Memakai format General agar angka total tidak memakai titik di akhir
+        val totalStyle = workbook.createCellStyle().apply {
+            dataFormat = workbook.createDataFormat().getFormat("General")
+        }
+        cellTotal.cellStyle = totalStyle
 
         workbook.setForceFormulaRecalculation(true)
 
