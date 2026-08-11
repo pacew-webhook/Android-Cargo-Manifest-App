@@ -6,19 +6,22 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 
 /**
- * Model data untuk Bukti Timbang Barang (BTB).
+ * Model data utama untuk Bukti Timbang Barang.
  */
 data class BtbFormData(
+    val id: String = System.currentTimeMillis().toString(),
     val hariTanggal: String = "",
     val customerName: String = "",
     val trademarks: String = "",
     val jenisBarang: String = "",
     val daftarTimbangan: List<Double> = emptyList()
-)
+) {
+    val totalBerat: Double get() = daftarTimbangan.sum()
+    val jumlahKoli: Int get() = daftarTimbangan.size
+}
 
 /**
- * Helper untuk membaca template Excel Bukti Timbang Barang (.xlsx),
- * memasukkan data ke koordinat sel yang benar, dan menyimpannya.
+ * Helper ekspor data ke template Excel (.xlsx).
  */
 object BtbExcelWriter {
 
@@ -31,41 +34,30 @@ object BtbExcelWriter {
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
-        // Helper untuk menulis Teks (String) ke sel secara aman
         fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
         }
 
-        // Helper untuk menulis Angka (Numeric/Double) ke sel secara aman
         fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
         }
 
-        // =============================================================
-        // 1. HEADER TRANSAKSI
-        // =============================================================
-        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row 2, Col 3)
-        setCellValue(3, 3, data.customerName) // Sel D4 (Row 3, Col 3)
-        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
+        // 1. Header Transaksi (D3, D4, D5)
+        setCellValue(2, 3, data.hariTanggal)  
+        setCellValue(3, 3, data.customerName) 
+        setCellValue(4, 3, data.trademarks)   
 
-        // =============================================================
-        // 2. JENIS BARANG
-        // =============================================================
-        // Ditulis di Sel C8 (Row 7, Col 2), di sebelah teks "JENIS BARANG :"
+        // 2. Jenis Barang (C8)
         setCellValue(7, 2, data.jenisBarang)
 
-        // =============================================================
-        // 3. DATA TIMBANGAN (A10:E23)
-        // =============================================================
-        // Baris 10 (Row index 9) s/d Baris 23 (Row index 22)
-        // Kolom A s/d E (Col index 0..4) -> Maksimal 70 slot data
+        // 3. Grid Timbangan (A10:E23)
         val startRow = 9   // Baris 10
-        val maxRows = 14   // 14 baris (Baris 10 - 23)
-        val maxCols = 5    // 5 kolom (Kolom A - E)
+        val maxRows = 14   // Baris 10 s/d 23
+        val maxCols = 5    // Kolom A s/d E
 
         var itemIndex = 0
         val totalData = data.daftarTimbangan.size
@@ -83,19 +75,14 @@ object BtbExcelWriter {
             if (itemIndex >= totalData) break
         }
 
-        // =============================================================
-        // 4. FORMULA TOTAL (Sel E24)
-        // =============================================================
-        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)        // Baris 24 (Row index 23)
-        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4) // Kolom E (Col index 4)
+        // 4. Update Formula Total (Sel E24)
+        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
+        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
         cellTotal.cellFormula = "SUM(A10:E23)"
 
-        // Memaksa Excel merelakukan perhitungan ulang saat file dibuka
         workbook.setForceFormulaRecalculation(true)
 
-        // =============================================================
-        // 5. SIMPAN KE OUTPUT STREAM
-        // =============================================================
+        // 5. Write ke Output Stream
         context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
             workbook.write(outputStream)
         }
