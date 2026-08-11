@@ -41,7 +41,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val totalPcs: StateFlow<Int> = cargoList.map { list ->
-        list.sumOf { it.pcsQty.toIntOrNull()?: 0 } // UDAH DIBENERIN SPASINYA
+        list.sumOf { it.pcsQty.toIntOrNull()?: 0 }
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0)
 
     val totalWeight: StateFlow<Double> = cargoList.map { list ->
@@ -71,7 +71,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val newItem = CargoItem(
-            id = System.currentTimeMillis(),
+            id = System.currentTimeMillis().toInt(), // FIX 1:.toInt()
             awbNo = awbNo, flightNo = flightNo, pti = pti,
             pcsQty = pcsQty, weight = weight, subTotal = subTotal,
             description = description, customer = customer, noPag = noPag
@@ -130,7 +130,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     if (isTotalRow) continue
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
                     val newItem = CargoItem(
-                        id = System.currentTimeMillis() + i,
+                        id = (System.currentTimeMillis() + i).toInt(), // FIX 1:.toInt()
                         awbNo = extractedAwb, flightNo = extractedFlight, pti = pti,
                         pcsQty = pcsQty, weight = pcsWeight,
                         subTotal = if (subTotal.isNotBlank()) subTotal else pcsWeight,
@@ -176,8 +176,8 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
                 val groupedStowing = rawList.filter { it.noPag.isNotBlank() }
-                   .groupBy { "${it.noPag.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" }
-                   .map { (_, items) ->
+                  .groupBy { "${it.noPag.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" }
+                  .map { (_, items) ->
                         val totalNet = items.sumOf { parseDoubleOrZero(it.subTotal) }
                         val firstItem = items.first()
                         firstItem.copy(subTotal = formatNumber(totalNet))
@@ -305,13 +305,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setStyledNumericCell(row: Row, col: Int, value: Double, sampleCell: Cell?) {
-        val cell = row.getCell(col)?: row.createCell(col)
+        val cell = row.getCell(col)?: row.createCell(col) // FIX 2
         cell.setCellValue(value)
         sampleCell?.cellStyle?.let { cell.cellStyle = it }
     }
 
     private fun setStyledTextCell(row: Row, col: Int, value: String, sampleCell: Cell?) {
-        val cell = row.getCell(col)?: row.createRow(col) // typo fix
+        val cell = row.getCell(col)?: row.createCell(col) // FIX 2
         cell.setCellValue(value)
         sampleCell?.cellStyle?.let { cell.cellStyle = it }
     }
