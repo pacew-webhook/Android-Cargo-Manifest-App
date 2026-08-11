@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -73,7 +74,7 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
     val rincianBerat = remember { mutableStateListOf<Double>() }
     var selectedBtbId by remember { mutableStateOf<Long?>(null) }
 
-    // Dummy List Simpan Data Local
+    // List Simpan Data Local
     val btbList = remember { mutableStateListOf<BtbModel>() }
 
     // Focus Requesters untuk navigasi Enter
@@ -148,8 +149,30 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
                         tint = Color.Red
                     )
                 }
+                // Tombol Share Data BTB
                 IconButton(onClick = {
-                    Toast.makeText(context, "Fitur Share BTB", Toast.LENGTH_SHORT).show()
+                    if (btbList.isNotEmpty()) {
+                        val shareText = StringBuilder().apply {
+                            append("=== BUKTI TIMBANG BARANG ===\n")
+                            append("Tanggal: $todayDate\n\n")
+                            btbList.forEachIndexed { index, btb ->
+                                append("${index + 1}. Customer: ${btb.customer}\n")
+                                if (btb.trademarks.isNotBlank()) append("   Trademarks: ${btb.trademarks}\n")
+                                if (btb.jenisBarang.isNotBlank()) append("   Barang: ${btb.jenisBarang}\n")
+                                append("   Rincian: ${btb.rincianBerat.joinToString(", ")} KG\n")
+                                append("   Total: ${btb.rincianBerat.size} Koli | ${btb.totalBerat} KG\n\n")
+                            }
+                        }.toString()
+
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_SUBJECT, "Bukti Timbang Barang")
+                            putExtra(Intent.EXTRA_TEXT, shareText)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Bagikan BTB via"))
+                    } else {
+                        Toast.makeText(context, "Belum ada data BTB untuk dibagikan!", Toast.LENGTH_SHORT).show()
+                    }
                 }) {
                     Icon(
                         imageVector = Icons.Default.Share,
@@ -424,7 +447,7 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
     }
 }
 
-// Data Model Sederhana
+// Data Model
 data class BtbModel(
     val id: Long,
     val tanggal: String,
