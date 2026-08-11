@@ -34,30 +34,46 @@ object BtbExcelWriter {
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
+        // Helper untuk menulis Teks (String) ke sel secara aman
         fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
         }
 
+        // Helper untuk menulis Angka (Numeric/Double) ke sel dengan format General
         fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
+
+            // Mengubah format sel menjadi 'General' agar angka bulat seperti 50 tidak berubah menjadi 50.00
+            val style = workbook.createCellStyle()
+            if (cell.cellStyle != null) {
+                style.cloneStyleFrom(cell.cellStyle)
+            }
+            style.dataFormat = workbook.createDataFormat().getFormat("General")
+            cell.cellStyle = style
         }
 
-        // 1. Header Transaksi (D3, D4, D5)
-        setCellValue(2, 3, data.hariTanggal)  
-        setCellValue(3, 3, data.customerName) 
-        setCellValue(4, 3, data.trademarks)   
+        // =============================================================
+        // 1. HEADER TRANSAKSI (Sel D3, D4, D5)
+        // =============================================================
+        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row 2, Col 3)
+        setCellValue(3, 3, data.customerName) // Sel D4 (Row 3, Col 3)
+        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
 
-        // 2. Jenis Barang (C8)
-        setCellValue(7, 2, data.jenisBarang)
+        // =============================================================
+        // 2. JENIS BARANG (Sel C8)
+        // =============================================================
+        setCellValue(7, 2, data.jenisBarang)  // Sel C8 (Row 7, Col 2)
 
-        // 3. Grid Timbangan (A10:E23)
-        val startRow = 9   // Baris 10
+        // =============================================================
+        // 3. DATA TIMBANGAN (Grid A10:E23 - Maksimal 70 item)
+        // =============================================================
+        val startRow = 9   // Baris 10 (Index 9)
         val maxRows = 14   // Baris 10 s/d 23
-        val maxCols = 5    // Kolom A s/d E
+        val maxCols = 5    // Kolom A s/d E (Index 0..4)
 
         var itemIndex = 0
         val totalData = data.daftarTimbangan.size
@@ -75,14 +91,19 @@ object BtbExcelWriter {
             if (itemIndex >= totalData) break
         }
 
-        // 4. Update Formula Total (Sel E24)
-        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
-        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
+        // =============================================================
+        // 4. UPDATE FORMULA TOTAL (Sel E24)
+        // =============================================================
+        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)        // Baris 24 (Row index 23)
+        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4) // Kolom E (Col index 4)
         cellTotal.cellFormula = "SUM(A10:E23)"
 
+        // Memaksa Excel melakukan perhitungan ulang saat file dibuka
         workbook.setForceFormulaRecalculation(true)
 
-        // 5. Write ke Output Stream
+        // =============================================================
+        // 5. SIMPAN KE OUTPUT STREAM
+        // =============================================================
         context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
             workbook.write(outputStream)
         }
