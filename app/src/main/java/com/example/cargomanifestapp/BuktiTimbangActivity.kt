@@ -13,7 +13,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
-import androidx.lifecycleScope
+import androidx.lifecycleScope // import ini
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -77,7 +77,7 @@ class BuktiTimbangActivity : AppCompatActivity() {
             return
         }
 
-        val cargoItem = CargoItem( // GANTI JADI CARGOITEM
+        val cargoItem = CargoItem(
             awbNo = etAwb.text.toString(),
             flightNo = etFlight.text.toString(),
             pti = etPti.text.toString(),
@@ -89,7 +89,7 @@ class BuktiTimbangActivity : AppCompatActivity() {
             noPag = etNoPag.text.toString()
         )
         lifecycleScope.launch {
-            db.cargoDao().insert(cargoItem) // GANTI JADI CARGOITEM
+            db.cargoDao().insertCargo(cargoItem) // UDAH DIGANTI
             Toast.makeText(this@BuktiTimbangActivity, "Data Tersimpan", Toast.LENGTH_SHORT).show()
             clearForm()
         }
