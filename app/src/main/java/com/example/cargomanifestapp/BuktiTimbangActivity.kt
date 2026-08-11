@@ -41,7 +41,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Extension Function untuk format angka: 50 -> "50", 50.5 -> "50.5"
+// Import khusus untuk Layout Flow
+import androidx.compose.layout.FlowRow
+import androidx.compose.layout.ExperimentalLayoutApi
+
+// Extension Function: Menghilangkan .0 pada angka bulat (contoh: 50.0 -> "50", 50.5 -> "50.5")
 fun Double.toCleanString(): String {
     return if (this % 1.0 == 0.0) {
         this.toLong().toString()
@@ -255,21 +259,21 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 color = Color(0xFF2E7D32)
                             )
 
-                            // Tampilan Chip Timbangan Otomatis Pindah Baris (FlowRow)
-                            ContextualFlowRow(
-                                itemCount = daftarTimbangan.size,
+                            // Tampilan Chip Timbangan Otomatis Pindah Baris dengan Standard FlowRow
+                            FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
-                            ) { index ->
-                                val weight = daftarTimbangan[index]
-                                SuggestionChip(
-                                    onClick = {
-                                        daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
-                                    },
-                                    label = { Text(weight.toCleanString()) },
-                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
-                                )
+                            ) {
+                                daftarTimbangan.forEachIndexed { index, weight ->
+                                    SuggestionChip(
+                                        onClick = {
+                                            daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
+                                        },
+                                        label = { Text(weight.toCleanString()) },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
+                                    )
+                                }
                             }
                         }
 
