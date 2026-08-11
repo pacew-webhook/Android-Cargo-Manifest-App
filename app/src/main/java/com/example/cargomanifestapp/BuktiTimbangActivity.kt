@@ -11,17 +11,16 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
@@ -33,7 +32,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -114,7 +112,6 @@ private enum class BtbDeleteType {
 fun BuktiTimbangScreen(onBack: () -> Unit) {
     val context = LocalContext.current
 
-    // State Input Form Header
     var hariTanggal by remember { mutableStateOf("") }
     var customerName by remember { mutableStateOf("") }
     var trademarks by remember { mutableStateOf("") }
@@ -124,12 +121,10 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
     var editingIndex by remember { mutableStateOf<Int?>(null) }
     val btbList = remember { mutableStateListOf<BtbFormData>() }
     
-    // Matriks Timbangan 5 Kolom (Max 70 sel = A10:E23)
     val currentKgEntries = remember { mutableStateListOf<Double?>() }
     val activeEntries = currentKgEntries.filterNotNull()
     val totalKg = activeEntries.sum()
 
-    // Dialog State
     var deleteType by remember { mutableStateOf(BtbDeleteType.NONE) }
     var itemIndexToDelete by remember { mutableStateOf<Int?>(null) }
     var kgIndexToDelete by remember { mutableStateOf<Int?>(null) }
@@ -144,7 +139,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
         saveBtbListToPrefs(context, btbList.toList())
     }
 
-    // Export Excel Launcher
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     ) { uri ->
@@ -216,7 +210,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
 
         updateAndSave()
 
-        // Reset Form
         hariTanggal = ""
         customerName = ""
         trademarks = ""
@@ -226,7 +219,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
         editingIndex = null
     }
 
-    // --- POPUP DIALOG HAPUS ---
     if (deleteType != BtbDeleteType.NONE) {
         AlertDialog(
             onDismissRequest = { deleteType = BtbDeleteType.NONE },
@@ -282,7 +274,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // --- HEADER ---
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -311,7 +302,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
             }
         }
 
-        // --- FORM INPUT ---
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = if (editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)),
@@ -369,7 +359,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Input KG & Tombol Tambah
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -395,7 +384,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- GRID TIMBANGAN (5 KOLOM A-E) ---
                 if (currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Timbangan (${activeEntries.size} Koli) | Total: $totalKg KG",
@@ -413,7 +401,7 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        itemsIndexed(currentKgEntries) { index, itemVal ->
+                        gridItemsIndexed(currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
                                 Box(
                                     modifier = Modifier
@@ -460,7 +448,6 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- RIWAYAT DATA BTB ---
         Text("Daftar BTB Tersimpan (${btbList.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
         Spacer(modifier = Modifier.height(6.dp))
 
@@ -510,4 +497,4 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
             }
         }
     }
-}
+}     
