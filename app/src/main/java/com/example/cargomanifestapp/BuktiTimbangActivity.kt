@@ -41,9 +41,9 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Import khusus untuk Layout Flow
-import androidx.compose.layout.FlowRow
-import androidx.compose.layout.ExperimentalLayoutApi
+// Import FlowRow dari foundation.layout
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
 // Extension Function: Menghilangkan .0 pada angka bulat (contoh: 50.0 -> "50", 50.5 -> "50.5")
 fun Double.toCleanString(): String {
@@ -259,7 +259,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 color = Color(0xFF2E7D32)
                             )
 
-                            // Tampilan Chip Timbangan Otomatis Pindah Baris dengan Standard FlowRow
+                            // Tampilan Chip Timbangan Otomatis Pindah Baris
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
