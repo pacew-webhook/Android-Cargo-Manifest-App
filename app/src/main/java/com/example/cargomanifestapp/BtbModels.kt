@@ -5,7 +5,9 @@ import android.net.Uri
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 
-// Data class untuk Bukti Timbang Barang
+/**
+ * Model data untuk Bukti Timbang Barang (BTB).
+ */
 data class BtbFormData(
     val hariTanggal: String = "",
     val customerName: String = "",
@@ -14,53 +16,56 @@ data class BtbFormData(
     val daftarTimbangan: List<Double> = emptyList()
 )
 
-// Helper untuk export Excel Bukti Timbang Barang
+/**
+ * Helper untuk membaca template Excel Bukti Timbang Barang (.xlsx),
+ * memasukkan data ke koordinat sel yang benar, dan menyimpannya.
+ */
 object BtbExcelWriter {
 
-    /**
-     * Mengisi template Bukti Timbang Barang (BTB) yang sudah ada di assets / URI.
-     *
-     * @param context Context Android
-     * @param templateInputStream InputStream dari file template Bukti_Timbang_Barang_BTB.xlsx
-     * @param outputUri Uri tujuan penyimpanan file hasil ekspor
-     * @param data Data BtbFormData yang akan dimasukkan
-     */
     fun fillBtbTemplate(
         context: Context,
         templateInputStream: InputStream,
         outputUri: Uri,
         data: BtbFormData
     ) {
-        // 1. Load template workbook yang sudah ada
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
-        // Helper safe-write agar sel dibuat jika belum ada
+        // Helper untuk menulis Teks (String) ke sel secara aman
         fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
         }
 
+        // Helper untuk menulis Angka (Numeric/Double) ke sel secara aman
         fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
         }
 
-        // 2. Isi Header sesuai koordinat template (Indeks 0-based: Row = Baris - 1, Col = A=0, B=1, dst)
-        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row index 2, Col index 3)
-        setCellValue(3, 3, data.customerName) // Sel D4 (Row index 3, Col index 3)
-        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row index 4, Col index 3)
+        // =============================================================
+        // 1. HEADER TRANSAKSI
+        // =============================================================
+        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row 2, Col 3)
+        setCellValue(3, 3, data.customerName) // Sel D4 (Row 3, Col 3)
+        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
 
-        // 3. Isi Jenis Barang pada sel A9
-        setCellValue(8, 0, data.jenisBarang)  // Sel A9 (Row index 8, Col index 0)
+        // =============================================================
+        // 2. JENIS BARANG
+        // =============================================================
+        // Ditulis di Sel C8 (Row 7, Col 2), di sebelah teks "JENIS BARANG :"
+        setCellValue(7, 2, data.jenisBarang)
 
-        // 4. Isi Data Timbangan dari A10 (Row index 9) sampai E23 (Row index 22)
-        // Maksimal 14 baris x 5 kolom = 70 data
-        val startRow = 9   // Baris 10 (0-based)
-        val maxRows = 14   // Baris 10 s/d 23
-        val maxCols = 5    // Kolom A s/d E (0..4)
+        // =============================================================
+        // 3. DATA TIMBANGAN (A10:E23)
+        // =============================================================
+        // Baris 10 (Row index 9) s/d Baris 23 (Row index 22)
+        // Kolom A s/d E (Col index 0..4) -> Maksimal 70 slot data
+        val startRow = 9   // Baris 10
+        val maxRows = 14   // 14 baris (Baris 10 - 23)
+        val maxCols = 5    // 5 kolom (Kolom A - E)
 
         var itemIndex = 0
         val totalData = data.daftarTimbangan.size
@@ -78,15 +83,19 @@ object BtbExcelWriter {
             if (itemIndex >= totalData) break
         }
 
-        // 5. Update formula TOTAL pada sel E24 jika menggunakan grid A10:E23
-        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
-        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
+        // =============================================================
+        // 4. FORMULA TOTAL (Sel E24)
+        // =============================================================
+        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)        // Baris 24 (Row index 23)
+        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4) // Kolom E (Col index 4)
         cellTotal.cellFormula = "SUM(A10:E23)"
 
-        // Force recalculation saat Excel dibuka
+        // Memaksa Excel merelakukan perhitungan ulang saat file dibuka
         workbook.setForceFormulaRecalculation(true)
 
-        // 6. Simpan workbook ke Output URI
+        // =============================================================
+        // 5. SIMPAN KE OUTPUT STREAM
+        // =============================================================
         context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
             workbook.write(outputStream)
         }
