@@ -1,0 +1,135 @@
+package com.example.cargomanifestapp
+
+import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import org.apache.poi.ss.usermodel.*
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.FileOutputStream
+import java.io.InputStream
+
+class ExcelHelper(private val context: Context, private val db: CargoDatabase) {
+
+    // URUTAN HEADER PAKSA. Biar export selalu rapi
+    private val EXPORT_HEADERS = listOf(
+        "AWB No", "Flight No", "PTI", "Pcs / Qty",
+        "Pcs/Qty Wt", "Sub Total (Kg)", "Description", "Customer", "NO PAG"
+    )
+
+    // NAMA ALTERNATIF BUAT IMPORT. Biar fleksibel
+    private val HEADER_ALIAS = mapOf(
+        "awb no" to listOf("awb no", "awb", "no awb"),
+        "flight no" to listOf("flight no", "flight", "no flight"),
+        "pti" to listOf("pti"),
+        "pcs / qty" to listOf("pcs / qty", "qty", "pcs", "jumlah"),
+        "pcs/qty wt" to listOf("pcs/qty wt", "wt", "berat pcs"),
+        "sub total (kg)" to listOf("sub total (kg)", "subtotal", "total kg", "kg"),
+        "description" to listOf("description", "desc", "keterangan"),
+        "customer" to listOf("customer", "cust"),
+        "no pag" to listOf("no pag", "pag", "no. pag")
+    )
+
+    // EXPORT KE EXCEL
+    fun exportExcel(uri: Uri) {
+        try {
+            val workbook = XSSFWorkbook()
+            val sheet = workbook.createSheet("Manifest")
+            
+            // 1. Tulis Header
+            val headerRow = sheet.createRow(0)
+            EXPORT_HEADERS.forEachIndexed { index, title ->
+                headerRow.createCell(index).setCellValue(title)
+            }
+
+            // 2. Tulis Data dari DB
+            val dataList = db.cargoDao().getAll()
+            dataList.forEachIndexed { rowIndex, cargo ->
+                val row = sheet.createRow(rowIndex + 1)
+                row.createCell(0).setCellValue(cargo.awbNo)
+                row.createCell(1).setCellValue(cargo.flightNo)
+                row.createCell(2).setCellValue(cargo.pti)
+                row.createCell(3).setCellValue(cargo.qty)
+                row.createCell(4).setCellValue(cargo.qtyWt)
+                row.createCell(5).setCellValue(cargo.subTotal)
+                row.createCell(6).setCellValue(cargo.description)
+                row.createCell(7).setCellValue(cargo.customer)
+                row.createCell(8).setCellValue(cargo.noPag)
+            }
+
+            // Auto size kolom
+            EXPORT_HEADERS.indices.forEach { sheet.autoSizeColumn(it) }
+
+            val fos: FileOutputStream = context.contentResolver.openOutputStream(uri) as FileOutputStream
+            workbook.write(fos)
+            fos.close()
+            workbook.close()
+            Toast.makeText(context, "Export Berhasil!", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Toast.makeText(context, "Export Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // IMPORT DARI EXCEL
+    fun importExcel(uri: Uri) {
+        try {
+            val inputStream: InputStream? = context.contentResolver.openInputStream(uri)
+            val workbook = WorkbookFactory.create(inputStream)
+            val sheet = workbook.getSheetAt(0)
+            val headerRow = sheet.getRow(0)
+
+            // 1. BUAT MAPPING HEADER
+            val columnMap = mutableMapOf<String, Int>()
+            for (i in 0 until headerRow.lastCellNum) {
+                val cellValue = headerRow.getCell(i)?.toString()?.trim()?.lowercase() ?: ""
+                for ((standardName, aliases) in HEADER_ALIAS) {
+                    if (aliases.contains(cellValue)) {
+                        columnMap[standardName] = i
+                        break
+                    }
+                }
+            }
+
+            // 2. LOOP DATA
+            var importedCount = 0
+            for (rowIndex in 1..sheet.lastRowNum) {
+                val row = sheet.getRow(rowIndex) ?: continue
+
+                val cargo = Cargo(
+                    awbNo = getCellValue(row, columnMap, "awb no"),
+                    flightNo = getCellValue(row, columnMap, "flight no"),
+                    pti = getCellValue(row, columnMap, "pti"),
+                    qty = getCellValue(row, columnMap, "pcs / qty"),
+                    qtyWt = getCellValue(row, columnMap, "pcs/qty wt"),
+                    subTotal = getCellValue(row, columnMap, "sub total (kg)"),
+                    description = getCellValue(row, columnMap, "description"),
+                    customer = getCellValue(row, columnMap, "customer"),
+                    noPag = getCellValue(row, columnMap, "no pag")
+                )
+
+                // Skip kalau baris kosong semua
+                if (cargo.awbNo.isBlank() && cargo.pti.isBlank()) continue
+
+                db.cargoDao().insert(cargo)
+                importedCount++
+            }
+
+            workbook.close()
+            inputStream?.close()
+            Toast.makeText(context, "Import Berhasil: $importedCount data", Toast.LENGTH_SHORT).show()
+
+        } catch (e: Exception) {
+            Toast.makeText(context, "Import Gagal: ${e.message}", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // Helper ambil data cell aman
+    private fun getCellValue(row: Row, map: Map<String, Int>, key: String): String {
+        val colIndex = map[key] ?: return ""
+        val cell = row.getCell(colIndex) ?: return ""
+        return when (cell.cellType) {
+            CellType.NUMERIC -> cell.numericCellValue.toString()
+            else -> cell.toString().trim()
+        }
+    }
+}
