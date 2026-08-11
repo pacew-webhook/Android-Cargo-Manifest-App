@@ -139,6 +139,30 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val extractedAwb = getCellStringFromCell(awbCell, evaluator)
                 val extractedFlight = getCellStringFromCell(flightCell, evaluator)
 
+                // --- Bangun peta NO PAG dari blok STOWING CHECKLIST (kolom I/J/K) ---
+                // PENTING: baris blok Stowing TIDAK sejajar (row-aligned) dengan baris blok
+                // Manifest -- blok Stowing hanya berisi ringkasan per-kontainer (biasanya
+                // jauh lebih sedikit barisnya daripada daftar barang di Manifest). Sebelumnya
+                // kode membaca kolom NO PAG (index 8) pada BARIS YANG SAMA dengan item
+                // manifest, padahal itu tabel yang berbeda -> hasilnya NO PAG tertukar/hilang
+                // untuk hampir semua baris saat data di-import ulang.
+                // Di sini kita kumpulkan dulu semua pasangan (DESCRIPTION+CUSTOMER -> NO PAG)
+                // dari blok Stowing, lalu cocokkan ke tiap baris Manifest berdasarkan isinya
+                // (bukan posisi barisnya). Jika satu kombinasi Deskripsi+Customer muncul di
+                // lebih dari satu NO PAG (ambigu), kita SENGAJA tidak menebak -> dibiarkan
+                // kosong, supaya tidak salah assign (lebih baik kosong daripada salah).
+                val stowingPagMap = mutableMapOf<String, MutableSet<String>>()
+                for (i in 13..sheet.lastRowNum) {
+                    val row = sheet.getRow(i) ?: continue
+                    val stowNoPag = getCellString(row, 8, evaluator)
+                    val stowDescription = getCellString(row, 9, evaluator)
+                    val stowCustomer = getCellString(row, 12, evaluator)
+                    if (stowNoPag.isBlank() || stowNoPag.contains("TOTAL", true)) continue
+
+                    val key = "${stowDescription.trim().uppercase()}_${stowCustomer.trim().uppercase()}"
+                    stowingPagMap.getOrPut(key) { mutableSetOf() }.add(stowNoPag)
+                }
+
                 for (i in 13..sheet.lastRowNum) {
                     val row = sheet.getRow(i) ?: continue
 
@@ -149,7 +173,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val subTotal = getCellString(row, 4, evaluator)
                     val description = getCellString(row, 5, evaluator)
                     val customer = getCellString(row, 6, evaluator)
-                    val noPag = getCellString(row, 8, evaluator)
+
+                    // Kolom N (index 13) = kolom tersembunyi khusus yang ditulis oleh
+                    // fungsi export di bawah untuk menyimpan NO PAG per baris manifest
+                    // secara langsung (lossless round-trip untuk file hasil export app ini).
+                    val directNoPag = getCellString(row, 13, evaluator)
 
                     val isTotalRow = noCol.contains("TOTAL", true) ||
                             pti.contains("TOTAL", true) ||
@@ -161,6 +189,16 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     if (isTotalRow) continue
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
 
+                    // Prioritas: 1) kolom tersembunyi (paling akurat), 2) pencocokan
+                    // deskripsi+customer ke blok Stowing (hanya jika tidak ambigu).
+                    val matchKey = "${description.trim().uppercase()}_${customer.trim().uppercase()}"
+                    val matchedSet = stowingPagMap[matchKey]
+                    val resolvedNoPag = when {
+                        directNoPag.isNotBlank() -> directNoPag
+                        matchedSet != null && matchedSet.size == 1 -> matchedSet.first()
+                        else -> ""
+                    }
+
                     val newItem = CargoItem(
                         id = System.currentTimeMillis() + i + (0..1000).random(),
                         awbNo = extractedAwb,
@@ -171,7 +209,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         subTotal = if (subTotal.isNotBlank()) subTotal else pcsWeight,
                         description = description,
                         customer = customer,
-                        noPag = noPag
+                        noPag = resolvedNoPag
                     )
 
                     importedList.add(newItem)
@@ -210,9 +248,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // A. GROUPING MANIFEST: Gabungkan item dengan PTI + Description + Customer yang sama
+                // A. GROUPING MANIFEST: Gabungkan item dengan PTI + Description + Customer + NO PAG yang sama.
+                // NO PAG ikut disertakan di key supaya item dengan PTI/Deskripsi/Customer sama
+                // tapi beda kontainer (NO PAG) TIDAK ikut tergabung dan kehilangan info PAG-nya.
                 val groupedManifest = rawList.groupBy { 
-                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" 
+                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}_${it.noPag.trim().uppercase()}" 
                 }.map { (_, items) ->
                     val totalPcs = items.sumOf { parseDoubleOrZero(it.pcsQty) }
                     val totalWeight = items.sumOf { parseDoubleOrZero(it.subTotal) }
@@ -251,11 +291,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val maxRows = maxOf(groupedManifest.size, groupedStowing.size)
                 val sampleRow = sheet.getRow(startRow)
 
-                // 1. CLEANSING TOTAL: Bersihkan seluruh isi sel dari baris 14 sampai 38 (Kolom 0 s/d 12)
+                // 1. CLEANSING TOTAL: Bersihkan seluruh isi sel dari baris 14 sampai 38
+                // (Kolom 0 s/d 13; kolom 13/N ikut dibersihkan karena dipakai untuk
+                // menyimpan NO PAG per baris manifest secara tersembunyi)
                 for (r in startRow until (startRow + templateDataCapacity + 1)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
-                        for (c in 0..12) {
+                        for (c in 0..13) {
                             val cell = targetRow.getCell(c)
                             if (cell != null) {
                                 cell.setCellValue("")
@@ -300,6 +342,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setStyledNumericCell(row, 4, subTotal, sampleRow?.getCell(4))
                         setStyledTextCell(row, 5, item.description, sampleRow?.getCell(5))
                         setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
+                        // Kolom N (index 13): simpan NO PAG asli per baris manifest ini,
+                        // supaya kalau file ini di-import lagi ke app, NO PAG tiap item
+                        // terbaca persis (tidak lagi menebak lewat posisi baris blok Stowing).
+                        setStyledTextCell(row, 13, item.noPag, sampleRow?.getCell(1))
                     }
 
                     // B. ISI SISI STOWING CHECKLIST
