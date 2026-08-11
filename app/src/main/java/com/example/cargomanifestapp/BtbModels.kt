@@ -38,7 +38,7 @@ object BtbExcelWriter {
     }
 
     /**
-     * Helper multi data (Untuk menangani lebih dari 1 data BTB secara berurutan)
+     * Helper multi data (Revisi total di kolom F & format angka tanpa .00)
      */
     fun fillBtbTemplateMulti(
         context: Context,
@@ -51,9 +51,9 @@ object BtbExcelWriter {
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
-        // Pre-create numeric style sekali saja untuk efisiensi memori & menghindari Excel limit error
-        val generalNumericStyle = workbook.createCellStyle().apply {
-            dataFormat = workbook.createDataFormat().getFormat("General")
+        // Format angka "0.##" agar angka bulat tidak menampilkan .00 (contoh: 12 -> 12, 12.5 -> 12.5)
+        val cleanNumericStyle = workbook.createCellStyle().apply {
+            dataFormat = workbook.createDataFormat().getFormat("0.##")
         }
 
         // Helper untuk menulis Teks (String) ke sel secara aman
@@ -63,15 +63,12 @@ object BtbExcelWriter {
             cell.setCellValue(value)
         }
 
-        // Helper untuk menulis Angka (Numeric/Double) ke sel
+        // Helper untuk menulis Angka dengan format tanpa .00
         fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
-
-            if (cell.cellStyle == null || cell.cellStyle.index == 0.toShort()) {
-                cell.cellStyle = generalNumericStyle
-            }
+            cell.cellStyle = cleanNumericStyle
         }
 
         // =============================================================
@@ -81,27 +78,28 @@ object BtbExcelWriter {
         setCellValue(2, 3, dataUtama.hariTanggal)  // Sel D3 (Hari/Tgl)
         setCellValue(3, 3, dataUtama.customerName) // Sel D4 (Customer)
 
-        // Gabungkan semua Trademarks jika input lebih dari 1 data (misal: "RAMLI, DIMAS")
+        // Gabungkan semua Trademarks di Sel D5
         val combinedTrademarks = listData.map { it.trademarks }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
         setCellValue(4, 3, combinedTrademarks)    // Sel D5
 
         // =============================================================
-        // 2. DATA TIMBANGAN MULTI-ITEM BERURUTAN
+        // 2. DATA TIMBANGAN & TOTAL PER DATA DI KOLOM F
         // =============================================================
         var currentRow = 8 // Baris 9 di Excel (Index 8 = A9)
 
         listData.forEachIndexed { index, btb ->
-            // Jika data ke-2 dan seterusnya, melangkah 4 baris ke bawah dari posisi terakhir
+            // Melangkah 4 baris ke bawah untuk data ke-2 dan seterusnya
             if (index > 0) {
                 currentRow += 4
             }
 
-            // Input Trademark + Jenis Barang di Kolom A (Sel A9, A14, dst.)
+            // Input Trademark + Jenis Barang di Kolom A (A9, A14, dst.)
             val labelBarang = if (btb.trademarks.isNotEmpty()) "${btb.trademarks} - ${btb.jenisBarang}" else btb.jenisBarang
             setCellValue(currentRow, 0, labelBarang)
 
             // Input Grid Data Timbangan tepat di bawah label barang
             var itemRow = currentRow + 1
+            val firstDataRow = itemRow // Simpan baris pertama data untuk meletakkan total di Kolom F
             val maxCols = 5 // Kolom A s/d E (Index 0..4)
             var colIndex = 0
 
@@ -114,16 +112,21 @@ object BtbExcelWriter {
                 }
             }
 
+            // REVISI: Pindahkan/Tulis total per data ke Kolom F (Col index 5)
+            // di baris pertama tempat data timbangan dimasukkan
+            setCellNumericValue(firstDataRow, 5, btb.totalBerat)
+
             // Update posisi currentRow ke baris terakhir yang terisi
             currentRow = if (colIndex > 0) itemRow else itemRow - 1
         }
 
         // =============================================================
-        // 3. UPDATE FORMULA TOTAL (Sel E24)
+        // 3. UPDATE FORMULA TOTAL KESELURUHAN (Sel E24)
         // =============================================================
         val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
         val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
         cellTotal.cellFormula = "SUM(A10:E23)"
+        cellTotal.cellStyle = cleanNumericStyle
 
         workbook.setForceFormulaRecalculation(true)
 
