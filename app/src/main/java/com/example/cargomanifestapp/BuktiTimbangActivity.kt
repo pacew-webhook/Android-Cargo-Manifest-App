@@ -2,15 +2,16 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -21,20 +22,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -46,12 +40,7 @@ class BuktiTimbangActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.background
-                ) {
-                    BuktiTimbangScreen(onBack = { finish() })
-                }
+                BtbScreen(onBackClick = { finish() })
             }
         }
     }
@@ -59,329 +48,236 @@ class BuktiTimbangActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BuktiTimbangScreen(onBack: () -> Unit) {
+fun BtbScreen(onBackClick: () -> Unit) {
     val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
+    val currentDateStr = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()) }
 
-    // Mendapatkan tanggal hari ini secara otomatis (format: dd/MM/yyyy)
-    val todayDate = remember {
-        SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date())
-    }
-
-    // State Input Form
-    var customer by remember { mutableStateOf("") }
+    var customerName by remember { mutableStateOf("") }
     var trademarks by remember { mutableStateOf("") }
     var jenisBarang by remember { mutableStateOf("") }
-    var inputBerat by remember { mutableStateOf("") }
+    var inputBeratText by remember { mutableStateOf("") }
+    var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
 
-    // Rincian Timbangan (Koli)
-    val rincianBerat = remember { mutableStateListOf<Double>() }
-    var selectedBtbId by remember { mutableStateOf<Long?>(null) }
+    val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
+    var editingId by remember { mutableStateOf<String?>(null) }
 
-    // List Simpan Data Local
-    val btbList = remember { mutableStateListOf<BtbModel>() }
-
-    // Focus Requesters untuk navigasi Enter
-    val customerFocusRequester = remember { FocusRequester() }
-    val trademarksFocusRequester = remember { FocusRequester() }
-    val jenisBarangFocusRequester = remember { FocusRequester() }
-    val beratFocusRequester = remember { FocusRequester() }
-
-    val nextKeyboardOptions = KeyboardOptions(
-        capitalization = KeyboardCapitalization.Characters,
-        keyboardType = KeyboardType.Text,
-        imeAction = ImeAction.Next
-    )
-
-    val nextKeyboardActions = KeyboardActions(
-        onNext = { focusManager.moveFocus(FocusDirection.Next) }
-    )
-
-    fun clearForm() {
-        customer = ""
+    fun resetForm() {
+        customerName = ""
         trademarks = ""
         jenisBarang = ""
-        inputBerat = ""
-        rincianBerat.clear()
-        selectedBtbId = null
+        inputBeratText = ""
+        daftarTimbangan = emptyList()
+        editingId = null
     }
 
-    fun tambahBerat() {
-        val berat = inputBerat.toDoubleOrNull()
-        if (berat != null && berat > 0) {
-            rincianBerat.add(berat)
-            inputBerat = ""
-            beratFocusRequester.requestFocus()
-        } else {
-            Toast.makeText(context, "Masukkan berat yang valid!", Toast.LENGTH_SHORT).show()
+    fun exportAndShare(btbData: BtbFormData) {
+        try {
+            val cacheFile = File(context.cacheDir, "BTB_${btbData.customerName.ifEmpty { "Export" }}.xlsx")
+            val templateInputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
+            
+            FileOutputStream(cacheFile).use { fos ->
+                val tempUri = Uri.fromFile(cacheFile)
+                BtbExcelWriter.fillBtbTemplate(context, templateInputStream, tempUri, btbData)
+            }
+
+            val fileUri: Uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                cacheFile
+            )
+
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                putExtra(Intent.EXTRA_STREAM, fileUri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            context.startActivity(Intent.createChooser(shareIntent, "Bagikan BTB via..."))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Gagal mengekspor: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        // Top Bar Header
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                        contentDescription = "Kembali",
-                        tint = Color(0xFF4A148C)
-                    )
-                }
-                Text(
-                    text = "Bukti Timbang Barang",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF4A148C)
-                )
-            }
-            Row {
-                IconButton(onClick = { clearForm() }) {
-                    Icon(
-                        imageVector = Icons.Default.Delete,
-                        contentDescription = "Reset Form",
-                        tint = Color.Red
-                    )
-                }
-                
-                // Tombol Share Data BTB via File Excel
-                IconButton(onClick = {
-                    if (btbList.isNotEmpty()) {
-                        shareExcelBTB(context, todayDate, btbList)
-                    } else {
-                        Toast.makeText(context, "Belum ada data BTB untuk dibagikan!", Toast.LENGTH_SHORT).show()
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Bukti Timbang Barang", color = Color(0xFF4A148C), fontWeight = FontWeight.Bold) },
+                navigationIcon = {
+                    IconButton(onClick = onBackClick) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali", tint = Color(0xFF4A148C))
                     }
-                }) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Share Excel",
-                        tint = Color(0xFF2E7D32)
-                    )
-                }
-            }
-        }
-
-        // Card Form Input
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF8E1)),
-            shape = RoundedCornerShape(12.dp)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (selectedBtbId == null) "Input Form BTB" else "Edit Form BTB",
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF4A148C)
-                    )
-                    Text(
-                        text = "Tgl: $todayDate",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.Gray
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Customer & Trademarks
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = customer,
-                        onValueChange = { customer = it.uppercase() },
-                        label = { Text("Customer") },
-                        keyboardOptions = nextKeyboardOptions,
-                        keyboardActions = nextKeyboardActions,
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(customerFocusRequester)
-                    )
-                    OutlinedTextField(
-                        value = trademarks,
-                        onValueChange = { trademarks = it.uppercase() },
-                        label = { Text("Trademarks") },
-                        keyboardOptions = nextKeyboardOptions,
-                        keyboardActions = nextKeyboardActions,
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(trademarksFocusRequester)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Jenis Barang
-                OutlinedTextField(
-                    value = jenisBarang,
-                    onValueChange = { jenisBarang = it.uppercase() },
-                    label = { Text("Jenis Barang") },
-                    keyboardOptions = nextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .focusRequester(jenisBarangFocusRequester)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Input Berat (KG) + Tombol Tambah
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = inputBerat,
-                        onValueChange = { inputBerat = it },
-                        label = { Text("Input Berat (KG)") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(
-                            onDone = { tambahBerat() }
-                        ),
-                        singleLine = true,
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(beratFocusRequester)
-                    )
-
-                    Button(
-                        onClick = { tambahBerat() },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92)),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.height(56.dp)
-                    ) {
-                        Text("+ KG", fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Rincian Timbangan Badge
-                val totalBerat = rincianBerat.sum()
-                Text(
-                    text = "Rincian Timbangan (${rincianBerat.size} Koli) | Total: $totalBerat KG",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    rincianBerat.forEachIndexed { index, weight ->
-                        SuggestionChip(
-                            onClick = { rincianBerat.removeAt(index) },
-                            label = { Text("${if (weight % 1.0 == 0.0) weight.toInt() else weight}") },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = Color(0xFFEDE7F6)
-                            )
+                },
+                actions = {
+                    IconButton(onClick = {
+                        val activeData = BtbFormData(
+                            hariTanggal = currentDateStr,
+                            customerName = customerName,
+                            trademarks = trademarks,
+                            jenisBarang = jenisBarang,
+                            daftarTimbangan = daftarTimbangan
                         )
+
+                        if (savedBtbList.isNotEmpty()) {
+                            exportAndShare(savedBtbList.last())
+                        } else if (daftarTimbangan.isNotEmpty()) {
+                            exportAndShare(activeData)
+                        } else {
+                            Toast.makeText(context, "Isi form atau tambahkan data timbangan terlebih dahulu!", Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF2E7D32))
                     }
                 }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Tombol Simpan / Update
-                Button(
-                    onClick = {
-                        if (customer.isNotBlank() && rincianBerat.isNotEmpty()) {
-                            if (selectedBtbId == null) {
-                                btbList.add(
-                                    BtbModel(
-                                        id = System.currentTimeMillis(),
-                                        tanggal = todayDate,
-                                        customer = customer,
-                                        trademarks = trademarks,
-                                        jenisBarang = jenisBarang,
-                                        rincianBerat = ArrayList(rincianBerat),
-                                        totalBerat = totalBerat
-                                    )
-                                )
-                                Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
-                            } else {
-                                val index = btbList.indexOfFirst { it.id == selectedBtbId }
-                                if (index != -1) {
-                                    btbList[index] = BtbModel(
-                                        id = selectedBtbId!!,
-                                        tanggal = todayDate,
-                                        customer = customer,
-                                        trademarks = trademarks,
-                                        jenisBarang = jenisBarang,
-                                        rincianBerat = ArrayList(rincianBerat),
-                                        totalBerat = totalBerat
-                                    )
-                                    Toast.makeText(context, "Data BTB Berhasil Diperbarui!", Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            clearForm()
-                            customerFocusRequester.requestFocus()
-                        } else {
-                            Toast.makeText(context, "Lengkapi Customer dan Rincian Berat!", Toast.LENGTH_SHORT).show()
-                        }
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (selectedBtbId == null) Color(0xFF311B92) else Color(0xFF006A60)
-                    ),
-                    shape = RoundedCornerShape(24.dp)
+            )
+        }
+    ) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            item {
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = if (selectedBtbId == null) "Simpan BTB" else "Update BTB",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                if (editingId == null) "Input Form BTB" else "Edit Form BTB",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4A148C),
+                                fontSize = 16.sp
+                            )
+                            Text("Tgl: $currentDateStr", fontSize = 12.sp, color = Color.Gray)
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(
+                                value = customerName,
+                                onValueChange = { customerName = it },
+                                label = { Text("Customer") },
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = trademarks,
+                                onValueChange = { trademarks = it },
+                                label = { Text("Trademarks") },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = jenisBarang,
+                            onValueChange = { jenisBarang = it },
+                            label = { Text("Jenis Barang") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = inputBeratText,
+                                onValueChange = { inputBeratText = it },
+                                label = { Text("Input Berat (KG)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            Button(
+                                onClick = {
+                                    val weight = inputBeratText.toDoubleOrNull()
+                                    if (weight != null && weight > 0) {
+                                        daftarTimbangan = daftarTimbangan + weight
+                                        inputBeratText = ""
+                                    } else {
+                                        Toast.makeText(context, "Masukkan berat angka valid", Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92))
+                            ) {
+                                Text("+ KG")
+                            }
+                        }
+
+                        if (daftarTimbangan.isNotEmpty()) {
+                            Text(
+                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum()} KG",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF2E7D32)
+                            )
+
+                            FlowRowLayout(items = daftarTimbangan) { index, weight ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = {
+                                        daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
+                                    },
+                                    label = { Text("$weight") },
+                                    trailingIcon = { Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                if (customerName.isEmpty() || daftarTimbangan.isEmpty()) {
+                                    Toast.makeText(context, "Customer dan Timbangan wajib diisi!", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+
+                                val formData = BtbFormData(
+                                    id = editingId ?: System.currentTimeMillis().toString(),
+                                    hariTanggal = currentDateStr,
+                                    customerName = customerName,
+                                    trademarks = trademarks,
+                                    jenisBarang = jenisBarang,
+                                    daftarTimbangan = daftarTimbangan
+                                )
+
+                                if (editingId != null) {
+                                    val idx = savedBtbList.indexOfFirst { it.id == editingId }
+                                    if (idx != -1) savedBtbList[idx] = formData
+                                } else {
+                                    savedBtbList.add(formData)
+                                }
+
+                                resetForm()
+                                Toast.makeText(context, "BTB Berhasil Disimpan", Toast.LENGTH_SHORT).show()
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (editingId == null) Color(0xFF311B92) else Color(0xFF00695C)
+                            )
+                        ) {
+                            Text(if (editingId == null) "Simpan BTB" else "Update BTB")
+                        }
+                    }
                 }
             }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+            item {
+                Text(
+                    "Daftar BTB Tersimpan (${savedBtbList.size})",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp
+                )
+            }
 
-        // Daftar BTB Tersimpan
-        Text(
-            text = "Daftar BTB Tersimpan (${btbList.size})",
-            fontWeight = FontWeight.Bold,
-            fontSize = 14.sp
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(btbList) { btb ->
+            items(savedBtbList) { btb ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFAFAFA)),
-                    shape = RoundedCornerShape(10.dp)
+                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Row(
                         modifier = Modifier
@@ -391,41 +287,22 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "${btb.customer} (${btb.trademarks.ifEmpty { "-" }})",
-                                fontWeight = FontWeight.Bold,
-                                color = Color.Black
-                            )
-                            Text(
-                                text = "Tgl: ${btb.tanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}",
-                                fontSize = 12.sp,
-                                color = Color.Gray
-                            )
-                            Text(
-                                text = "Koli: ${btb.rincianBerat.size} | Total: ${btb.totalBerat} KG",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
-                            )
+                            Text("${btb.customerName} (${btb.trademarks})", fontWeight = FontWeight.Bold)
+                            Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang}", fontSize = 12.sp, color = Color.Gray)
+                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
-
                         Row {
                             IconButton(onClick = {
-                                selectedBtbId = btb.id
-                                customer = btb.customer
+                                customerName = btb.customerName
                                 trademarks = btb.trademarks
                                 jenisBarang = btb.jenisBarang
-                                rincianBerat.clear()
-                                rincianBerat.addAll(btb.rincianBerat)
-                                customerFocusRequester.requestFocus()
+                                daftarTimbangan = btb.daftarTimbangan
+                                editingId = btb.id
                             }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
                             }
-                            IconButton(onClick = {
-                                btbList.remove(btb)
-                                if (selectedBtbId == btb.id) clearForm()
-                            }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
+                            IconButton(onClick = { savedBtbList.remove(btb) }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color(0xFFD32F2F))
                             }
                         }
                     }
@@ -435,80 +312,16 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
     }
 }
 
-// Helper Function untuk Export & Share Excel File
-fun shareExcelBTB(context: Context, todayDate: String, btbList: List<BtbModel>) {
-    try {
-        val inputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
-        val workbook = XSSFWorkbook(inputStream)
-        val sheet = workbook.getSheetAt(0)
-
-        // Set Tanggal di Excel
-        val rowTanggal = sheet.getRow(2) ?: sheet.createRow(2)
-        val cellTanggal = rowTanggal.getCell(1) ?: rowTanggal.createCell(1)
-        cellTanggal.setCellValue(todayDate)
-
-        if (btbList.isNotEmpty()) {
-            val firstBtb = btbList.first()
-
-            // Set Customer & Trademarks
-            val rowCustomer = sheet.getRow(3) ?: sheet.createRow(3)
-            (rowCustomer.getCell(1) ?: rowCustomer.createCell(1)).setCellValue(firstBtb.customer)
-
-            val rowTrademark = sheet.getRow(4) ?: sheet.createRow(4)
-            (rowTrademark.getCell(1) ?: rowTrademark.createCell(1)).setCellValue(firstBtb.trademarks)
-
-            // Set Jenis Barang
-            val rowBarang = sheet.getRow(7) ?: sheet.createRow(7)
-            (rowBarang.getCell(1) ?: rowBarang.createCell(1)).setCellValue(firstBtb.jenisBarang)
-
-            // Fill Rincian Timbangan
-            var startRow = 7
-            firstBtb.rincianBerat.forEachIndexed { index, berat ->
-                val row = sheet.getRow(startRow + index) ?: sheet.createRow(startRow + index)
-                val cell = row.getCell(3) ?: row.createCell(3)
-                cell.setCellValue(berat)
+@Composable
+fun FlowRowLayout(items: List<Double>, onItemClick: (Int, Double) -> Unit) {
+    Column {
+        items.chunked(4).forEach { rowItems ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowItems.forEachIndexed { colIndex, weight ->
+                    val globalIndex = items.indexOf(weight)
+                    onItemClick(globalIndex, weight)
+                }
             }
         }
-
-        // Simpan File Sementara di Cache
-        val fileName = "BTB_${todayDate.replace("/", "-")}.xlsx"
-        val outputFile = File(context.cacheDir, fileName)
-        val outputStream = FileOutputStream(outputFile)
-        workbook.write(outputStream)
-
-        outputStream.close()
-        workbook.close()
-        inputStream.close()
-
-        // Panggil Share Intent
-        val contentUri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.provider",
-            outputFile
-        )
-
-        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-            type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            putExtra(Intent.EXTRA_STREAM, contentUri)
-            putExtra(Intent.EXTRA_SUBJECT, "Bukti Timbang Barang ($todayDate)")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-
-        context.startActivity(Intent.createChooser(shareIntent, "Bagikan File Excel BTB via"))
-
-    } catch (e: Exception) {
-        e.printStackTrace()
-        Toast.makeText(context, "Gagal membuat file Excel: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
-
-// Data Model
-data class BtbModel(
-    val id: Long,
-    val tanggal: String,
-    val customer: String,
-    val trademarks: String,
-    val jenisBarang: String,
-    val rincianBerat: List<Double>,
-    val totalBerat: Double
-)
