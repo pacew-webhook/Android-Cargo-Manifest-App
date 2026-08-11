@@ -25,14 +25,36 @@ data class BtbFormData(
  */
 object BtbExcelWriter {
 
+    /**
+     * Helper single data (tetap dipertahankan)
+     */
     fun fillBtbTemplate(
         context: Context,
         templateInputStream: InputStream,
         outputUri: Uri,
         data: BtbFormData
     ) {
+        fillBtbTemplateMulti(context, templateInputStream, outputUri, listOf(data))
+    }
+
+    /**
+     * Helper multi data (Untuk menangani lebih dari 1 data BTB secara berurutan)
+     */
+    fun fillBtbTemplateMulti(
+        context: Context,
+        templateInputStream: InputStream,
+        outputUri: Uri,
+        listData: List<BtbFormData>
+    ) {
+        if (listData.isEmpty()) return
+
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
+
+        // Pre-create numeric style sekali saja untuk efisiensi memori & menghindari Excel limit error
+        val generalNumericStyle = workbook.createCellStyle().apply {
+            dataFormat = workbook.createDataFormat().getFormat("General")
+        }
 
         // Helper untuk menulis Teks (String) ke sel secara aman
         fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
@@ -41,73 +63,74 @@ object BtbExcelWriter {
             cell.setCellValue(value)
         }
 
-        // Helper untuk menulis Angka (Numeric/Double) ke sel dengan format General
+        // Helper untuk menulis Angka (Numeric/Double) ke sel
         fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
 
-            // Format sel menjadi 'General' agar angka bulat tidak menampilkan .00
-            val style = workbook.createCellStyle()
-            if (cell.cellStyle != null) {
-                style.cloneStyleFrom(cell.cellStyle)
+            if (cell.cellStyle == null || cell.cellStyle.index == 0.toShort()) {
+                cell.cellStyle = generalNumericStyle
             }
-            style.dataFormat = workbook.createDataFormat().getFormat("General")
-            cell.cellStyle = style
         }
 
         // =============================================================
         // 1. HEADER TRANSAKSI (Sel D3, D4, D5)
         // =============================================================
-        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row 2, Col 3)
-        setCellValue(3, 3, data.customerName) // Sel D4 (Row 3, Col 3)
-        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
+        val dataUtama = listData.first()
+        setCellValue(2, 3, dataUtama.hariTanggal)  // Sel D3 (Hari/Tgl)
+        setCellValue(3, 3, dataUtama.customerName) // Sel D4 (Customer)
+
+        // Gabungkan semua Trademarks jika input lebih dari 1 data (misal: "RAMLI, DIMAS")
+        val combinedTrademarks = listData.map { it.trademarks }.filter { it.isNotEmpty() }.distinct().joinToString(", ")
+        setCellValue(4, 3, combinedTrademarks)    // Sel D5
 
         // =============================================================
-        // 2. JENIS BARANG (Di Bawah Label -> Sel A9 / Index Row 8, Col 0)
+        // 2. DATA TIMBANGAN MULTI-ITEM BERURUTAN
         // =============================================================
-        setCellValue(8, 0, data.jenisBarang)  // Row 8 (Baris 9 di Excel), Col 0 (Kolom A)
+        var currentRow = 8 // Baris 9 di Excel (Index 8 = A9)
 
-        // =============================================================
-        // 3. DATA TIMBANGAN (Grid A10:E23 - Maksimal 70 item)
-        // =============================================================
-        val startRow = 9   // Baris 10 di Excel (Index 9)
-        val maxRows = 14   // Baris 10 s/d 23
-        val maxCols = 5    // Kolom A s/d E (Index 0..4)
+        listData.forEachIndexed { index, btb ->
+            // Jika data ke-2 dan seterusnya, melangkah 4 baris ke bawah dari posisi terakhir
+            if (index > 0) {
+                currentRow += 4
+            }
 
-        var itemIndex = 0
-        val totalData = data.daftarTimbangan.size
+            // Input Trademark + Jenis Barang di Kolom A (Sel A9, A14, dst.)
+            val labelBarang = if (btb.trademarks.isNotEmpty()) "${btb.trademarks} - ${btb.jenisBarang}" else btb.jenisBarang
+            setCellValue(currentRow, 0, labelBarang)
 
-        for (r in 0 until maxRows) {
-            val currentRowIndex = startRow + r
-            for (c in 0 until maxCols) {
-                if (itemIndex < totalData) {
-                    setCellNumericValue(currentRowIndex, c, data.daftarTimbangan[itemIndex])
-                    itemIndex++
-                } else {
-                    break
+            // Input Grid Data Timbangan tepat di bawah label barang
+            var itemRow = currentRow + 1
+            val maxCols = 5 // Kolom A s/d E (Index 0..4)
+            var colIndex = 0
+
+            btb.daftarTimbangan.forEach { berat ->
+                setCellNumericValue(itemRow, colIndex, berat)
+                colIndex++
+                if (colIndex >= maxCols) {
+                    colIndex = 0
+                    itemRow++
                 }
             }
-            if (itemIndex >= totalData) break
+
+            // Update posisi currentRow ke baris terakhir yang terisi
+            currentRow = if (colIndex > 0) itemRow else itemRow - 1
         }
 
         // =============================================================
-        // 4. UPDATE FORMULA TOTAL (Sel E24)
+        // 3. UPDATE FORMULA TOTAL (Sel E24)
         // =============================================================
-        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)        // Baris 24 (Row index 23)
-        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4) // Kolom E (Col index 4)
+        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)
+        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4)
         cellTotal.cellFormula = "SUM(A10:E23)"
 
-        // Memaksa Excel melakukan perhitungan ulang saat file dibuka
         workbook.setForceFormulaRecalculation(true)
 
         // =============================================================
-        // 5. SIMPAN KE OUTPUT STREAM
+        // 4. SIMPAN KE OUTPUT STREAM
         // =============================================================
         try {
-            // Jika stream null, lempar error eksplisit agar caller tahu file
-            // GAGAL tersimpan, bukan diam-diam sukses (Toast "Gagal mengekspor"
-            // di BuktiTimbangActivity baru akan tampil kalau exception dilempar).
             val outputStream = context.contentResolver.openOutputStream(outputUri)
                 ?: throw java.io.IOException("Tidak bisa membuka output stream untuk URI tujuan")
             outputStream.use { workbook.write(it) }
