@@ -1,11 +1,11 @@
 package com.example.cargomanifestapp
 
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -33,6 +33,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.FileProvider
+import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -149,34 +153,18 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
                         tint = Color.Red
                     )
                 }
-                // Tombol Share Data BTB
+                
+                // Tombol Share Data BTB via File Excel
                 IconButton(onClick = {
                     if (btbList.isNotEmpty()) {
-                        val shareText = StringBuilder().apply {
-                            append("=== BUKTI TIMBANG BARANG ===\n")
-                            append("Tanggal: $todayDate\n\n")
-                            btbList.forEachIndexed { index, btb ->
-                                append("${index + 1}. Customer: ${btb.customer}\n")
-                                if (btb.trademarks.isNotBlank()) append("   Trademarks: ${btb.trademarks}\n")
-                                if (btb.jenisBarang.isNotBlank()) append("   Barang: ${btb.jenisBarang}\n")
-                                append("   Rincian: ${btb.rincianBerat.joinToString(", ")} KG\n")
-                                append("   Total: ${btb.rincianBerat.size} Koli | ${btb.totalBerat} KG\n\n")
-                            }
-                        }.toString()
-
-                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_SUBJECT, "Bukti Timbang Barang")
-                            putExtra(Intent.EXTRA_TEXT, shareText)
-                        }
-                        context.startActivity(Intent.createChooser(shareIntent, "Bagikan BTB via"))
+                        shareExcelBTB(context, todayDate, btbList)
                     } else {
                         Toast.makeText(context, "Belum ada data BTB untuk dibagikan!", Toast.LENGTH_SHORT).show()
                     }
                 }) {
                     Icon(
                         imageVector = Icons.Default.Share,
-                        contentDescription = "Share",
+                        contentDescription = "Share Excel",
                         tint = Color(0xFF2E7D32)
                     )
                 }
@@ -444,6 +432,73 @@ fun BuktiTimbangScreen(onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+// Helper Function untuk Export & Share Excel File
+fun shareExcelBTB(context: Context, todayDate: String, btbList: List<BtbModel>) {
+    try {
+        val inputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
+        val workbook = XSSFWorkbook(inputStream)
+        val sheet = workbook.getSheetAt(0)
+
+        // Set Tanggal di Excel
+        val rowTanggal = sheet.getRow(2) ?: sheet.createRow(2)
+        val cellTanggal = rowTanggal.getCell(1) ?: rowTanggal.createCell(1)
+        cellTanggal.setCellValue(todayDate)
+
+        if (btbList.isNotEmpty()) {
+            val firstBtb = btbList.first()
+
+            // Set Customer & Trademarks
+            val rowCustomer = sheet.getRow(3) ?: sheet.createRow(3)
+            (rowCustomer.getCell(1) ?: rowCustomer.createCell(1)).setCellValue(firstBtb.customer)
+
+            val rowTrademark = sheet.getRow(4) ?: sheet.createRow(4)
+            (rowTrademark.getCell(1) ?: rowTrademark.createCell(1)).setCellValue(firstBtb.trademarks)
+
+            // Set Jenis Barang
+            val rowBarang = sheet.getRow(7) ?: sheet.createRow(7)
+            (rowBarang.getCell(1) ?: rowBarang.createCell(1)).setCellValue(firstBtb.jenisBarang)
+
+            // Fill Rincian Timbangan
+            var startRow = 7
+            firstBtb.rincianBerat.forEachIndexed { index, berat ->
+                val row = sheet.getRow(startRow + index) ?: sheet.createRow(startRow + index)
+                val cell = row.getCell(3) ?: row.createCell(3)
+                cell.setCellValue(berat)
+            }
+        }
+
+        // Simpan File Sementara di Cache
+        val fileName = "BTB_${todayDate.replace("/", "-")}.xlsx"
+        val outputFile = File(context.cacheDir, fileName)
+        val outputStream = FileOutputStream(outputFile)
+        workbook.write(outputStream)
+
+        outputStream.close()
+        workbook.close()
+        inputStream.close()
+
+        // Panggil Share Intent
+        val contentUri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.provider",
+            outputFile
+        )
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            putExtra(Intent.EXTRA_STREAM, contentUri)
+            putExtra(Intent.EXTRA_SUBJECT, "Bukti Timbang Barang ($todayDate)")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+
+        context.startActivity(Intent.createChooser(shareIntent, "Bagikan File Excel BTB via"))
+
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Gagal membuat file Excel: ${e.message}", Toast.LENGTH_LONG).show()
     }
 }
 
