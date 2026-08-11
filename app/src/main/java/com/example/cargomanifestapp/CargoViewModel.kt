@@ -18,6 +18,14 @@ import java.io.FileOutputStream
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
+    companion object {
+        // Kolom ke-20 (index 19, 0-based -> kolom "T"). Dipilih jauh di luar area
+        // tabel yang dipakai template (kolom terpakai cuma sampai R/index17), dan
+        // di-hide eksplisit saat export (lihat sheet.setColumnHidden), supaya NO PAG
+        // per item bisa disimpan tanpa pernah terlihat/mengacaukan tampilan Excel.
+        private const val HIDDEN_PAG_COLUMN = 19
+    }
+
     // Data cargo sekarang bersumber dari Room Database (persisten),
     // bukan lagi dari MutableStateFlow di memori yang hilang saat app ditutup.
     private val dao = CargoDatabase.getDatabase(application).cargoDao()
@@ -174,10 +182,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     val description = getCellString(row, 5, evaluator)
                     val customer = getCellString(row, 6, evaluator)
 
-                    // Kolom N (index 13) = kolom tersembunyi khusus yang ditulis oleh
+                    // Kolom tersembunyi (HIDDEN_PAG_COLUMN) = kolom khusus yang ditulis oleh
                     // fungsi export di bawah untuk menyimpan NO PAG per baris manifest
                     // secara langsung (lossless round-trip untuk file hasil export app ini).
-                    val directNoPag = getCellString(row, 13, evaluator)
+                    val directNoPag = getCellString(row, HIDDEN_PAG_COLUMN, evaluator)
 
                     val isTotalRow = noCol.contains("TOTAL", true) ||
                             pti.contains("TOTAL", true) ||
@@ -292,19 +300,27 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 val sampleRow = sheet.getRow(startRow)
 
                 // 1. CLEANSING TOTAL: Bersihkan seluruh isi sel dari baris 14 sampai 38
-                // (Kolom 0 s/d 13; kolom 13/N ikut dibersihkan karena dipakai untuk
-                // menyimpan NO PAG per baris manifest secara tersembunyi)
+                // (Kolom 0 s/d 12 = kolom cetak/terlihat. Kolom HIDDEN_PAG_COLUMN (T) ikut
+                // dibersihkan karena dipakai untuk menyimpan NO PAG per baris manifest
+                // secara tersembunyi -- lihat penjelasan di HIDDEN_PAG_COLUMN.)
                 for (r in startRow until (startRow + templateDataCapacity + 1)) {
                     val targetRow = sheet.getRow(r)
                     if (targetRow != null) {
-                        for (c in 0..13) {
+                        for (c in 0..12) {
                             val cell = targetRow.getCell(c)
                             if (cell != null) {
                                 cell.setCellValue("")
                             }
                         }
+                        val hiddenCell = targetRow.getCell(HIDDEN_PAG_COLUMN)
+                        if (hiddenCell != null) {
+                            hiddenCell.setCellValue("")
+                        }
                     }
                 }
+                // Pastikan kolom penyimpan NO PAG ini betul-betul tidak pernah terlihat
+                // di Excel (bukan sekadar lebar 0 -- pakai flag hidden asli Excel).
+                sheet.setColumnHidden(HIDDEN_PAG_COLUMN, true)
 
                 // 2. SHIFT ROWS JIKA DATA LEBIH DARI KAPASITAS TEMPLATE
                 if (maxRows > templateDataCapacity) {
@@ -342,10 +358,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                         setStyledNumericCell(row, 4, subTotal, sampleRow?.getCell(4))
                         setStyledTextCell(row, 5, item.description, sampleRow?.getCell(5))
                         setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
-                        // Kolom N (index 13): simpan NO PAG asli per baris manifest ini,
-                        // supaya kalau file ini di-import lagi ke app, NO PAG tiap item
-                        // terbaca persis (tidak lagi menebak lewat posisi baris blok Stowing).
-                        setStyledTextCell(row, 13, item.noPag, sampleRow?.getCell(1))
+                        // Kolom tersembunyi (HIDDEN_PAG_COLUMN): simpan NO PAG asli per
+                        // baris manifest ini -- TANPA style dari sampleRow, supaya tidak
+                        // ikut lebar/format kolom lain -- jadi kalau file ini di-import lagi
+                        // ke app, NO PAG tiap item terbaca persis (tidak lagi menebak lewat
+                        // posisi baris blok Stowing), dan kolomnya tetap hidden di Excel.
+                        val hiddenCell = row.getCell(HIDDEN_PAG_COLUMN) ?: row.createCell(HIDDEN_PAG_COLUMN)
+                        hiddenCell.setCellValue(item.noPag)
                     }
 
                     // B. ISI SISI STOWING CHECKLIST
