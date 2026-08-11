@@ -72,27 +72,27 @@ class BuktiTimbangActivity : AppCompatActivity() {
 
     // 1. SIMPAN DATA KE ROOM
     private fun simpanData() {
-        if (etAwb.text.isEmpty() || etPti.text.isEmpty()) {
-            Toast.makeText(this, "AWB dan PTI wajib diisi", Toast.LENGTH_SHORT).show()
-            return
-        }
+    if (etAwb.text.isEmpty() || etPti.text.isEmpty()) {
+        Toast.makeText(this, "AWB dan PTI wajib diisi", Toast.LENGTH_SHORT).show()
+        return
+    }
 
-        val cargoItem = CargoItem(
-            awbNo = etAwb.text.toString(),
-            flightNo = etFlight.text.toString(),
-            pti = etPti.text.toString(),
-            qty = etQty.text.toString(),
-            qtyWt = etQtyWt.text.toString(),
-            subTotal = etBerat.text.toString(),
-            description = etDesc.text.toString(),
-            customer = etCustomer.text.toString(),
-            noPag = etNoPag.text.toString()
-        )
-        lifecycleScope.launch {
-            db.cargoDao().insertCargo(cargoItem) // UDAH DIGANTI
-            Toast.makeText(this@BuktiTimbangActivity, "Data Tersimpan", Toast.LENGTH_SHORT).show()
-            clearForm()
-        }
+    val cargoItem = CargoItem(
+        awbNo = etAwb.text.toString(),
+        flightNo = etFlight.text.toString(),
+        pti = etPti.text.toString(),
+        pcsQty = etQty.text.toString(), // UDAH GANTI
+        weight = etQtyWt.text.toString(), // UDAH GANTI
+        subTotal = etBerat.text.toString(),
+        description = etDesc.text.toString(),
+        customer = etCustomer.text.toString(),
+        noPag = etNoPag.text.toString()
+    )
+    lifecycleScope.launch {
+        db.cargoDao().insertCargo(cargoItem)
+        Toast.makeText(this@BuktiTimbangActivity, "Data Tersimpan", Toast.LENGTH_SHORT).show()
+        clearForm()
+    }
     }
 
     // 2. EXPORT KE FOLDER Documents/Manifest
