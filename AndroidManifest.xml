@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.example.cargomanifestapp">
+
+    <!-- Izin untuk Simpan/Export File Excel -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@android:drawable/sym_def_app_icon" 
+        android:roundIcon="@android:drawable/sym_def_app_icon"
+        android:label="Cargo Manifest"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+
+        <activity
+            android:name="com.example.cargomanifestapp.MainActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Activity Data Stowingan Palet -->
+        <activity
+            android:name="com.example.cargomanifestapp.StowingActivity"
+            android:exported="false"
+            android:label="Data Stowingan Palet"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- Activity Baru untuk Bukti Timbang Barang (BTB) -->
+        <activity
+            android:name="com.example.cargomanifestapp.BuktiTimbangActivity"
+            android:exported="false"
+            android:label="Bukti Timbang Barang"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- Provider untuk Berbagi File Excel -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="com.example.cargomanifestapp.provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+    </application>
+
+</manifest>
