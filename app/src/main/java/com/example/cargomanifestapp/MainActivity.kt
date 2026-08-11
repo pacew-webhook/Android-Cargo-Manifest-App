@@ -34,8 +34,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-// Catatan: Enum Screen sudah didefinisikan di file Screen.kt, 
-// jadi tidak perlu ditulis lagi di sini.
+// Catatan: Enum Screen sudah didefinisikan di file Screen.kt
 
 class MainActivity : ComponentActivity() {
 
@@ -62,8 +61,11 @@ class MainActivity : ComponentActivity() {
                                     currentScreen = Screen.MANIFEST_CARGO
                                 },
                                 onNavigateToStowing = {
-                                    // Membuka StowingActivity secara sistem
                                     val intent = Intent(context, StowingActivity::class.java)
+                                    context.startActivity(intent)
+                                },
+                                onNavigateToBuktiTimbang = {
+                                    val intent = Intent(context, BuktiTimbangActivity::class.java)
                                     context.startActivity(intent)
                                 }
                             )
@@ -79,6 +81,10 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToManifest = { currentScreen = Screen.MANIFEST_CARGO },
                                 onNavigateToStowing = {
                                     val intent = Intent(context, StowingActivity::class.java)
+                                    context.startActivity(intent)
+                                },
+                                onNavigateToBuktiTimbang = {
+                                    val intent = Intent(context, BuktiTimbangActivity::class.java)
                                     context.startActivity(intent)
                                 }
                             )
@@ -497,7 +503,7 @@ fun CargoAppScreen(
                     contentPadding = PaddingValues(horizontal = 8.dp)
                 ) {
                     Text("Hapus Semua", fontSize = 11.sp)
-             }
+                }
             }
         }
 
@@ -564,4 +570,4 @@ fun CargoAppScreen(
             }
         }
     }
-}
+}        
