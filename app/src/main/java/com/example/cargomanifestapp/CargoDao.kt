@@ -11,17 +11,17 @@ import kotlinx.coroutines.flow.Flow
 interface CargoDao {
 
     @Query("SELECT * FROM cargo_table ORDER BY id DESC")
-    fun getAll(): Flow<List<CargoItem>> // HAPUS CARGO
+    fun getAllCargo(): Flow<List<CargoItem>>
 
     @Insert
-    suspend fun insert(cargo: CargoItem) // HAPUS CARGO
+    suspend fun insertCargo(cargo: CargoItem)
 
     @Update
-    suspend fun update(cargo: CargoItem) // HAPUS CARGO
+    suspend fun updateCargo(cargo: CargoItem)
 
     @Delete
-    suspend fun delete(cargo: CargoItem) // HAPUS CARGO
+    suspend fun deleteCargo(cargo: CargoItem)
 
     @Query("DELETE FROM cargo_table")
-    suspend fun deleteAll() // HAPUS CARGO
+    suspend fun deleteAllCargo()
 }

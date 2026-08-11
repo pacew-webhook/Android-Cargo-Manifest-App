@@ -1,7 +1,12 @@
 package com.example.cargomanifestapp
 
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+
+@Entity(tableName = "cargo_table")
 data class CargoItem(
-    val id: Long, // UDAH LONG
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0L,
     val awbNo: String = "",
     val flightNo: String = "",
     val pti: String = "",
