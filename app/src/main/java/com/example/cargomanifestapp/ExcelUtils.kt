@@ -12,10 +12,10 @@ object ExcelUtils {
     private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
 
     fun writeCargoListToExcel(context: Context, uri: Uri, cargoList: List<CargoItem>) {
+        // 1. Membuka file template asli dari folder assets
+        val inputStream: InputStream = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
+        val workbook = inputStream.use { XSSFWorkbook(it) }
         try {
-            // 1. Membuka file template asli dari folder assets
-            val inputStream: InputStream = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
-            val workbook = XSSFWorkbook(inputStream)
             val sheet = workbook.getSheetAt(0)
 
             if (cargoList.isNotEmpty()) {
@@ -80,17 +80,16 @@ object ExcelUtils {
                 }
             }
 
-            // Simpan perubahan ke URI target
-            val outputStream: OutputStream? = context.contentResolver.openOutputStream(uri)
-            if (outputStream != null) {
-                workbook.write(outputStream)
-                outputStream.close()
-                workbook.close()
-                inputStream.close()
-            }
+            // Simpan perubahan ke URI target. Jika stream null, lempar error
+            // eksplisit agar caller tahu file GAGAL tersimpan (sebelumnya gagal diam-diam).
+            val outputStream: OutputStream = context.contentResolver.openOutputStream(uri)
+                ?: throw java.io.IOException("Tidak bisa membuka output stream untuk URI tujuan")
+            outputStream.use { workbook.write(it) }
         } catch (e: Exception) {
             e.printStackTrace()
             throw e
+        } finally {
+            workbook.close()
         }
     }
 }

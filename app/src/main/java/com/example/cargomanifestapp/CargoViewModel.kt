@@ -18,8 +18,12 @@ import java.io.FileOutputStream
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val _cargoList = MutableStateFlow<List<CargoItem>>(emptyList())
-    val cargoList: StateFlow<List<CargoItem>> = _cargoList.asStateFlow()
+    // Data cargo sekarang bersumber dari Room Database (persisten),
+    // bukan lagi dari MutableStateFlow di memori yang hilang saat app ditutup.
+    private val dao = CargoDatabase.getDatabase(application).cargoDao()
+
+    val cargoList: StateFlow<List<CargoItem>> = dao.getAllCargo()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _importedAwbNo = MutableStateFlow("")
     val importedAwbNo: StateFlow<String> = _importedAwbNo.asStateFlow()
@@ -60,7 +64,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         pcsQty: String = "", weight: String = "", subTotal: String = "",
         description: String = "", customer: String = "", noPag: String = ""
     ) {
-        val currentList = _cargoList.value.toMutableList()
+        val currentList = cargoList.value
 
         val isExactDuplicate = currentList.any {
             it.pti.equals(pti, ignoreCase = true) &&
@@ -77,36 +81,42 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val newItem = CargoItem(
-            id = System.currentTimeMillis() + (0..1000).random(),
+            // id = 0L agar Room yang men-generate primary key secara otomatis (autoGenerate = true)
             awbNo = awbNo, flightNo = flightNo, pti = pti,
             pcsQty = pcsQty, weight = weight, subTotal = subTotal,
             description = description, customer = customer, noPag = noPag
         )
-        currentList.add(newItem)
-        _cargoList.value = currentList
-        Toast.makeText(getApplication(), "Data Berhasil Ditambahkan", Toast.LENGTH_SHORT).show()
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.insertCargo(newItem)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Data Berhasil Ditambahkan", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun updateCargo(item: CargoItem) {
-        val currentList = _cargoList.value.toMutableList()
-        val index = currentList.indexOfFirst { it.id == item.id }
-        if (index != -1) {
-            currentList[index] = item
-            _cargoList.value = currentList
-            Toast.makeText(getApplication(), "Data Berhasil Diperbarui", Toast.LENGTH_SHORT).show()
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.updateCargo(item)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Data Berhasil Diperbarui", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
     fun deleteCargo(item: CargoItem) {
-        val currentList = _cargoList.value.toMutableList()
-        currentList.removeAll { it.id == item.id }
-        _cargoList.value = currentList
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteCargo(item)
+        }
     }
 
     fun clearAll() {
-        _cargoList.value = emptyList()
-        _importedAwbNo.value = ""
-        _importedFlightNo.value = ""
+        viewModelScope.launch(Dispatchers.IO) {
+            dao.deleteAllCargo()
+            withContext(Dispatchers.Main) {
+                _importedAwbNo.value = ""
+                _importedFlightNo.value = ""
+            }
+        }
     }
 
     // ==========================================
@@ -168,11 +178,15 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
                 workbook.close()
 
+                // Ganti seluruh isi tabel di database dengan data hasil import,
+                // dengan id = 0L agar Room men-generate primary key baru untuk tiap baris.
+                dao.deleteAllCargo()
+                dao.insertAll(importedList.map { it.copy(id = 0L) })
+
                 withContext(Dispatchers.Main) {
                     _importedAwbNo.value = extractedAwb
                     _importedFlightNo.value = extractedFlight
-                    _cargoList.value = importedList
-                    Toast.makeText(context, "Berhasil Import ${_cargoList.value.size} Data", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, "Berhasil Import ${importedList.size} Data", Toast.LENGTH_SHORT).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {

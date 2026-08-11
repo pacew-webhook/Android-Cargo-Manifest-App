@@ -16,6 +16,9 @@ interface CargoDao {
     @Insert
     suspend fun insertCargo(cargo: CargoItem)
 
+    @Insert
+    suspend fun insertAll(cargoItems: List<CargoItem>)
+
     @Update
     suspend fun updateCargo(cargo: CargoItem)
 

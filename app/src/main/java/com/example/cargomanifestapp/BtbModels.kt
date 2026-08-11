@@ -104,11 +104,16 @@ object BtbExcelWriter {
         // =============================================================
         // 5. SIMPAN KE OUTPUT STREAM
         // =============================================================
-        context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
-            workbook.write(outputStream)
+        try {
+            // Jika stream null, lempar error eksplisit agar caller tahu file
+            // GAGAL tersimpan, bukan diam-diam sukses (Toast "Gagal mengekspor"
+            // di BuktiTimbangActivity baru akan tampil kalau exception dilempar).
+            val outputStream = context.contentResolver.openOutputStream(outputUri)
+                ?: throw java.io.IOException("Tidak bisa membuka output stream untuk URI tujuan")
+            outputStream.use { workbook.write(it) }
+        } finally {
+            templateInputStream.close()
+            workbook.close()
         }
-
-        templateInputStream.close()
-        workbook.close()
     }
 }

@@ -51,7 +51,10 @@ class MainActivity : ComponentActivity() {
                                 onBackToMenu = { currentScreen = Screen.MAIN_MENU }
                             )
                         }
-                        else -> {
+                        // STOWING_PALLET dan BUKTI_TIMBANG tidak pernah di-set sebagai currentScreen
+                        // (navigasinya lewat Intent/Activity terpisah, bukan state ini), jadi
+                        // cabang ini murni fallback pengaman dan tidak seharusnya pernah terpakai.
+                        Screen.STOWING_PALLET, Screen.BUKTI_TIMBANG -> {
                             MainMenuScreen(
                                 onNavigateToManifest = { currentScreen = Screen.MANIFEST_CARGO },
                                 onNavigateToStowing = {
