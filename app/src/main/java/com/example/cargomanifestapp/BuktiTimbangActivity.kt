@@ -41,11 +41,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Import FlowRow dari foundation.layout
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
-// Extension Function: Menghilangkan .0 pada angka bulat (contoh: 50.0 -> "50", 50.5 -> "50.5")
+// Extension Function: Menghilangkan .0 pada angka bulat
 fun Double.toCleanString(): String {
     return if (this % 1.0 == 0.0) {
         this.toLong().toString()
@@ -95,14 +94,20 @@ fun BtbScreen(onBackClick: () -> Unit) {
         editingId = null
     }
 
-    fun exportAndShare(btbData: BtbFormData) {
+    fun exportAndShare(listToExport: List<BtbFormData>) {
+        if (listToExport.isEmpty()) {
+            Toast.makeText(context, "Tidak ada data BTB untuk diekspor!", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         try {
-            val cacheFile = File(context.cacheDir, "BTB_${btbData.customerName.ifEmpty { "Export" }}.xlsx")
+            val fileNameCustomer = listToExport.first().customerName.ifEmpty { "Export" }
+            val cacheFile = File(context.cacheDir, "BTB_${fileNameCustomer}.xlsx")
             val templateInputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
-            
+
             FileOutputStream(cacheFile).use { fos ->
                 val tempUri = Uri.fromFile(cacheFile)
-                BtbExcelWriter.fillBtbTemplate(context, templateInputStream, tempUri, btbData)
+                BtbExcelWriter.fillBtbTemplateMulti(context, templateInputStream, tempUri, listToExport)
             }
 
             val fileUri: Uri = FileProvider.getUriForFile(
@@ -155,10 +160,14 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             daftarTimbangan = daftarTimbangan
                         )
 
+                        // Ekspor gabungan dari daftar yang sudah disimpan + data aktif di form
+                        val exportList = savedBtbList.toMutableList()
                         if (daftarTimbangan.isNotEmpty()) {
-                            exportAndShare(activeData)
-                        } else if (savedBtbList.isNotEmpty()) {
-                            exportAndShare(savedBtbList.last())
+                            exportList.add(activeData)
+                        }
+
+                        if (exportList.isNotEmpty()) {
+                            exportAndShare(exportList)
                         } else {
                             Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
                         }
@@ -259,7 +268,6 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 color = Color(0xFF2E7D32)
                             )
 
-                            // Tampilan Chip Timbangan Otomatis Pindah Baris
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
