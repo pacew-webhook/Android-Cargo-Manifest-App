@@ -24,11 +24,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Activity Baru untuk Data Stowingan Palet -->
+        <!-- Activity Data Stowingan Palet -->
         <activity
             android:name="com.example.cargomanifestapp.StowingActivity"
             android:exported="false"
             android:label="Data Stowingan Palet"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- Activity Baru untuk Bukti Timbang Barang (BTB) -->
+        <activity
+            android:name="com.example.cargomanifestapp.BuktiTimbangActivity"
+            android:exported="false"
+            android:label="Bukti Timbang Barang"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <!-- Provider untuk Berbagi File Excel -->
