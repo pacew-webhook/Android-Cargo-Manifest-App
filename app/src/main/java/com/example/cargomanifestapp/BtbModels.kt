@@ -47,7 +47,7 @@ object BtbExcelWriter {
             val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
             cell.setCellValue(value)
 
-            // Mengubah format sel menjadi 'General' agar angka bulat seperti 50 tidak berubah menjadi 50.00
+            // Format sel menjadi 'General' agar angka bulat tidak menampilkan .00
             val style = workbook.createCellStyle()
             if (cell.cellStyle != null) {
                 style.cloneStyleFrom(cell.cellStyle)
@@ -64,14 +64,14 @@ object BtbExcelWriter {
         setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
 
         // =============================================================
-        // 2. JENIS BARANG (Sel C8)
+        // 2. JENIS BARANG (Di Bawah Label -> Sel A9 / Index Row 8, Col 0)
         // =============================================================
-        setCellValue(7, 2, data.jenisBarang)  // Sel C8 (Row 7, Col 2)
+        setCellValue(8, 0, data.jenisBarang)  // Row 8 (Baris 9 di Excel), Col 0 (Kolom A)
 
         // =============================================================
         // 3. DATA TIMBANGAN (Grid A10:E23 - Maksimal 70 item)
         // =============================================================
-        val startRow = 9   // Baris 10 (Index 9)
+        val startRow = 9   // Baris 10 di Excel (Index 9)
         val maxRows = 14   // Baris 10 s/d 23
         val maxCols = 5    // Kolom A s/d E (Index 0..4)
 
