@@ -71,7 +71,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val newItem = CargoItem(
-            id = System.currentTimeMillis().toInt(), // FIX 1:.toInt()
+            id = System.currentTimeMillis(), // UDAH GA.toInt()
             awbNo = awbNo, flightNo = flightNo, pti = pti,
             pcsQty = pcsQty, weight = weight, subTotal = subTotal,
             description = description, customer = customer, noPag = noPag
@@ -130,7 +130,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     if (isTotalRow) continue
                     if (pti.isBlank() && description.isBlank() && pcsQty.isBlank()) continue
                     val newItem = CargoItem(
-                        id = (System.currentTimeMillis() + i).toInt(), // FIX 1:.toInt()
+                        id = System.currentTimeMillis() + i, // UDAH GA.toInt()
                         awbNo = extractedAwb, flightNo = extractedFlight, pti = pti,
                         pcsQty = pcsQty, weight = pcsWeight,
                         subTotal = if (subTotal.isNotBlank()) subTotal else pcsWeight,
@@ -305,13 +305,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun setStyledNumericCell(row: Row, col: Int, value: Double, sampleCell: Cell?) {
-        val cell = row.getCell(col)?: row.createCell(col) // FIX 2
+        val cell = row.getCell(col)?: row.createCell(col)
         cell.setCellValue(value)
         sampleCell?.cellStyle?.let { cell.cellStyle = it }
     }
 
     private fun setStyledTextCell(row: Row, col: Int, value: String, sampleCell: Cell?) {
-        val cell = row.getCell(col)?: row.createCell(col) // FIX 2
+        val cell = row.getCell(col)?: row.createCell(col)
         cell.setCellValue(value)
         sampleCell?.cellStyle?.let { cell.cellStyle = it }
     }
