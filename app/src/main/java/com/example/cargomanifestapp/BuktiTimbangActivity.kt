@@ -1,362 +1,153 @@
 package com.example.cargomanifestapp
 
-import android.content.Intent
-import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Environment
+import android.widget.Button
+import android.widget.EditText
+import android.widget.ImageView
 import android.widget.Toast
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.lifecycleScope
+import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FileOutputStream
-import java.text.DecimalFormat
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
-// Import FlowRow dari foundation.layout
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
+class BuktiTimbangActivity : AppCompatActivity() {
 
-// Extension Function: Menghilangkan .0 pada angka bulat (contoh: 50.0 -> "50", 50.5 -> "50.5")
-fun Double.toCleanString(): String {
-    return if (this % 1.0 == 0.0) {
-        this.toLong().toString()
-    } else {
-        DecimalFormat("#.##").format(this)
-    }
-}
+    private lateinit var db: CargoDatabase
+    private lateinit var excelHelper: ExcelHelper
 
-class BuktiTimbangActivity : ComponentActivity() {
+    private lateinit var etAwb: EditText
+    private lateinit var etFlight: EditText
+    private lateinit var etPti: EditText
+    private lateinit var etQty: EditText
+    private lateinit var etQtyWt: EditText
+    private lateinit var etBerat: EditText
+    private lateinit var etDesc: EditText
+    private lateinit var etCustomer: EditText
+    private lateinit var etNoPag: EditText
+    private lateinit var ivFoto: ImageView
+
+    private val FOLDER_NAME = "Manifest"
+    private val PERMISSION_CODE = 1
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                BtbScreen(onBackClick = { finish() })
-            }
-        }
-    }
-}
+        setContentView(R.layout.activity_bukti_timbang)
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
-@Composable
-fun BtbScreen(onBackClick: () -> Unit) {
-    val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
-    val currentDateStr = remember { SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date()) }
+        db = CargoDatabase.getInstance(this)
+        excelHelper = ExcelHelper(this, db)
 
-    var customerName by remember { mutableStateOf("") }
-    var trademarks by remember { mutableStateOf("") }
-    var jenisBarang by remember { mutableStateOf("") }
-    var inputBeratText by remember { mutableStateOf("") }
-    var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
-
-    val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
-    var editingId by remember { mutableStateOf<String?>(null) }
-
-    val customerFocus = remember { FocusRequester() }
-    val trademarkFocus = remember { FocusRequester() }
-    val barangFocus = remember { FocusRequester() }
-    val beratFocus = remember { FocusRequester() }
-
-    fun resetForm() {
-        customerName = ""
-        trademarks = ""
-        jenisBarang = ""
-        inputBeratText = ""
-        daftarTimbangan = emptyList()
-        editingId = null
+        requestStoragePermission()
+        initViews()
+        setListeners()
     }
 
-    fun exportAndShare(btbData: BtbFormData) {
-        try {
-            val cacheFile = File(context.cacheDir, "BTB_${btbData.customerName.ifEmpty { "Export" }}.xlsx")
-            val templateInputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
-            
-            FileOutputStream(cacheFile).use { fos ->
-                val tempUri = Uri.fromFile(cacheFile)
-                BtbExcelWriter.fillBtbTemplate(context, templateInputStream, tempUri, btbData)
-            }
+    private fun initViews() {
+        etAwb = findViewById(R.id.etAwb)
+        etFlight = findViewById(R.id.etFlight)
+        etPti = findViewById(R.id.etPti)
+        etQty = findViewById(R.id.etQty)
+        etQtyWt = findViewById(R.id.etQtyWt)
+        etBerat = findViewById(R.id.etBerat)
+        etDesc = findViewById(R.id.etDesc)
+        etCustomer = findViewById(R.id.etCustomer)
+        etNoPag = findViewById(R.id.etNoPag)
+        ivFoto = findViewById(R.id.ivFoto)
+    }
 
-            val fileUri: Uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.provider",
-                cacheFile
-            )
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                putExtra(Intent.EXTRA_STREAM, fileUri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(shareIntent, "Bagikan BTB via..."))
-        } catch (e: Exception) {
-            Toast.makeText(context, "Gagal mengekspor: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+    private fun setListeners() {
+        findViewById<Button>(R.id.btnSimpan).setOnClickListener { simpanData() }
+        findViewById<Button>(R.id.btnImport).setOnClickListener { showFilePickerDialog() }
+        findViewById<Button>(R.id.btnExport).setOnClickListener { exportKeFolder() }
+        findViewById<Button>(R.id.btnAmbilFoto).setOnClickListener {
+            Toast.makeText(this, "Fitur Kamera belum dipasang", Toast.LENGTH_SHORT).show()
         }
     }
 
-    fun tambahBerat() {
-        val weight = inputBeratText.toDoubleOrNull()
-        if (weight != null && weight > 0) {
-            daftarTimbangan = daftarTimbangan + weight
-            inputBeratText = ""
-            beratFocus.requestFocus()
-        } else {
-            Toast.makeText(context, "Masukkan berat angka yang valid", Toast.LENGTH_SHORT).show()
+    // 1. SIMPAN DATA KE ROOM
+    private fun simpanData() {
+        if (etAwb.text.isEmpty() || etPti.text.isEmpty()) {
+            Toast.makeText(this, "AWB dan PTI wajib diisi", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val cargo = Cargo(
+            awbNo = etAwb.text.toString(),
+            flightNo = etFlight.text.toString(),
+            pti = etPti.text.toString(),
+            qty = etQty.text.toString(),
+            qtyWt = etQtyWt.text.toString(),
+            subTotal = etBerat.text.toString(),
+            description = etDesc.text.toString(),
+            customer = etCustomer.text.toString(),
+            noPag = etNoPag.text.toString()
+        )
+        lifecycleScope.launch {
+            db.cargoDao().insert(cargo)
+            Toast.makeText(this@BuktiTimbangActivity, "Data Tersimpan", Toast.LENGTH_SHORT).show()
+            clearForm()
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Bukti Timbang Barang", color = Color(0xFF4A148C), fontWeight = FontWeight.Bold) },
-                navigationIcon = {
-                    IconButton(onClick = onBackClick) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali", tint = Color(0xFF4A148C))
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { resetForm() }) {
-                        Icon(Icons.Default.Delete, contentDescription = "Reset Form", tint = Color.Red)
-                    }
-                    IconButton(onClick = {
-                        val activeData = BtbFormData(
-                            hariTanggal = currentDateStr,
-                            customerName = customerName,
-                            trademarks = trademarks,
-                            jenisBarang = jenisBarang,
-                            daftarTimbangan = daftarTimbangan
-                        )
+    // 2. EXPORT KE FOLDER Documents/Manifest
+    private fun exportKeFolder() {
+        val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), FOLDER_NAME)
+        if (!folder.exists()) folder.mkdirs()
 
-                        if (daftarTimbangan.isNotEmpty()) {
-                            exportAndShare(activeData)
-                        } else if (savedBtbList.isNotEmpty()) {
-                            exportAndShare(savedBtbList.last())
-                        } else {
-                            Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
-                        }
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF2E7D32))
-                    }
-                }
-            )
+        val file = File(folder, "Manifest_${System.currentTimeMillis()}.xlsx")
+
+        lifecycleScope.launch {
+            excelHelper.exportExcelToFile(file)
+            val uri = FileProvider.getUriForFile(this@BuktiTimbangActivity, "${packageName}.provider", file)
+            Toast.makeText(this@BuktiTimbangActivity, "Export Berhasil ke:\n${file.absolutePath}", Toast.LENGTH_LONG).show()
         }
-    ) { innerPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            item {
-                Card(
-                    shape = RoundedCornerShape(12.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFFDE7)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                if (editingId == null) "Input Form BTB" else "Edit Form BTB",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF4A148C)
-                            )
-                            Text("Tgl: $currentDateStr", fontSize = 12.sp, color = Color.Gray)
-                        }
+    }
 
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(
-                                value = customerName,
-                                onValueChange = { customerName = it.uppercase() },
-                                label = { Text("Customer") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Next),
-                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                                modifier = Modifier.weight(1f).focusRequester(customerFocus)
-                            )
-                            OutlinedTextField(
-                                value = trademarks,
-                                onValueChange = { trademarks = it.uppercase() },
-                                label = { Text("Trademarks") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Next),
-                                keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                                modifier = Modifier.weight(1f).focusRequester(trademarkFocus)
-                            )
-                        }
+    // 3. IMPORT DENGAN PILIH FILE DARI FOLDER
+    private fun showFilePickerDialog() {
+        val folder = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), FOLDER_NAME)
+        if (!folder.exists()) {
+            Toast.makeText(this, "Buat folder $FOLDER_NAME di Documents dulu", Toast.LENGTH_LONG).show()
+            return
+        }
 
-                        OutlinedTextField(
-                            value = jenisBarang,
-                            onValueChange = { jenisBarang = it.uppercase() },
-                            label = { Text("Jenis Barang") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, imeAction = ImeAction.Next),
-                            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Next) }),
-                            modifier = Modifier.fillMaxWidth().focusRequester(barangFocus)
-                        )
+        val files = folder.listFiles { f -> f.extension.equals("xlsx", true) }
+        if (files.isNullOrEmpty()) {
+            Toast.makeText(this, "Gak ada file.xlsx di folder $FOLDER_NAME", Toast.LENGTH_LONG).show()
+            return
+        }
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            OutlinedTextField(
-                                value = inputBeratText,
-                                onValueChange = { inputBeratText = it },
-                                label = { Text("Input Berat (KG)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { tambahBerat() }),
-                                modifier = Modifier.weight(1f).focusRequester(beratFocus)
-                            )
-                            Button(
-                                onClick = { tambahBerat() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92)),
-                                modifier = Modifier.height(56.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("+ KG", fontWeight = FontWeight.Bold)
-                            }
-                        }
-
-                        if (daftarTimbangan.isNotEmpty()) {
-                            Text(
-                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF2E7D32)
-                            )
-
-                            // Tampilan Chip Timbangan Otomatis Pindah Baris
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                verticalArrangement = Arrangement.spacedBy(6.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                daftarTimbangan.forEachIndexed { index, weight ->
-                                    SuggestionChip(
-                                        onClick = {
-                                            daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
-                                        },
-                                        label = { Text(weight.toCleanString()) },
-                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
-                                    )
-                                }
-                            }
-                        }
-
-                        Button(
-                            onClick = {
-                                if (customerName.isEmpty() || daftarTimbangan.isEmpty()) {
-                                    Toast.makeText(context, "Customer dan Timbangan wajib diisi!", Toast.LENGTH_SHORT).show()
-                                    return@Button
-                                }
-
-                                val formData = BtbFormData(
-                                    id = editingId ?: System.currentTimeMillis().toString(),
-                                    hariTanggal = currentDateStr,
-                                    customerName = customerName,
-                                    trademarks = trademarks,
-                                    jenisBarang = jenisBarang,
-                                    daftarTimbangan = daftarTimbangan
-                                )
-
-                                if (editingId != null) {
-                                    val idx = savedBtbList.indexOfFirst { it.id == editingId }
-                                    if (idx != -1) savedBtbList[idx] = formData
-                                } else {
-                                    savedBtbList.add(formData)
-                                }
-
-                                resetForm()
-                                customerFocus.requestFocus()
-                                Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
-                            },
-                            modifier = Modifier.fillMaxWidth().height(48.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (editingId == null) Color(0xFF311B92) else Color(0xFF00695C)
-                            ),
-                            shape = RoundedCornerShape(24.dp)
-                        ) {
-                            Text(if (editingId == null) "Simpan BTB" else "Update BTB", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
+        val fileNames = files.map { it.name }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Pilih File untuk Import")
+            .setItems(fileNames) { _, which ->
+                importDariFile(files[which])
             }
+            .show()
+    }
 
-            item {
-                Text("Daftar BTB Tersimpan (${savedBtbList.size})", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            }
+    private fun importDariFile(file: File) {
+        lifecycleScope.launch {
+            excelHelper.importExcelFromFile(file)
+            Toast.makeText(this@BuktiTimbangActivity, "Import ${file.name} Selesai", Toast.LENGTH_SHORT).show()
+        }
+    }
 
-            items(savedBtbList) { btb ->
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("${btb.customerName} (${btb.trademarks.ifEmpty { "-" }})", fontWeight = FontWeight.Bold)
-                            Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
-                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                        }
-                        Row {
-                            IconButton(onClick = {
-                                customerName = btb.customerName
-                                trademarks = btb.trademarks
-                                jenisBarang = btb.jenisBarang
-                                daftarTimbangan = btb.daftarTimbangan
-                                editingId = btb.id
-                                customerFocus.requestFocus()
-                            }) {
-                                Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
-                            }
-                            IconButton(onClick = {
-                                savedBtbList.remove(btb)
-                                if (editingId == btb.id) resetForm()
-                            }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
-                            }
-                        }
-                    }
-                }
-            }
+    private fun clearForm() {
+        etAwb.text.clear(); etFlight.text.clear(); etPti.text.clear()
+        etQty.text.clear(); etQtyWt.text.clear(); etBerat.text.clear()
+        etDesc.text.clear(); etCustomer.text.clear(); etNoPag.text.clear()
+    }
+
+    private fun requestStoragePermission() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)!= PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE, Manifest.permission.READ_EXTERNAL_STORAGE), PERMISSION_CODE)
         }
     }
 }
