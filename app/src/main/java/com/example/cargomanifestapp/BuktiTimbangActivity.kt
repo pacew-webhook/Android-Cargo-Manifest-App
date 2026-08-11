@@ -77,7 +77,7 @@ class BuktiTimbangActivity : AppCompatActivity() {
             return
         }
 
-        val cargo = Cargo(
+        val cargoItem = CargoItem( // GANTI JADI CARGOITEM
             awbNo = etAwb.text.toString(),
             flightNo = etFlight.text.toString(),
             pti = etPti.text.toString(),
@@ -89,7 +89,7 @@ class BuktiTimbangActivity : AppCompatActivity() {
             noPag = etNoPag.text.toString()
         )
         lifecycleScope.launch {
-            db.cargoDao().insert(cargo)
+            db.cargoDao().insert(cargoItem) // GANTI JADI CARGOITEM
             Toast.makeText(this@BuktiTimbangActivity, "Data Tersimpan", Toast.LENGTH_SHORT).show()
             clearForm()
         }
@@ -104,7 +104,7 @@ class BuktiTimbangActivity : AppCompatActivity() {
 
         lifecycleScope.launch {
             excelHelper.exportExcelToFile(file)
-            val uri = FileProvider.getUriForFile(this@BuktiTimbangActivity, "${packageName}.provider", file)
+            FileProvider.getUriForFile(this@BuktiTimbangActivity, "${packageName}.provider", file)
             Toast.makeText(this@BuktiTimbangActivity, "Export Berhasil ke:\n${file.absolutePath}", Toast.LENGTH_LONG).show()
         }
     }
