@@ -55,8 +55,8 @@ android {
             excludes += "META-INF/NOTICE.txt"
             excludes += "META-INF/notice.txt"
         }
-    } // <- ini kurung tutup packaging
-} // <- ini kurung tutup android
+    }
+}
 
 dependencies {
 
@@ -64,7 +64,7 @@ dependencies {
     val roomVersion = "2.6.1"
     implementation("androidx.room:room-runtime:$roomVersion")
     implementation("androidx.room:room-ktx:$roomVersion")
-    ksp("androidx.room:room-compiler:$roomVersion")
+    ksp("androidx.room:room-compiler:$roomVersion") // Diubah dari kapt ke ksp
 
     // Activity KTX & Lifecycle
     implementation("androidx.activity:activity-ktx:1.8.2")
@@ -73,11 +73,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
 
-    // TAMBAHAN BUAT ACTIVITY BIASA
-    implementation("androidx.appcompat:appcompat:1.6.1") 
-    implementation("com.google.android.material:material:1.12.0") // <- ini baris 78
-
-    // Compose BOM 2024.02.01
+    // Compose BOM 2024.02.01 (Material3 Versi Terbaru)
     implementation(platform("androidx.compose:compose-bom:2024.02.01"))
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
@@ -85,8 +81,8 @@ dependencies {
     implementation("androidx.compose.material3:material3")
 
     // Apache POI (Excel)
-    implementation("org.apache.poi:poi:5.2.5")
-    implementation("org.apache.poi:poi-ooxml:5.2.5") {
+    implementation("org.apache.poi:poi:5.2.3")
+    implementation("org.apache.poi:poi-ooxml:5.2.3") {
         exclude(group = "org.apache.logging.log4j", module = "log4j-api")
     }
 
@@ -98,4 +94,4 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
-} // <- ini kurung tutup dependencies
+}
