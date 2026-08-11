@@ -232,7 +232,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 withContext(Dispatchers.Main) {
                     _importedAwbNo.value = extractedAwb
                     _importedFlightNo.value = extractedFlight
-                    Toast.makeText(context, "Berhasil Import ${importedList.size} Data", Toast.LENGTH_SHORT).show()
+                    val missingPagCount = importedList.count { it.noPag.isBlank() }
+                    val message = if (missingPagCount > 0) {
+                        "Berhasil Import ${importedList.size} Data (${missingPagCount} item belum ada NO PAG, cek & lengkapi manual)"
+                    } else {
+                        "Berhasil Import ${importedList.size} Data"
+                    }
+                    Toast.makeText(context, message, Toast.LENGTH_LONG).show()
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
