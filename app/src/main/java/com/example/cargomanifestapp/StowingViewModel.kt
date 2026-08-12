@@ -54,7 +54,7 @@ class StowingViewModel : ViewModel() {
     fun updateNoPag(value: String) { noPag = value.uppercase() }
     fun updateCustomer(value: String) { customer = value.uppercase() }
     fun updateInputKg(value: String) { inputKg = value }
-    fun setExpandedPag(expanded: Boolean) { expandedPag = expanded }
+    fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
 
     // --- LOCAL STORAGE (SharedPreferences) ---
     fun saveCargoListToPrefs(context: Context) {
