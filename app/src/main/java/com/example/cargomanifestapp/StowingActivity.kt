@@ -10,10 +10,11 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items           // Import untuk list items biasa
+import androidx.compose.foundation.lazy.itemsIndexed    // <-- IMPORT BARU YANG DITAMBAHKAN
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed as gridItemsIndexed // Alias untuk grid agar tidak bentrok
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -21,7 +22,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -37,8 +37,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 import org.json.JSONObject
-import androidx.compose.foundation.lazy.itemsIndexed
-
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,7 +113,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
     // State List Input PAG Dinamis (Minimal ada 1 baris awal)
     val pagInputList = remember { mutableStateListOf(PagInputField()) }
-
     val cargoList = remember { mutableStateListOf<CargoItem>() }
 
     // State Dialog Hapus
@@ -468,7 +465,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                itemsIndexed(pagField.kgEntries) { kgIndex, itemVal ->
+                                gridItemsIndexed(pagField.kgEntries) { kgIndex, itemVal ->
                                     if (itemVal != null) {
                                         Box(
                                             modifier = Modifier
@@ -544,7 +541,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     ) {
                         Icon(imageVector = Icons.Default.Add, contentDescription = "Tambah Baris")
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Tambah Baris PAG")
+                        Text("Tambah Baris")
                     }
 
                     Button(
