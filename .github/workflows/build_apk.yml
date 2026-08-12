@@ -22,8 +22,31 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
+      - name: Diagnose Repository
+        run: |
+          echo "===== CURRENT DIRECTORY ====="
+          pwd
+
+          echo "===== ROOT FILES ====="
+          ls -la
+
+          echo "===== FIND GRADLEW ====="
+          find . -type f -name "gradlew" -print
+
+          echo "===== GIT STATUS ====="
+          git status --short
+
+      - name: Verify Gradle Wrapper
+        run: |
+          test -f ./gradlew
+          test -f ./gradle/wrapper/gradle-wrapper.jar
+          test -f ./gradle/wrapper/gradle-wrapper.properties
+
       - name: Make gradlew executable
-        run: chmod +x gradlew
+        run: chmod +x ./gradlew
+
+      - name: Show Gradle Version
+        run: ./gradlew --version
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -33,3 +56,4 @@ jobs:
         with:
           name: CargoManifest-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
