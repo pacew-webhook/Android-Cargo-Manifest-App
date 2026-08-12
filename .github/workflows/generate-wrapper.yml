@@ -1,0 +1,51 @@
+name: Generate Official Gradle 8.2 Wrapper
+
+on:
+  workflow_dispatch:
+
+jobs:
+  wrapper:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Gradle 8.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.2'
+          validate-wrappers: false
+
+      - name: Remove Old Wrapper JAR
+        run: rm -f gradle/wrapper/gradle-wrapper.jar
+
+      - name: Generate Official Wrapper
+        run: gradle wrapper --gradle-version 8.2
+
+      - name: Verify Wrapper SHA-256
+        run: |
+          EXPECTED="a8451eeda314d0568b5340498b36edf147a8f0d692c5ff58082d477abe9146e4"
+          ACTUAL=$(sha256sum gradle/wrapper/gradle-wrapper.jar | awk '{print $1}')
+
+          echo "Expected: $EXPECTED"
+          echo "Actual:   $ACTUAL"
+
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "ERROR: Wrapper checksum tidak cocok!"
+            exit 1
+          fi
+
+          echo "SUCCESS: Official Gradle 8.2 Wrapper verified."
+
+      - name: Upload Official Wrapper JAR
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-wrapper-8.2-official
+          path: gradle/wrapper/gradle-wrapper.jar
