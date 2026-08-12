@@ -1,0 +1,224 @@
+package com.example.cargomanifestapp
+
+import android.content.Context
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.lifecycle.ViewModel
+import org.json.JSONArray
+import org.json.JSONObject
+
+enum class DeleteType {
+    NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
+}
+
+class StowingViewModel : ViewModel() {
+
+    // --- STATE FORM INPUT ---
+    var noPag by mutableStateOf("")
+        private set
+    var customer by mutableStateOf("")
+        private set
+    var inputKg by mutableStateOf("")
+        private set
+
+    var editingIndex by mutableStateOf<Int?>(null)
+        private set
+
+    // --- STATE LIST CARGO & KG ---
+    val cargoList = mutableStateListOf<CargoItem>()
+    val currentKgEntries = mutableStateListOf<Double?>()
+
+    // --- STATE DROPDOWN & DIALOG ---
+    var expandedPag by mutableStateOf(false)
+        private set
+    var deleteType by mutableStateOf(DeleteType.NONE)
+        private set
+    var itemIndexToDelete by mutableStateOf<Int?>(null)
+        private set
+    var kgIndexToDelete by mutableStateOf<Int?>(null)
+        private set
+
+    // --- DERIVED STATES ---
+    val existingPags: List<String>
+        get() = cargoList.map { it.noPag }.distinct()
+
+    val currentActiveEntries: List<Double>
+        get() = currentKgEntries.filterNotNull()
+
+    val currentTotalKg: Double
+        get() = currentActiveEntries.sum()
+
+    // --- SETTER UNTUK INPUT UI ---
+    fun updateNoPag(value: String) { noPag = value.uppercase() }
+    fun updateCustomer(value: String) { customer = value.uppercase() }
+    fun updateInputKg(value: String) { inputKg = value }
+    fun setExpandedPag(expanded: Boolean) { expandedPag = expanded }
+
+    // --- LOCAL STORAGE (SharedPreferences) ---
+    fun saveCargoListToPrefs(context: Context) {
+        val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+        val jsonArray = JSONArray()
+        for (item in cargoList) {
+            val obj = JSONObject().apply {
+                put("noPag", item.noPag)
+                put("customer", item.customer)
+                put("pcsQty", item.pcsQty)
+                put("weight", item.weight)
+                put("subTotal", item.subTotal)
+            }
+            jsonArray.put(obj)
+        }
+        prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
+    }
+
+    fun loadCargoListFromPrefs(context: Context) {
+        val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+        val jsonString = prefs.getString("saved_cargo_list", null) ?: return
+        try {
+            val jsonArray = JSONArray(jsonString)
+            val list = mutableListOf<CargoItem>()
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                list.add(
+                    CargoItem(
+                        noPag = obj.getString("noPag"),
+                        customer = obj.getString("customer"),
+                        pcsQty = obj.getString("pcsQty"),
+                        weight = obj.getString("weight"),
+                        subTotal = obj.getString("subTotal")
+                    )
+                )
+            }
+            cargoList.clear()
+            cargoList.addAll(list)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // --- LOGIKA BISNIS ---
+    fun addKgEntry(onInvalidInput: () -> Unit) {
+        val kgVal = inputKg.toDoubleOrNull()
+        if (kgVal != null && kgVal > 0) {
+            val emptyIndex = currentKgEntries.indexOfFirst { it == null }
+            if (emptyIndex != -1) {
+                currentKgEntries[emptyIndex] = kgVal
+            } else {
+                currentKgEntries.add(kgVal)
+            }
+            inputKg = ""
+        } else {
+            onInvalidInput()
+        }
+    }
+
+    fun saveCargoItem(context: Context, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
+        if (noPag.isBlank() || customer.isBlank()) {
+            onError("Mohon isi NO PAG dan Customer")
+            return
+        }
+        if (currentActiveEntries.isEmpty()) {
+            onError("Masukkan minimal 1 nilai KG")
+            return
+        }
+
+        val formattedWeightList = currentActiveEntries.joinToString(", ") {
+            if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+        }
+
+        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) {
+            currentTotalKg.toInt().toString()
+        } else {
+            currentTotalKg.toString()
+        }
+
+        val newItem = CargoItem(
+            noPag = noPag.trim(),
+            customer = customer.trim(),
+            pcsQty = currentActiveEntries.size.toString(),
+            weight = formattedWeightList,
+            subTotal = formattedTotalKg
+        )
+
+        val index = editingIndex
+        if (index != null && index in cargoList.indices) {
+            cargoList[index] = newItem
+            onSuccess("Data berhasil diperbarui!")
+        } else {
+            cargoList.add(0, newItem)
+            onSuccess("Data berhasil disimpan!")
+        }
+
+        saveCargoListToPrefs(context)
+        resetForm()
+    }
+
+    fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
+        editingIndex = indexInOriginalList
+        noPag = item.noPag
+        customer = item.customer
+        inputKg = ""
+        currentKgEntries.clear()
+
+        val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+        currentKgEntries.addAll(parsedKgList)
+    }
+
+    fun cancelEdit() {
+        editingIndex = null
+        resetForm()
+    }
+
+    private fun resetForm() {
+        noPag = ""
+        customer = ""
+        inputKg = ""
+        currentKgEntries.clear()
+        editingIndex = null
+    }
+
+    // --- MANAJEMEN DIALOG HAPUS ---
+    fun showDeleteDialog(type: DeleteType, itemIdx: Int? = null, kgIdx: Int? = null) {
+        deleteType = type
+        itemIndexToDelete = itemIdx
+        kgIndexToDelete = kgIdx
+    }
+
+    fun dismissDeleteDialog() {
+        deleteType = DeleteType.NONE
+        itemIndexToDelete = null
+        kgIndexToDelete = null
+    }
+
+    fun confirmDelete(context: Context, onDeleted: (String) -> Unit) {
+        when (deleteType) {
+            DeleteType.RESET_ALL -> {
+                cargoList.clear()
+                saveCargoListToPrefs(context)
+                resetForm()
+                onDeleted("Semua data berhasil dihapus")
+            }
+            DeleteType.CARGO_ITEM -> {
+                itemIndexToDelete?.let { idx ->
+                    if (idx in cargoList.indices) {
+                        if (editingIndex == idx) resetForm()
+                        cargoList.removeAt(idx)
+                        saveCargoListToPrefs(context)
+                        onDeleted("Data berhasil dihapus")
+                    }
+                }
+            }
+            DeleteType.KG_ENTRY -> {
+                kgIndexToDelete?.let { idx ->
+                    if (idx in currentKgEntries.indices) {
+                        currentKgEntries[idx] = null
+                    }
+                }
+            }
+            DeleteType.NONE -> {}
+        }
+        dismissDeleteDialog()
+    }
+}
