@@ -199,9 +199,21 @@ fun StowingInputScreen(
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
                     )
+                    val detectedCount = scannedWeightsText
+                        .replace("\n", ",")
+                        .split(",", ";", " ", "\n")
+                        .count { it.trim().toDoubleOrNull()?.let { value -> value > 0.0 } == true }
+
+                    Text(
+                        if (detectedCount == 48) "✓ Terdeteksi 48 koli" else "⚠ Terdeteksi $detectedCount koli — target BTB contoh: 48 koli",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (detectedCount == 48) Color(0xFF2E7D32) else Color(0xFFB00020)
+                    )
+
                     if (scanRowsText.isNotBlank()) {
                         Text(
-                            "Hasil per baris (untuk mengecek angka yang hilang):",
+                            "Hasil per baris (periksa baris yang kosong atau tidak lengkap):",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )

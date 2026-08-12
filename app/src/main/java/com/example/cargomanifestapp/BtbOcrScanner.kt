@@ -16,15 +16,18 @@ import java.io.InputStream
 import kotlin.coroutines.resume
 
 /**
- * Scanner BTB khusus format slip pada project ini.
+ * V10 - Scanner BTB yang lebih toleran terhadap variasi foto dan tulisan tangan.
  *
- * V9 tidak lagi mengirim seluruh foto ke OCR sekaligus. Foto dipotong ke area
- * tabel tulisan tangan, dibuat beberapa versi (asli + kontras + threshold),
- * lalu diproses per baris. Ini mengurangi angka dari header/kolom lain dan
- * membuat angka yang hilang lebih mudah ditemukan.
+ * Strategi:
+ * 1) OCR beberapa area, bukan satu crop tetap.
+ * 2) Gunakan hasil OCR beserta posisi (x/y) untuk mempertahankan urutan baris.
+ * 3) Jalankan beberapa preprocessing: asli, grayscale/contrast, threshold.
+ * 4) Gabungkan hasil dari beberapa pass dan deduplikasi berdasarkan posisi.
+ * 5) Kelompokkan kembali menjadi baris agar pengguna bisa memeriksa hasil.
  *
- * Catatan penting: ML Kit Text Recognition adalah OCR umum dan bukan mesin
- * handwriting khusus. Karena itu hasil tetap ditampilkan di dialog koreksi.
+ * Catatan: ML Kit Text Recognition bukan model handwriting khusus. V10 sengaja
+ * tidak menebak angka yang tidak terbaca; angka yang meragukan tetap ditampilkan
+ * untuk koreksi manual.
  */
 object BtbOcrScanner {
 
@@ -34,76 +37,110 @@ object BtbOcrScanner {
         val rows: List<String> = emptyList()
     )
 
+    private data class CropSpec(
+        val name: String,
+        val left: Float,
+        val top: Float,
+        val right: Float,
+        val bottom: Float
+    )
+
     private data class Candidate(
-        val value: Double,
-        val row: Int,
-        val centerX: Float
+        val value: Int,
+        val x: Float,
+        val y: Float,
+        val source: String
+    )
+
+    private data class OcrLine(
+        val text: String,
+        val left: Float,
+        val top: Float,
+        val width: Float,
+        val height: Float
     )
 
     suspend fun scan(context: Context, uri: Uri): Result = withContext(Dispatchers.Default) {
         val bitmap = loadBitmap(context, uri) ?: return@withContext Result(emptyList())
 
-        // Berdasarkan layout BTB yang dipakai project: area tulisan tangan berada
-        // di kiri, mulai setelah header dan sebelum kolom JUMLAH KOLI.
-        val table = cropTable(bitmap)
-        if (table.width < 100 || table.height < 100) {
-            return@withContext Result(emptyList())
-        }
+        // Jangan mengandalkan satu posisi BTB. Foto dari kamera/galeri dapat
+        // memiliki crop, zoom, dan posisi kertas yang berbeda.
+        val specs = listOf(
+            CropSpec("full", 0.00f, 0.20f, 0.92f, 0.98f),
+            CropSpec("table-wide", 0.02f, 0.32f, 0.84f, 0.98f),
+            CropSpec("table-left", 0.03f, 0.36f, 0.78f, 0.98f),
+            CropSpec("legacy", 0.055f, 0.40f, 0.78f, 0.94f)
+        )
 
         val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+        val candidates = mutableListOf<Candidate>()
+        val rawParts = mutableListOf<String>()
+
         try {
-            val allCandidates = mutableListOf<Candidate>()
-            val raw = StringBuilder()
-            val rowTexts = MutableList(10) { "" }
-
-            // 10 baris adalah pola BTB pada contoh. Baris terakhir boleh hanya
-            // berisi sebagian angka; kita tidak memaksa jumlah 5.
-            for (row in 0 until 10) {
-                val y0 = (row * table.height / 10f).toInt().coerceIn(0, table.height - 1)
-                val y1 = (((row + 1) * table.height / 10f).toInt()).coerceIn(y0 + 1, table.height)
-                val rowBitmap = Bitmap.createBitmap(table, 0, y0, table.width, y1 - y0)
-
-                val variants = listOf(
-                    rowBitmap,
-                    enhance(rowBitmap, threshold = null),
-                    enhance(rowBitmap, threshold = 165)
-                )
-
-                var bestTokens = emptyList<String>()
-                var bestRaw = ""
-                for (variant in variants) {
-                    val text = recognize(recognizer, variant) ?: continue
-                    val tokens = extractNumberTokens(text)
-                    if (tokens.size > bestTokens.size) {
-                        bestTokens = tokens
-                        bestRaw = text
-                    }
+            for (spec in specs) {
+                val crop = cropRelative(bitmap, spec)
+                if (crop.width < 120 || crop.height < 120) {
+                    crop.recycle()
+                    continue
                 }
 
-                rowTexts[row] = bestTokens.joinToString(" ")
-                if (bestRaw.isNotBlank()) raw.append(bestRaw).append('\n')
+                val variants = listOf(
+                    crop,
+                    enhance(crop, null),
+                    enhance(crop, 150),
+                    enhance(crop, 190)
+                )
 
-                bestTokens.forEachIndexed { index, token ->
-                    token.toDoubleOrNull()?.let { value ->
-                        if (value in 1.0..999.0) {
-                            allCandidates += Candidate(value, row, index.toFloat())
+                for ((variantIndex, variant) in variants.withIndex()) {
+                    val result = recognize(recognizer, variant) ?: continue
+                    if (result.text.isNotBlank()) {
+                        rawParts += "[${spec.name}/v$variantIndex] ${result.text}"
+                    }
+
+                    result.lines.forEach { line ->
+                        val tokens = extractNumberTokens(line.text)
+                        if (tokens.isEmpty()) return@forEach
+
+                        // Karena ML Kit kadang mengembalikan satu bounding box untuk
+                        // seluruh rangkaian "9.8.26.37.37", bagi posisi token secara
+                        // proporsional agar urutan kiri-kanan tetap dapat direkonstruksi.
+                        val tokenCount = tokens.size
+                        tokens.forEachIndexed { index, token ->
+                            val centerX = line.left + line.width * ((index + 0.5f) / tokenCount)
+                            val centerY = line.top + line.height / 2f
+                            val absoluteX = (spec.left + centerX / crop.width * (spec.right - spec.left)).coerceIn(0f, 1f)
+                            val absoluteY = (spec.top + centerY / crop.height * (spec.bottom - spec.top)).coerceIn(0f, 1f)
+                            candidates += Candidate(token.toInt(), absoluteX, absoluteY, spec.name)
                         }
                     }
                 }
 
-                rowBitmap.recycle()
                 variants.drop(1).forEach { it.recycle() }
+                crop.recycle()
             }
 
-            val ordered = allCandidates.sortedWith(compareBy<Candidate> { it.row }.thenBy { it.centerX })
+            // Gabungkan hasil dari overlapping crops. Kandidat yang terlalu dekat
+            // dianggap angka yang sama agar OCR multi-pass tidak menggandakan data.
+            val deduped = deduplicate(candidates)
+
+            // Fokuskan ke bagian bawah-kiri yang memang merupakan area tulisan
+            // tangan. Jika hasilnya terlalu sedikit, gunakan semua kandidat.
+            val focused = deduped.filter { it.y in 0.32f..0.98f && it.x in 0.02f..0.82f }
+            val selected = if (focused.size >= 5) focused else deduped
+
+            val ordered = selected.sortedWith(compareBy<Candidate> { it.y }.thenBy { it.x })
+            val rows = buildRows(ordered)
+            val weights = rows.flatMap { row ->
+                extractNumberTokens(row).mapNotNull { it.toDoubleOrNull() }
+            }
+
             Result(
-                weights = ordered.map { it.value },
-                rawText = raw.toString(),
-                rows = rowTexts
+                weights = weights,
+                rawText = rawParts.joinToString("\n"),
+                rows = rows
             )
         } finally {
             recognizer.close()
-            table.recycle()
             bitmap.recycle()
         }
     }
@@ -121,22 +158,12 @@ object BtbOcrScanner {
         return input.use { BitmapFactory.decodeStream(it) }
     }
 
-    private fun cropTable(source: Bitmap): Bitmap {
-        val w = source.width
-        val h = source.height
-        // Area relatif terhadap foto penuh. Memberi sedikit margin agar angka
-        // di tepi tidak terpotong.
-        val left = (w * 0.055f).toInt()
-        val top = (h * 0.485f).toInt()
-        val right = (w * 0.73f).toInt()
-        val bottom = (h * 0.765f).toInt()
-        return Bitmap.createBitmap(
-            source,
-            left.coerceIn(0, w - 1),
-            top.coerceIn(0, h - 1),
-            (right - left).coerceAtLeast(1).coerceAtMost(w - left),
-            (bottom - top).coerceAtLeast(1).coerceAtMost(h - top)
-        )
+    private fun cropRelative(source: Bitmap, spec: CropSpec): Bitmap {
+        val left = (source.width * spec.left).toInt().coerceIn(0, source.width - 1)
+        val top = (source.height * spec.top).toInt().coerceIn(0, source.height - 1)
+        val right = (source.width * spec.right).toInt().coerceIn(left + 1, source.width)
+        val bottom = (source.height * spec.bottom).toInt().coerceIn(top + 1, source.height)
+        return Bitmap.createBitmap(source, left, top, right - left, bottom - top)
     }
 
     private fun enhance(source: Bitmap, threshold: Int?): Bitmap {
@@ -150,9 +177,8 @@ object BtbOcrScanner {
             val value = if (threshold != null) {
                 if (gray < threshold) 0 else 255
             } else {
-                // Contrast stretch sederhana agar tinta hitam lebih dominan
-                // terhadap kertas kuning/cokelat.
-                ((gray - 45) * 1.65).toInt().coerceIn(0, 255)
+                // Menekan warna kertas dan mengangkat tinta gelap.
+                ((gray - 50) * 1.8).toInt().coerceIn(0, 255)
             }
             pixels[i] = Color.rgb(value, value, value)
         }
@@ -160,20 +186,75 @@ object BtbOcrScanner {
         return out
     }
 
-    private suspend fun recognize(recognizer: com.google.mlkit.vision.text.TextRecognizer, bitmap: Bitmap): String? =
-        suspendCancellableCoroutine { continuation ->
-            val image = InputImage.fromBitmap(bitmap, 0)
-            recognizer.process(image)
-                .addOnSuccessListener { continuation.resume(it.text) }
-                .addOnFailureListener { continuation.resume(null) }
-        }
+    private suspend fun recognize(
+        recognizer: com.google.mlkit.vision.text.TextRecognizer,
+        bitmap: Bitmap
+    ): Text? = suspendCancellableCoroutine { continuation ->
+        val image = InputImage.fromBitmap(bitmap, 0)
+        recognizer.process(image)
+            .addOnSuccessListener { continuation.resume(it) }
+            .addOnFailureListener { continuation.resume(null) }
+    }
 
     private fun extractNumberTokens(text: String): List<String> {
-        // OCR sering mengubah pemisah titik menjadi spasi atau sebaliknya.
-        // Hanya angka 1-3 digit yang diterima agar header/teks BTB tidak masuk.
+        // Tangani pemisah umum tulisan tangan/OCR: spasi, titik, koma, dash.
+        // Hanya 1-3 digit karena berat per koli pada format ini berada di rentang
+        // angka kecil, dan filter ini mengurangi teks header yang ikut terbaca.
+        val normalized = text
+            .replace('O', '0')
+            .replace('o', '0')
+            .replace('I', '1')
+            .replace('l', '1')
+            .replace('|', '1')
+            .replace('S', '5')
+            .replace('s', '5')
+            .replace('B', '8')
+            .replace('b', '8')
+
         return Regex("(?<!\\d)\\d{1,3}(?!\\d)")
-            .findAll(text)
+            .findAll(normalized)
             .map { it.value }
+            .filter { token -> token.toIntOrNull()?.let { it in 1..999 } == true }
             .toList()
+    }
+
+    private fun deduplicate(input: List<Candidate>): List<Candidate> {
+        val result = mutableListOf<Candidate>()
+        // Kandidat dari pass berbeda bisa bergeser sedikit. Toleransi ini cukup
+        // longgar untuk foto miring tetapi cukup ketat agar angka berbeda tidak
+        // digabungkan.
+        for (candidate in input.sortedWith(compareBy<Candidate> { it.y }.thenBy { it.x })) {
+            val duplicate = result.any {
+                it.value == candidate.value &&
+                    kotlin.math.abs(it.x - candidate.x) < 0.018f &&
+                    kotlin.math.abs(it.y - candidate.y) < 0.018f
+            }
+            if (!duplicate) result += candidate
+        }
+        return result
+    }
+
+    private fun buildRows(candidates: List<Candidate>): List<String> {
+        if (candidates.isEmpty()) return emptyList()
+
+        val rows = mutableListOf<MutableList<Candidate>>()
+        // Jarak antar baris BTB jauh lebih besar daripada pergeseran OCR pada satu
+        // baris. Toleransi adaptif membantu foto dari orang yang berbeda.
+        val tolerance = 0.032f
+
+        for (candidate in candidates) {
+            val row = rows.firstOrNull { existing ->
+                val avgY = existing.map { it.y }.average().toFloat()
+                kotlin.math.abs(avgY - candidate.y) <= tolerance
+            }
+            if (row == null) rows += mutableListOf(candidate) else row += candidate
+        }
+
+        return rows
+            .sortedBy { row -> row.map { it.y }.average() }
+            .map { row ->
+                row.sortedBy { it.x }
+                    .joinToString(" ") { it.value.toString() }
+            }
     }
 }
