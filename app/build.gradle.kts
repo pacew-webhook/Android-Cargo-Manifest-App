@@ -82,6 +82,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // OCR teks pada foto BTB
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Apache POI (Excel)
     implementation("org.apache.poi:poi:5.2.3")
