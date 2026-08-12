@@ -108,6 +108,13 @@ class StowingViewModel : ViewModel() {
         }
     }
 
+    /** Mengganti seluruh daftar KG dengan hasil scan BTB yang sudah dikoreksi. */
+    fun applyScannedWeights(weights: List<Double>) {
+        currentKgEntries.clear()
+        currentKgEntries.addAll(weights.filter { it > 0.0 })
+        inputKg = ""
+    }
+
     fun addKgEntry(onInvalidInput: () -> Unit) {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
