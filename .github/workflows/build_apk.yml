@@ -22,20 +22,6 @@ jobs:
           distribution: 'temurin'
           cache: gradle
 
-      - name: Diagnose Repository
-        run: |
-          echo "===== CURRENT DIRECTORY ====="
-          pwd
-
-          echo "===== ROOT FILES ====="
-          ls -la
-
-          echo "===== FIND GRADLEW ====="
-          find . -type f -name "gradlew" -print
-
-          echo "===== GIT STATUS ====="
-          git status --short
-
       - name: Verify Gradle Wrapper
         run: |
           test -f ./gradlew
