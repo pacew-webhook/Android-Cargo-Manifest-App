@@ -67,6 +67,7 @@ fun StowingInputScreen(
     var showScanResultDialog by remember { mutableStateOf(false) }
     var scannedWeightsText by remember { mutableStateOf("") }
     var scanRawText by remember { mutableStateOf("") }
+    var scanRowsText by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
 
     suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
@@ -90,6 +91,7 @@ fun StowingInputScreen(
                     if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
                 }
                 scanRawText = result.rawText
+                scanRowsText = result.rows.mapIndexed { index, row -> "Baris ${index + 1}: ${if (row.isBlank()) "(tidak terbaca)" else row}" }.joinToString("\n")
                 showScanResultDialog = true
             }
         } catch (e: Exception) {
@@ -197,13 +199,23 @@ fun StowingInputScreen(
                         maxLines = 8,
                         modifier = Modifier.fillMaxWidth()
                     )
-                    if (scanRawText.isNotBlank()) {
+                    if (scanRowsText.isNotBlank()) {
                         Text(
-                            "OCR mendeteksi ${scannedWeightsText.split(",").map { it.trim() }.count { it.toDoubleOrNull() != null }} kandidat angka.",
+                            "Hasil per baris (untuk mengecek angka yang hilang):",
                             fontSize = 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            scanRowsText,
+                            fontSize = 10.sp,
                             color = Color.Gray
                         )
                     }
+                    Text(
+                        "OCR tulisan tangan tetap dapat salah. Periksa semua angka sebelum menekan Gunakan Hasil.",
+                        fontSize = 11.sp,
+                        color = Color(0xFFB00020)
+                    )
                 }
             },
             confirmButton = {
