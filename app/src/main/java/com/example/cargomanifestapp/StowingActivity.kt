@@ -20,7 +20,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
@@ -442,7 +441,7 @@ fun StowingInputScreen(
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
                     ) {
-                        Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Scan BTB")
+                        Text("📷", fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(4.dp))
                         Text(if (scanBusy) "Scan..." else "Scan BTB")
                     }
