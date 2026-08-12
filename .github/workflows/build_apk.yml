@@ -28,11 +28,11 @@ jobs:
           test -f ./gradle/wrapper/gradle-wrapper.jar
           test -f ./gradle/wrapper/gradle-wrapper.properties
 
-      - name: Make gradlew executable
+      - name: Make Gradle Wrapper executable
         run: chmod +x ./gradlew
 
-      - name: Show Gradle Version
-        run: ./gradlew --version
+      - name: Clear Gradle 8.2 distribution cache
+        run: rm -rf "$HOME/.gradle/wrapper/dists/gradle-8.2-bin"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
