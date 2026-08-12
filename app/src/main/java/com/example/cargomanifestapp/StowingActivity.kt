@@ -1,5 +1,6 @@
 package com.example.cargomanifestapp
 
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -19,6 +20,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
@@ -35,6 +37,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,6 +62,60 @@ fun StowingInputScreen(
     viewModel: StowingViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scanScope = rememberCoroutineScope()
+
+    var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
+    var showScanResultDialog by remember { mutableStateOf(false) }
+    var scannedWeightsText by remember { mutableStateOf("") }
+    var scanRawText by remember { mutableStateOf("") }
+    var scanBusy by remember { mutableStateOf(false) }
+
+    val scanCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = pendingScanUri
+        pendingScanUri = null
+
+        if (!success || uri == null) {
+            if (uri != null) BtbPhotoStorage.deletePhoto(context, uri.toString())
+            return@rememberLauncherForActivityResult
+        }
+
+        scanBusy = true
+        scanScope.launch {
+            try {
+                val result = BtbOcrScanner.scanAndDeleteTemp(context, uri)
+                if (result.weights.isEmpty()) {
+                    Toast.makeText(
+                        context,
+                        "Angka KG belum terbaca. Coba foto lebih dekat dan lurus.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    scannedWeightsText = result.weights.joinToString(", ") {
+                        if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+                    }
+                    scanRawText = result.rawText
+                    showScanResultDialog = true
+                }
+            } catch (e: Exception) {
+                Toast.makeText(
+                    context,
+                    "Gagal membaca BTB: ${e.localizedMessage ?: "OCR error"}",
+                    Toast.LENGTH_LONG
+                ).show()
+            } finally {
+                scanBusy = false
+            }
+        }
+    }
+
+    fun scanBtbFromCamera() {
+        if (scanBusy) return
+        val uri = BtbPhotoStorage.createPhotoUri(context)
+        pendingScanUri = uri
+        scanCameraLauncher.launch(uri)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.loadCargoListFromPrefs(context)
@@ -81,6 +138,70 @@ fun StowingInputScreen(
         viewModel.cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
         }.groupBy { it.second.noPag }
+    }
+
+    // --- DIALOG HASIL SCAN BTB ---
+    if (showScanResultDialog) {
+        AlertDialog(
+            onDismissRequest = { showScanResultDialog = false },
+            title = {
+                Text("Hasil Scan BTB", fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "Periksa angka di bawah. Jika ada yang salah, koreksi sebelum memasukkan ke Form Stowing.",
+                        fontSize = 12.sp
+                    )
+                    OutlinedTextField(
+                        value = scannedWeightsText,
+                        onValueChange = { scannedWeightsText = it },
+                        label = { Text("KG per koli") },
+                        placeholder = { Text("51, 51, 20, 51, 51, ...") },
+                        minLines = 4,
+                        maxLines = 8,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    if (scanRawText.isNotBlank()) {
+                        Text(
+                            "OCR mendeteksi ${scannedWeightsText.split(",").map { it.trim() }.count { it.toDoubleOrNull() != null }} kandidat angka.",
+                            fontSize = 11.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val values = scannedWeightsText
+                            .replace("\n", ",")
+                            .split(",", ";", " ", "\n")
+                            .mapNotNull { it.trim().toDoubleOrNull() }
+                            .filter { it > 0.0 }
+
+                        if (values.isEmpty()) {
+                            Toast.makeText(context, "Tidak ada angka KG yang valid.", Toast.LENGTH_SHORT).show()
+                        } else {
+                            viewModel.applyScannedWeights(values)
+                            showScanResultDialog = false
+                            Toast.makeText(
+                                context,
+                                "${values.size} koli dimasukkan ke Rincian Input KG",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                ) {
+                    Text("Gunakan Hasil")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showScanResultDialog = false }) {
+                    Text("Batal")
+                }
+            }
+        )
     }
 
     // --- POP-UP DIALOG KONFIRMASI DELETE ---
@@ -314,6 +435,17 @@ fun StowingInputScreen(
                         }),
                         modifier = Modifier.weight(1f)
                     )
+
+                    Button(
+                        onClick = { scanBtbFromCamera() },
+                        enabled = !scanBusy,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.CameraAlt, contentDescription = "Scan BTB")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(if (scanBusy) "Scan..." else "Scan BTB")
+                    }
 
                     Button(
                         onClick = {
