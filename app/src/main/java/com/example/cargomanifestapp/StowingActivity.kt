@@ -205,10 +205,10 @@ fun StowingInputScreen(
                         .count { it.trim().toDoubleOrNull()?.let { value -> value > 0.0 } == true }
 
                     Text(
-                        if (detectedCount == 48) "✓ Terdeteksi 48 koli" else "⚠ Terdeteksi $detectedCount koli — target BTB contoh: 48 koli",
+                        if (detectedCount > 0) "Terdeteksi $detectedCount koli" else "⚠ Belum ada koli yang terbaca",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
-                        color = if (detectedCount == 48) Color(0xFF2E7D32) else Color(0xFFB00020)
+                        color = if (detectedCount > 0) Color(0xFF2E7D32) else Color(0xFFB00020)
                     )
 
                     if (scanRowsText.isNotBlank()) {
