@@ -26,6 +26,17 @@ jobs:
         with:
           gradle-version: '8.2'
 
+      - name: Verify Scan BTB sources
+        shell: bash
+        run: |
+          set -e
+          if grep -RIn --exclude-dir=.git --include='*.kt' 'CameraAlt\|Icons\.Filled\.CameraAlt\|material\.icons\.filled\.CameraAlt' app/src/main/java; then
+            echo 'ERROR: Legacy CameraAlt reference found in Kotlin sources.'
+            exit 1
+          fi
+          grep -RIn --include='*.kt' 'fun applyScannedWeights' app/src/main/java/com/example/cargomanifestapp/StowingViewModel.kt
+          test -f app/src/main/java/com/example/cargomanifestapp/BtbOcrScanner.kt
+
       - name: Build Debug APK
         run: gradle assembleDebug --stacktrace
 
