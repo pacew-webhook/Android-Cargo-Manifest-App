@@ -20,6 +20,10 @@ class StowingViewModel : ViewModel() {
         private set
     var customer by mutableStateOf("")
         private set
+    var description by mutableStateOf("")
+        private set
+    var pti by mutableStateOf("")
+        private set
     var inputKg by mutableStateOf("")
         private set
 
@@ -42,7 +46,7 @@ class StowingViewModel : ViewModel() {
 
     // --- DERIVED STATES ---
     val existingPags: List<String>
-        get() = cargoList.map { it.noPag }.distinct()
+        get() = cargoList.map { it.noPag }.filter { it.isNotBlank() }.distinct()
 
     val currentActiveEntries: List<Double>
         get() = currentKgEntries.filterNotNull()
@@ -53,10 +57,12 @@ class StowingViewModel : ViewModel() {
     // --- SETTER UNTUK INPUT UI ---
     fun updateNoPag(value: String) { noPag = value.uppercase() }
     fun updateCustomer(value: String) { customer = value.uppercase() }
+    fun updateDescription(value: String) { description = value.uppercase() }
+    fun updatePti(value: String) { pti = value.uppercase() }
     fun updateInputKg(value: String) { inputKg = value }
     fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
 
-    // --- LOCAL STORAGE (SharedPreferences) ---
+    // --- LOCAL STORAGE ---
     fun saveCargoListToPrefs(context: Context) {
         val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
         val jsonArray = JSONArray()
@@ -64,6 +70,8 @@ class StowingViewModel : ViewModel() {
             val obj = JSONObject().apply {
                 put("noPag", item.noPag)
                 put("customer", item.customer)
+                put("description", item.description)
+                put("pti", item.pti)
                 put("pcsQty", item.pcsQty)
                 put("weight", item.weight)
                 put("subTotal", item.subTotal)
@@ -83,11 +91,13 @@ class StowingViewModel : ViewModel() {
                 val obj = jsonArray.getJSONObject(i)
                 list.add(
                     CargoItem(
-                        noPag = obj.getString("noPag"),
-                        customer = obj.getString("customer"),
-                        pcsQty = obj.getString("pcsQty"),
-                        weight = obj.getString("weight"),
-                        subTotal = obj.getString("subTotal")
+                        noPag = obj.optString("noPag"),
+                        customer = obj.optString("customer"),
+                        description = obj.optString("description"),
+                        pti = obj.optString("pti"),
+                        pcsQty = obj.optString("pcsQty"),
+                        weight = obj.optString("weight"),
+                        subTotal = obj.optString("subTotal")
                     )
                 )
             }
@@ -98,25 +108,19 @@ class StowingViewModel : ViewModel() {
         }
     }
 
-    // --- LOGIKA BISNIS ---
     fun addKgEntry(onInvalidInput: () -> Unit) {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
             val emptyIndex = currentKgEntries.indexOfFirst { it == null }
-            if (emptyIndex != -1) {
-                currentKgEntries[emptyIndex] = kgVal
-            } else {
-                currentKgEntries.add(kgVal)
-            }
+            if (emptyIndex != -1) currentKgEntries[emptyIndex] = kgVal
+            else currentKgEntries.add(kgVal)
             inputKg = ""
-        } else {
-            onInvalidInput()
-        }
+        } else onInvalidInput()
     }
 
     fun saveCargoItem(context: Context, onSuccess: (String) -> Unit, onError: (String) -> Unit) {
-        if (noPag.isBlank() || customer.isBlank()) {
-            onError("Mohon isi NO PAG dan Customer")
+        if (noPag.isBlank() || customer.isBlank() || description.isBlank()) {
+            onError("Mohon isi NO PAG, Customer dan Description")
             return
         }
         if (currentActiveEntries.isEmpty()) {
@@ -127,16 +131,13 @@ class StowingViewModel : ViewModel() {
         val formattedWeightList = currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
-
-        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) {
-            currentTotalKg.toInt().toString()
-        } else {
-            currentTotalKg.toString()
-        }
+        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) currentTotalKg.toInt().toString() else currentTotalKg.toString()
 
         val newItem = CargoItem(
             noPag = noPag.trim(),
             customer = customer.trim(),
+            description = description.trim(),
+            pti = pti.trim(),
             pcsQty = currentActiveEntries.size.toString(),
             weight = formattedWeightList,
             subTotal = formattedTotalKg
@@ -150,7 +151,6 @@ class StowingViewModel : ViewModel() {
             cargoList.add(0, newItem)
             onSuccess("Data berhasil disimpan!")
         }
-
         saveCargoListToPrefs(context)
         resetForm()
     }
@@ -159,11 +159,11 @@ class StowingViewModel : ViewModel() {
         editingIndex = indexInOriginalList
         noPag = item.noPag
         customer = item.customer
+        description = item.description
+        pti = item.pti
         inputKg = ""
         currentKgEntries.clear()
-
-        val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
-        currentKgEntries.addAll(parsedKgList)
+        currentKgEntries.addAll(item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() })
     }
 
     fun cancelEdit() {
@@ -174,12 +174,13 @@ class StowingViewModel : ViewModel() {
     private fun resetForm() {
         noPag = ""
         customer = ""
+        description = ""
+        pti = ""
         inputKg = ""
         currentKgEntries.clear()
         editingIndex = null
     }
 
-    // --- MANAJEMEN DIALOG HAPUS ---
     fun showDeleteDialog(type: DeleteType, itemIdx: Int? = null, kgIdx: Int? = null) {
         deleteType = type
         itemIndexToDelete = itemIdx
@@ -212,12 +213,10 @@ class StowingViewModel : ViewModel() {
             }
             DeleteType.KG_ENTRY -> {
                 kgIndexToDelete?.let { idx ->
-                    if (idx in currentKgEntries.indices) {
-                        currentKgEntries[idx] = null
-                    }
+                    if (idx in currentKgEntries.indices) currentKgEntries[idx] = null
                 }
             }
-            DeleteType.NONE -> {}
+            DeleteType.NONE -> Unit
         }
         dismissDeleteDialog()
     }

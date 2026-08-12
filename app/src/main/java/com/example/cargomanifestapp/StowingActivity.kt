@@ -69,7 +69,7 @@ fun StowingInputScreen(
     ) { uri ->
         uri?.let {
             try {
-                ExcelUtils.writeCargoListToExcel(context, it, viewModel.cargoList)
+                ExcelUtils.writeCombinedCargoWorkbook(context, it, viewModel.cargoList)
                 Toast.makeText(context, "Export Berhasil!", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -154,12 +154,12 @@ fun StowingInputScreen(
 
                 IconButton(onClick = {
                     if (viewModel.cargoList.isNotEmpty()) {
-                        exportLauncher.launch("Stowing_Report_${System.currentTimeMillis()}.xlsx")
+                        exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
                     } else {
                         Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
                     }
                 }) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export Excel", tint = Color(0xFF2E7D32))
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export 1 Excel", tint = Color(0xFF2E7D32))
                 }
             }
         }
@@ -179,7 +179,7 @@ fun StowingInputScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (viewModel.editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer & KG",
+                        text = if (viewModel.editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer, Description & KG",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = if (viewModel.editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
@@ -249,6 +249,38 @@ fun StowingInputScreen(
                         onValueChange = { viewModel.updateCustomer(it) },
                         label = { Text("Customer") },
                         placeholder = { Text("ULIN") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = viewModel.description,
+                        onValueChange = { viewModel.updateDescription(it) },
+                        label = { Text("Description") },
+                        placeholder = { Text("PINANG") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = viewModel.pti,
+                        onValueChange = { viewModel.updatePti(it) },
+                        label = { Text("PTI (opsional)") },
+                        placeholder = { Text("KAL004391") },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(
                             capitalization = KeyboardCapitalization.Characters,
