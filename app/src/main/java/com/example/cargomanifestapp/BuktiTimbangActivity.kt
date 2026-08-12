@@ -430,7 +430,13 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                     photoUris = editingPhotos
                                 )
 
-                                btbViewModel.save(formData) {
+                                val newPhotoSet = editingPhotos.toSet()
+                                btbViewModel.save(formData) { oldPhotoUris ->
+                                    // Hapus file lama yang sudah tidak direferensikan oleh BTB.
+                                    oldPhotoUris
+                                        .filterNot { it in newPhotoSet }
+                                        .forEach { BtbPhotoStorage.deletePhoto(context, it) }
+
                                     resetForm()
                                     customerFocus.requestFocus()
                                     Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
@@ -481,8 +487,8 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
                             }
                             IconButton(onClick = {
-                                btb.photoUris.forEach { BtbPhotoStorage.deletePhoto(context, it) }
-                                btbViewModel.delete(btb.id) {
+                                btbViewModel.delete(btb.id) { oldPhotoUris ->
+                                    BtbPhotoStorage.deletePhotos(context, oldPhotoUris)
                                     if (editingId == btb.id) resetForm()
                                 }
                             }) {

@@ -11,13 +11,20 @@ class BtbViewModel(private val repository: BtbRepository) : ViewModel() {
     val btbs = repository.observeBtbs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun save(data: BtbFormData, onDone: () -> Unit = {}) {
+    fun save(
+        data: BtbFormData,
+        onDone: (oldPhotoUris: List<String>) -> Unit = {}
+    ) {
         viewModelScope.launch {
             val weights = JSONArray()
             data.daftarTimbangan.forEach { weights.put(it) }
+
+            // photoUrisJson dipertahankan untuk kompatibilitas data lama.
+            // Sumber relasi foto tetap btb_photo_table.
             val photos = JSONArray()
             data.photoUris.forEach { photos.put(it) }
-            repository.save(
+
+            val oldPhotos = repository.save(
                 BtbEntity(
                     id = data.id,
                     hariTanggal = data.hariTanggal,
@@ -29,14 +36,17 @@ class BtbViewModel(private val repository: BtbRepository) : ViewModel() {
                 ),
                 data.photoUris
             )
-            onDone()
+            onDone(oldPhotos)
         }
     }
 
-    fun delete(id: String, onDone: () -> Unit = {}) {
+    fun delete(
+        id: String,
+        onDone: (oldPhotoUris: List<String>) -> Unit = {}
+    ) {
         viewModelScope.launch {
-            repository.delete(id)
-            onDone()
+            val oldPhotos = repository.delete(id)
+            onDone(oldPhotos)
         }
     }
 }
