@@ -1,6 +1,5 @@
 package com.example.cargomanifestapp
 
-import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -35,8 +34,7 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import org.json.JSONArray
-import org.json.JSONObject
+import androidx.lifecycle.viewmodel.compose.viewModel
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -54,91 +52,16 @@ class StowingActivity : ComponentActivity() {
     }
 }
 
-// --- HELPER UNTUK AUTO-SAVE & LOAD LOCAL STORAGE ---
-private fun saveCargoListToPrefs(context: Context, list: List<CargoItem>) {
-    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
-    val jsonArray = JSONArray()
-    for (item in list) {
-        val obj = JSONObject().apply {
-            put("noPag", item.noPag)
-            put("customer", item.customer)
-            put("pcsQty", item.pcsQty)
-            put("weight", item.weight)
-            put("subTotal", item.subTotal)
-        }
-        jsonArray.put(obj)
-    }
-    prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
-}
-
-private fun loadCargoListFromPrefs(context: Context): List<CargoItem> {
-    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
-    val jsonString = prefs.getString("saved_cargo_list", null) ?: return emptyList()
-    val list = mutableListOf<CargoItem>()
-    try {
-        val jsonArray = JSONArray(jsonString)
-        for (i in 0 until jsonArray.length()) {
-            val obj = jsonArray.getJSONObject(i)
-            list.add(
-                CargoItem(
-                    noPag = obj.getString("noPag"),
-                    customer = obj.getString("customer"),
-                    pcsQty = obj.getString("pcsQty"),
-                    weight = obj.getString("weight"),
-                    subTotal = obj.getString("subTotal")
-                )
-            )
-        }
-    } catch (e: Exception) {
-        e.printStackTrace()
-    }
-    return list
-}
-
-private enum class DeleteType {
-    NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StowingInputScreen(onBack: () -> Unit) {
+fun StowingInputScreen(
+    onBack: () -> Unit,
+    viewModel: StowingViewModel = viewModel()
+) {
     val context = LocalContext.current
 
-    // State Form Input
-    var noPag by remember { mutableStateOf("") }
-    var customer by remember { mutableStateOf("") }
-    var inputKg by remember { mutableStateOf("") }
-
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
-
-    val cargoList = remember { mutableStateListOf<CargoItem>() }
-    
-    // State untuk Dropdown Menu (List Pemintal) NO PAG
-    var expandedPag by remember { mutableStateOf(false) }
-    val existingPags = remember(cargoList.toList()) {
-        cargoList.map { it.noPag }.distinct()
-    }
-    
-    // Menggunakan Double? agar item yang dihapus bernilai null (posisi tetap ada, tetapi kosong)
-    val currentKgEntries = remember { mutableStateListOf<Double?>() }
-    
-    // Total KG hanya menghitung item yang aktif (tidak null)
-    val currentActiveEntries = currentKgEntries.filterNotNull()
-    val currentTotalKg = currentActiveEntries.sum()
-
-    // State Dialog Hapus
-    var deleteType by remember { mutableStateOf(DeleteType.NONE) }
-    var itemIndexToDelete by remember { mutableStateOf<Int?>(null) }
-    var kgIndexToDelete by remember { mutableStateOf<Int?>(null) }
-
     LaunchedEffect(Unit) {
-        val savedData = loadCargoListFromPrefs(context)
-        cargoList.clear()
-        cargoList.addAll(savedData)
-    }
-
-    fun updateAndSaveCargoList() {
-        saveCargoListToPrefs(context, cargoList.toList())
+        viewModel.loadCargoListFromPrefs(context)
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -146,7 +69,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
     ) { uri ->
         uri?.let {
             try {
-                ExcelUtils.writeCargoListToExcel(context, it, cargoList)
+                ExcelUtils.writeCargoListToExcel(context, it, viewModel.cargoList)
                 Toast.makeText(context, "Export Berhasil!", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -154,97 +77,19 @@ fun StowingInputScreen(onBack: () -> Unit) {
         }
     }
 
-    // --- LOGIKA MENAMBAH ITEM (Mengisi Kotak Kosong Terlebih Dahulu) ---
-    fun addKgEntry() {
-        val kgVal = inputKg.toDoubleOrNull()
-        if (kgVal != null && kgVal > 0) {
-            val emptyIndex = currentKgEntries.indexOfFirst { it == null }
-            if (emptyIndex != -1) {
-                currentKgEntries[emptyIndex] = kgVal
-            } else {
-                currentKgEntries.add(kgVal)
-            }
-            inputKg = ""
-        } else {
-            Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    fun saveCargoItem() {
-        if (noPag.isBlank() || customer.isBlank()) {
-            Toast.makeText(context, "Mohon isi NO PAG dan Customer", Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (currentActiveEntries.isEmpty()) {
-            Toast.makeText(context, "Masukkan minimal 1 nilai KG", Toast.LENGTH_SHORT).show()
-            return
-        }
-
-        val formattedWeightList = currentActiveEntries.joinToString(", ") {
-            if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
-        }
-
-        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) {
-            currentTotalKg.toInt().toString()
-        } else {
-            currentTotalKg.toString()
-        }
-
-        val newItem = CargoItem(
-            noPag = noPag.uppercase().trim(),
-            customer = customer.uppercase().trim(),
-            pcsQty = currentActiveEntries.size.toString(),
-            weight = formattedWeightList,
-            subTotal = formattedTotalKg
-        )
-
-        val index = editingIndex
-        if (index != null && index in cargoList.indices) {
-            cargoList[index] = newItem
-            Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
-        } else {
-            cargoList.add(0, newItem)
-            Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
-        }
-
-        updateAndSaveCargoList()
-
-        // Reset Form
-        noPag = ""
-        customer = ""
-        inputKg = ""
-        currentKgEntries.clear()
-        editingIndex = null
-    }
-
-    fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
-        editingIndex = indexInOriginalList
-        noPag = item.noPag
-        customer = item.customer
-        inputKg = ""
-        currentKgEntries.clear()
-
-        val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
-        currentKgEntries.addAll(parsedKgList)
-    }
-
-    val groupedCargo = remember(cargoList.toList()) {
-        cargoList.mapIndexed { originalIndex, item ->
+    val groupedCargo = remember(viewModel.cargoList.toList()) {
+        viewModel.cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
         }.groupBy { it.second.noPag }
     }
 
     // --- POP-UP DIALOG KONFIRMASI DELETE ---
-    if (deleteType != DeleteType.NONE) {
+    if (viewModel.deleteType != DeleteType.NONE) {
         AlertDialog(
-            onDismissRequest = {
-                deleteType = DeleteType.NONE
-                itemIndexToDelete = null
-                kgIndexToDelete = null
-            },
+            onDismissRequest = { viewModel.dismissDeleteDialog() },
             title = { Text("Konfirmasi Hapus", fontWeight = FontWeight.Bold) },
             text = {
-                val message = when (deleteType) {
+                val message = when (viewModel.deleteType) {
                     DeleteType.RESET_ALL -> "Apakah Anda yakin ingin menghapus SELURUH data stowing?"
                     DeleteType.CARGO_ITEM -> "Apakah Anda yakin ingin menghapus data customer ini?"
                     DeleteType.KG_ENTRY -> "Apakah Anda yakin ingin menghapus pecahan KG ini?"
@@ -255,58 +100,16 @@ fun StowingInputScreen(onBack: () -> Unit) {
             confirmButton = {
                 TextButton(
                     onClick = {
-                        when (deleteType) {
-                            DeleteType.RESET_ALL -> {
-                                cargoList.clear()
-                                updateAndSaveCargoList()
-                                editingIndex = null
-                                noPag = ""
-                                customer = ""
-                                inputKg = ""
-                                currentKgEntries.clear()
-                                Toast.makeText(context, "Semua data berhasil dihapus", Toast.LENGTH_SHORT).show()
-                            }
-                            DeleteType.CARGO_ITEM -> {
-                                itemIndexToDelete?.let { idx ->
-                                    if (idx in cargoList.indices) {
-                                        if (editingIndex == idx) {
-                                            editingIndex = null
-                                            noPag = ""
-                                            customer = ""
-                                            inputKg = ""
-                                            currentKgEntries.clear()
-                                        }
-                                        cargoList.removeAt(idx)
-                                        updateAndSaveCargoList()
-                                        Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
-                                    }
-                                }
-                            }
-                            DeleteType.KG_ENTRY -> {
-                                kgIndexToDelete?.let { idx ->
-                                    if (idx in currentKgEntries.indices) {
-                                        currentKgEntries[idx] = null
-                                    }
-                                }
-                            }
-                            DeleteType.NONE -> {}
+                        viewModel.confirmDelete(context) { message ->
+                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                         }
-                        deleteType = DeleteType.NONE
-                        itemIndexToDelete = null
-                        kgIndexToDelete = null
                     }
                 ) {
                     Text("Hapus", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(
-                    onClick = {
-                        deleteType = DeleteType.NONE
-                        itemIndexToDelete = null
-                        kgIndexToDelete = null
-                    }
-                ) {
+                TextButton(onClick = { viewModel.dismissDeleteDialog() }) {
                     Text("Batal")
                 }
             }
@@ -343,30 +146,20 @@ fun StowingInputScreen(onBack: () -> Unit) {
             }
 
             Row {
-                if (cargoList.isNotEmpty()) {
-                    IconButton(onClick = {
-                        deleteType = DeleteType.RESET_ALL
-                    }) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Reset Data",
-                            tint = Color.Red
-                        )
+                if (viewModel.cargoList.isNotEmpty()) {
+                    IconButton(onClick = { viewModel.showDeleteDialog(DeleteType.RESET_ALL) }) {
+                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Reset Data", tint = Color.Red)
                     }
                 }
 
                 IconButton(onClick = {
-                    if (cargoList.isNotEmpty()) {
+                    if (viewModel.cargoList.isNotEmpty()) {
                         exportLauncher.launch("Stowing_Report_${System.currentTimeMillis()}.xlsx")
                     } else {
                         Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
                     }
                 }) {
-                    Icon(
-                        imageVector = Icons.Default.Share,
-                        contentDescription = "Export Excel",
-                        tint = Color(0xFF2E7D32)
-                    )
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export Excel", tint = Color(0xFF2E7D32))
                 }
             }
         }
@@ -375,7 +168,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = if (editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)
+                containerColor = if (viewModel.editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)
             ),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -386,20 +179,14 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer & KG",
+                        text = if (viewModel.editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer & KG",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
+                        color = if (viewModel.editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
                     )
 
-                    if (editingIndex != null) {
-                        TextButton(onClick = {
-                            editingIndex = null
-                            noPag = ""
-                            customer = ""
-                            inputKg = ""
-                            currentKgEntries.clear()
-                        }) {
+                    if (viewModel.editingIndex != null) {
+                        TextButton(onClick = { viewModel.cancelEdit() }) {
                             Text("Batal Edit", color = Color.Red, fontSize = 12.sp)
                         }
                     }
@@ -411,37 +198,32 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    // --- KONDISI NO PAG: MENJADI LIST PEMINTAL (DROPDOWN) JIKA SUDAH PERNAH DIISI ---
-                    if (existingPags.isNotEmpty()) {
+                    if (viewModel.existingPags.isNotEmpty()) {
                         ExposedDropdownMenuBox(
-                            expanded = expandedPag,
-                            onExpandedChange = { expandedPag = !expandedPag },
+                            expanded = viewModel.expandedPag,
+                            onExpandedChange = { viewModel.setExpandedPag(!viewModel.expandedPag) },
                             modifier = Modifier.weight(1f)
                         ) {
                             OutlinedTextField(
-                                value = noPag,
-                                onValueChange = { noPag = it.uppercase() },
+                                value = viewModel.noPag,
+                                onValueChange = { viewModel.updateNoPag(it) },
                                 label = { Text("NO PAG") },
                                 placeholder = { Text("Pilih / Ketik PAG") },
                                 singleLine = true,
-                                trailingIcon = {
-                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPag)
-                                },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPag) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                modifier = Modifier
-                                    .menuAnchor()
-                                    .fillMaxWidth()
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
                             )
                             ExposedDropdownMenu(
-                                expanded = expandedPag,
-                                onDismissRequest = { expandedPag = false }
+                                expanded = viewModel.expandedPag,
+                                onDismissRequest = { viewModel.setExpandedPag(false) }
                             ) {
-                                existingPags.forEach { pag ->
+                                viewModel.existingPags.forEach { pag ->
                                     DropdownMenuItem(
                                         text = { Text(pag) },
                                         onClick = {
-                                            noPag = pag
-                                            expandedPag = false
+                                            viewModel.updateNoPag(pag)
+                                            viewModel.setExpandedPag(false)
                                         }
                                     )
                                 }
@@ -449,8 +231,8 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         }
                     } else {
                         OutlinedTextField(
-                            value = noPag,
-                            onValueChange = { noPag = it.uppercase() },
+                            value = viewModel.noPag,
+                            onValueChange = { viewModel.updateNoPag(it) },
                             label = { Text("NO PAG") },
                             placeholder = { Text("001 MYI") },
                             singleLine = true,
@@ -463,8 +245,8 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     }
 
                     OutlinedTextField(
-                        value = customer,
-                        onValueChange = { customer = it.uppercase() },
+                        value = viewModel.customer,
+                        onValueChange = { viewModel.updateCustomer(it) },
                         label = { Text("Customer") },
                         placeholder = { Text("ULIN") },
                         singleLine = true,
@@ -484,8 +266,8 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
-                        value = inputKg,
-                        onValueChange = { inputKg = it },
+                        value = viewModel.inputKg,
+                        onValueChange = { viewModel.updateInputKg(it) },
                         label = { Text("Input Berat (KG)") },
                         placeholder = { Text("10") },
                         singleLine = true,
@@ -493,12 +275,20 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             keyboardType = KeyboardType.Number,
                             imeAction = ImeAction.Done
                         ),
-                        keyboardActions = KeyboardActions(onDone = { addKgEntry() }),
+                        keyboardActions = KeyboardActions(onDone = {
+                            viewModel.addKgEntry {
+                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
+                            }
+                        }),
                         modifier = Modifier.weight(1f)
                     )
 
                     Button(
-                        onClick = { addKgEntry() },
+                        onClick = {
+                            viewModel.addKgEntry {
+                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
+                            }
+                        },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
                     ) {
@@ -511,9 +301,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // --- RINCIAN INPUT KG ---
-                if (currentKgEntries.isNotEmpty()) {
+                if (viewModel.currentKgEntries.isNotEmpty()) {
                     Text(
-                        text = "Rincian Input KG (${currentActiveEntries.size} Koli):",
+                        text = "Rincian Input KG (${viewModel.currentActiveEntries.size} Koli):",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -521,20 +311,15 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(5),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 140.dp),
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        itemsIndexed(currentKgEntries) { index, itemVal ->
+                        itemsIndexed(viewModel.currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
                                 Box(
                                     modifier = Modifier
-                                        .background(
-                                            Color(0xFFE8DEF8),
-                                            shape = RoundedCornerShape(6.dp)
-                                        )
+                                        .background(Color(0xFFE8DEF8), shape = RoundedCornerShape(6.dp))
                                         .padding(vertical = 4.dp, horizontal = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -549,26 +334,15 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                             fontWeight = FontWeight.Bold
                                         )
                                         IconButton(
-                                            onClick = {
-                                                kgIndexToDelete = index
-                                                deleteType = DeleteType.KG_ENTRY
-                                            },
+                                            onClick = { viewModel.showDeleteDialog(DeleteType.KG_ENTRY, kgIdx = index) },
                                             modifier = Modifier.size(14.dp)
                                         ) {
-                                            Icon(
-                                                imageVector = Icons.Default.Delete,
-                                                contentDescription = "Hapus",
-                                                tint = Color.Red
-                                            )
+                                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
                                         }
                                     }
                                 }
                             } else {
-                                Box(
-                                    modifier = Modifier
-                                        .height(28.dp)
-                                        .fillMaxWidth()
-                                )
+                                Box(modifier = Modifier.height(28.dp).fillMaxWidth())
                             }
                         }
                     }
@@ -583,14 +357,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        Text(text = "TOTAL KG:", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         Text(
-                            text = "TOTAL KG:",
-                            color = Color.White,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            text = if (currentTotalKg % 1.0 == 0.0) "${currentTotalKg.toInt()} KG" else "$currentTotalKg KG",
+                            text = if (viewModel.currentTotalKg % 1.0 == 0.0) "${viewModel.currentTotalKg.toInt()} KG" else "${viewModel.currentTotalKg} KG",
                             color = Color.Yellow,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 16.sp
@@ -601,15 +370,21 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 }
 
                 Button(
-                    onClick = { saveCargoItem() },
+                    onClick = {
+                        viewModel.saveCargoItem(
+                            context = context,
+                            onSuccess = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
+                            onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
+                        )
+                    },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF2E7D32)
+                        containerColor = if (viewModel.editingIndex != null) Color(0xFFE65100) else Color(0xFF2E7D32)
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = if (editingIndex != null) "Update Data Stowing" else "Simpan ke Cargo Table",
+                        text = if (viewModel.editingIndex != null) "Update Data Stowing" else "Simpan ke Cargo Table",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -618,9 +393,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGO TERGROUPING ---
-        val grandTotalKg = cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
-        val grandTotalKoli = cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
+       // --- DAFTAR CARGO TERGROUPING ---
+        val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        val grandTotalKoli = viewModel.cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
 
         val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
             grandTotalKg.toLong().toString()
@@ -629,9 +404,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
         }
 
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -642,11 +415,8 @@ fun StowingInputScreen(onBack: () -> Unit) {
                 color = Color(0xFF381E72)
             )
 
-            if (cargoList.isNotEmpty()) {
-                Surface(
-                    color = Color(0xFF2E7D32),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
+            if (viewModel.cargoList.isNotEmpty()) {
+                Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
                     Text(
                         text = "Total: $formattedGrandTotal KG ($grandTotalKoli Koli)",
                         color = Color.White,
@@ -684,17 +454,9 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            text = "NO PAG: $pagKey",
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
-                            color = Color(0xFF381E72)
-                        )
+                        Text(text = "NO PAG: $pagKey", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF381E72))
 
-                        HorizontalDivider(
-                            modifier = Modifier.padding(vertical = 8.dp),
-                            color = Color.LightGray
-                        )
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
 
                         itemsInGroup.forEachIndexed { subIndex, pair ->
                             val originalIndex = pair.first
@@ -704,7 +466,7 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        if (editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
+                                        if (viewModel.editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
                                         shape = RoundedCornerShape(6.dp)
                                     )
                                     .padding(8.dp),
@@ -718,38 +480,21 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                         fontSize = 13.sp,
                                         color = Color(0xFF381E72)
                                     )
-                                    Text(
-                                        text = "KG: ${item.weight}",
-                                        fontSize = 11.sp,
-                                        color = Color.DarkGray
-                                    )
+                                    Text(text = "KG: ${item.weight}", fontSize = 11.sp, color = Color.DarkGray)
                                 }
 
                                 Row {
                                     IconButton(
-                                        onClick = { startEditCargoItem(originalIndex, item) },
+                                        onClick = { viewModel.startEditCargoItem(originalIndex, item) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Edit,
-                                            contentDescription = "Edit Data",
-                                            tint = Color(0xFF0288D1),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Data", tint = Color(0xFF0288D1), modifier = Modifier.size(18.dp))
                                     }
                                     IconButton(
-                                        onClick = {
-                                            itemIndexToDelete = originalIndex
-                                            deleteType = DeleteType.CARGO_ITEM
-                                        },
+                                        onClick = { viewModel.showDeleteDialog(DeleteType.CARGO_ITEM, itemIdx = originalIndex) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Hapus Data",
-                                            tint = Color(0xFFB3261E),
-                                            modifier = Modifier.size(18.dp)
-                                        )
+                                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus Data", tint = Color(0xFFB3261E), modifier = Modifier.size(18.dp))
                                     }
                                 }
                             }
@@ -769,22 +514,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(
-                                text = "TOTAL PAG ($groupTotalKoli Koli):",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                color = Color(0xFF1B5E20)
-                            )
-                            Text(
-                                text = "$formattedGroupKg KG",
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 14.sp,
-                                color = Color(0xFF2E7D32)
-                            )
+                            Text(text = "TOTAL PAG ($groupTotalKoli Koli):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
+                            Text(text = "$formattedGroupKg KG", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color(0xFF2E7D32))
                         }
                     }
                 }
             }
         }
     }
-} 
+}
