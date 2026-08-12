@@ -1,6 +1,7 @@
 package com.example.cargomanifestapp
 
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -38,6 +39,11 @@ fun CargoAppScreen(
     viewModel: CargoViewModel,
     onBackToMenu: () -> Unit = {}
 ) {
+    // Menangani tombol kembali fisik / gestur agar tidak langsung keluar app
+    BackHandler {
+        onBackToMenu()
+    }
+
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
     val cargoList by viewModel.cargoList.collectAsState()
@@ -503,4 +509,4 @@ fun CargoAppScreen(
             }
         }
     }
-}
+} 
