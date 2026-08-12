@@ -152,14 +152,11 @@ fun StowingInputScreen(onBack: () -> Unit) {
     fun addKgEntry() {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
-            // Cek apakah ada posisi yang kosong (null)
             val emptyIndex = currentKgEntries.indexOfFirst { it == null }
             
             if (emptyIndex != -1) {
-                // Isi posisi kosong pertama yang ditemukan (misal posisi ke-3)
                 currentKgEntries[emptyIndex] = kgVal
             } else {
-                // Jika tidak ada posisi kosong, tambahkan di posisi paling belakang
                 currentKgEntries.add(kgVal)
             }
             inputKg = ""
@@ -178,7 +175,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
             return
         }
 
-        // Hanya mengambil item KG aktif
         val formattedWeightList = currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
@@ -233,6 +229,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
         }.groupBy { it.second.noPag }
     }
 
+    // Filter daftar item berdasarkan NO PAG yang sedang diketik di form
+    val filteredItemsByPag = remember(noPag, cargoList.toList()) {
+        if (noPag.isBlank()) emptyList()
+        else cargoList.filter { it.noPag.contains(noPag.uppercase().trim()) }
+    }
+
     // --- POP-UP DIALOG KONFIRMASI DELETE ---
     if (deleteType != DeleteType.NONE) {
         AlertDialog(
@@ -284,7 +286,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             DeleteType.KG_ENTRY -> {
                                 kgIndexToDelete?.let { idx ->
                                     if (idx in currentKgEntries.indices) {
-                                        // Mengubah nilai item menjadi NULL agar posisinya tetap ada tapi tampil kosong
                                         currentKgEntries[idx] = null
                                     }
                                 }
@@ -437,6 +438,55 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     )
                 }
 
+                // --- LIST REAKTIF BERDASARKAN INPUT NO PAG ---
+                if (filteredItemsByPag.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Item Terkait untuk PAG '$noPag':",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF381E72)
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.White, shape = RoundedCornerShape(6.dp))
+                            .padding(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        filteredItemsByPag.forEach { matchedItem ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color(0xFFEFEBE9), shape = RoundedCornerShape(4.dp))
+                                    .padding(6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${matchedItem.customer} | ${matchedItem.pcsQty} Koli | ${matchedItem.subTotal} KG",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = Color.DarkGray
+                                )
+                                TextButton(
+                                    onClick = {
+                                        customer = matchedItem.customer
+                                        currentKgEntries.clear()
+                                        val parsedKg = matchedItem.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+                                        currentKgEntries.addAll(parsedKg)
+                                    },
+                                    contentPadding = PaddingValues(0.dp),
+                                    modifier = Modifier.height(20.dp)
+                                ) {
+                                    Text("Gunakan", fontSize = 10.sp, color = Color(0xFF381E72))
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
                 Row(
@@ -490,7 +540,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     ) {
                         itemsIndexed(currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
-                                // Tampilan Kotak jika ada nilai KG
                                 Box(
                                     modifier = Modifier
                                         .background(
@@ -526,7 +575,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                     }
                                 }
                             } else {
-                                // Tampilan Kotak Kosong (Mencadangkan ruang grid agar tidak bergeser)
                                 Box(
                                     modifier = Modifier
                                         .height(28.dp)
