@@ -69,6 +69,38 @@ fun StowingInputScreen(
     var scanRawText by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
 
+    suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
+        try {
+            val result = if (deleteTemp) {
+                BtbOcrScanner.scanAndDeleteTemp(context, uri)
+            } else {
+                // URI dari Galeri adalah milik aplikasi Galeri/MediaStore.
+                // Jangan dihapus setelah OCR selesai.
+                BtbOcrScanner.scan(context, uri)
+            }
+
+            if (result.weights.isEmpty()) {
+                Toast.makeText(
+                    context,
+                    "Angka KG belum terbaca. Coba pilih/foto BTB yang lebih jelas dan lurus.",
+                    Toast.LENGTH_LONG
+                ).show()
+            } else {
+                scannedWeightsText = result.weights.joinToString(", ") {
+                    if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+                }
+                scanRawText = result.rawText
+                showScanResultDialog = true
+            }
+        } catch (e: Exception) {
+            Toast.makeText(
+                context,
+                "Gagal membaca BTB: ${e.localizedMessage ?: "OCR error"}",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
     val scanCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -83,26 +115,25 @@ fun StowingInputScreen(
         scanBusy = true
         scanScope.launch {
             try {
-                val result = BtbOcrScanner.scanAndDeleteTemp(context, uri)
-                if (result.weights.isEmpty()) {
-                    Toast.makeText(
-                        context,
-                        "Angka KG belum terbaca. Coba foto lebih dekat dan lurus.",
-                        Toast.LENGTH_LONG
-                    ).show()
-                } else {
-                    scannedWeightsText = result.weights.joinToString(", ") {
-                        if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
-                    }
-                    scanRawText = result.rawText
-                    showScanResultDialog = true
-                }
-            } catch (e: Exception) {
-                Toast.makeText(
-                    context,
-                    "Gagal membaca BTB: ${e.localizedMessage ?: "OCR error"}",
-                    Toast.LENGTH_LONG
-                ).show()
+                processBtbUri(uri, deleteTemp = true)
+            } finally {
+                scanBusy = false
+            }
+        }
+    }
+
+    // Memilih foto BTB yang sudah ada di Galeri/Google Photos/File Picker.
+    // Tidak membutuhkan izin READ_EXTERNAL_STORAGE karena Android memberikan
+    // akses sementara langsung ke URI yang dipilih pengguna.
+    val scanGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri == null || scanBusy) return@rememberLauncherForActivityResult
+
+        scanBusy = true
+        scanScope.launch {
+            try {
+                processBtbUri(uri, deleteTemp = false)
             } finally {
                 scanBusy = false
             }
@@ -114,6 +145,11 @@ fun StowingInputScreen(
         val uri = BtbPhotoStorage.createPhotoUri(context)
         pendingScanUri = uri
         scanCameraLauncher.launch(uri)
+    }
+
+    fun scanBtbFromGallery() {
+        if (scanBusy) return
+        scanGalleryLauncher.launch("image/*")
     }
 
     LaunchedEffect(Unit) {
@@ -443,7 +479,18 @@ fun StowingInputScreen(
                     ) {
                         Text("📷", fontSize = 18.sp)
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (scanBusy) "Scan..." else "Scan BTB")
+                        Text(if (scanBusy) "Scan..." else "Foto BTB")
+                    }
+
+                    Button(
+                        onClick = { scanBtbFromGallery() },
+                        enabled = !scanBusy,
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                    ) {
+                        Text("🖼️", fontSize = 18.sp)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Galeri")
                     }
 
                     Button(
