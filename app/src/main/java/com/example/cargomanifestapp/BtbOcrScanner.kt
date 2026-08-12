@@ -97,17 +97,22 @@ object BtbOcrScanner {
                         rawParts += "[${spec.name}/v$variantIndex] ${result.text}"
                     }
 
-                    result.lines.forEach { line ->
+                    // ML Kit mengembalikan blok -> baris. Text tidak memiliki
+                    // property `lines` langsung, sehingga kita flatten semua baris
+                    // dari seluruh text block dan memakai boundingBox masing-masing.
+                    result.textBlocks.flatMap { it.lines }.forEach { line ->
                         val tokens = extractNumberTokens(line.text)
                         if (tokens.isEmpty()) return@forEach
+
+                        val box = line.boundingBox ?: return@forEach
 
                         // Karena ML Kit kadang mengembalikan satu bounding box untuk
                         // seluruh rangkaian "9.8.26.37.37", bagi posisi token secara
                         // proporsional agar urutan kiri-kanan tetap dapat direkonstruksi.
                         val tokenCount = tokens.size
                         tokens.forEachIndexed { index, token ->
-                            val centerX = line.left + line.width * ((index + 0.5f) / tokenCount)
-                            val centerY = line.top + line.height / 2f
+                            val centerX = box.left + box.width() * ((index + 0.5f) / tokenCount)
+                            val centerY = box.top + box.height() / 2f
                             val absoluteX = (spec.left + centerX / crop.width * (spec.right - spec.left)).coerceIn(0f, 1f)
                             val absoluteY = (spec.top + centerY / crop.height * (spec.bottom - spec.top)).coerceIn(0f, 1f)
                             candidates += Candidate(token.toInt(), absoluteX, absoluteY, spec.name)
