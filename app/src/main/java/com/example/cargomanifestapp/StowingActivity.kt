@@ -113,6 +113,12 @@ fun StowingInputScreen(onBack: () -> Unit) {
 
     val cargoList = remember { mutableStateListOf<CargoItem>() }
     
+    // State untuk Dropdown Menu (List Pemintal) NO PAG
+    var expandedPag by remember { mutableStateOf(false) }
+    val existingPags = remember(cargoList.toList()) {
+        cargoList.map { it.noPag }.distinct()
+    }
+    
     // Menggunakan Double? agar item yang dihapus bernilai null (posisi tetap ada, tetapi kosong)
     val currentKgEntries = remember { mutableStateListOf<Double?>() }
     
@@ -152,14 +158,10 @@ fun StowingInputScreen(onBack: () -> Unit) {
     fun addKgEntry() {
         val kgVal = inputKg.toDoubleOrNull()
         if (kgVal != null && kgVal > 0) {
-            // Cek apakah ada posisi yang kosong (null)
             val emptyIndex = currentKgEntries.indexOfFirst { it == null }
-            
             if (emptyIndex != -1) {
-                // Isi posisi kosong pertama yang ditemukan (misal posisi ke-3)
                 currentKgEntries[emptyIndex] = kgVal
             } else {
-                // Jika tidak ada posisi kosong, tambahkan di posisi paling belakang
                 currentKgEntries.add(kgVal)
             }
             inputKg = ""
@@ -178,7 +180,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
             return
         }
 
-        // Hanya mengambil item KG aktif
         val formattedWeightList = currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
@@ -284,7 +285,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                             DeleteType.KG_ENTRY -> {
                                 kgIndexToDelete?.let { idx ->
                                     if (idx in currentKgEntries.indices) {
-                                        // Mengubah nilai item menjadi NULL agar posisinya tetap ada tapi tampil kosong
                                         currentKgEntries[idx] = null
                                     }
                                 }
@@ -411,18 +411,57 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = noPag,
-                        onValueChange = { noPag = it.uppercase() },
-                        label = { Text("NO PAG") },
-                        placeholder = { Text("001 MYI") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Next
-                        ),
-                        modifier = Modifier.weight(1f)
-                    )
+                    // --- KONDISI NO PAG: MENJADI LIST PEMINTAL (DROPDOWN) JIKA SUDAH PERNAH DIISI ---
+                    if (existingPags.isNotEmpty()) {
+                        ExposedDropdownMenuBox(
+                            expanded = expandedPag,
+                            onExpandedChange = { expandedPag = !expandedPag },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = noPag,
+                                onValueChange = { noPag = it.uppercase() },
+                                label = { Text("NO PAG") },
+                                placeholder = { Text("Pilih / Ketik PAG") },
+                                singleLine = true,
+                                trailingIcon = {
+                                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedPag)
+                                },
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                modifier = Modifier
+                                    .menuAnchor()
+                                    .fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedPag,
+                                onDismissRequest = { expandedPag = false }
+                            ) {
+                                existingPags.forEach { pag ->
+                                    DropdownMenuItem(
+                                        text = { Text(pag) },
+                                        onClick = {
+                                            noPag = pag
+                                            expandedPag = false
+                                        }
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = noPag,
+                            onValueChange = { noPag = it.uppercase() },
+                            label = { Text("NO PAG") },
+                            placeholder = { Text("001 MYI") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
                     OutlinedTextField(
                         value = customer,
                         onValueChange = { customer = it.uppercase() },
@@ -490,7 +529,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                     ) {
                         itemsIndexed(currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
-                                // Tampilan Kotak jika ada nilai KG
                                 Box(
                                     modifier = Modifier
                                         .background(
@@ -526,7 +564,6 @@ fun StowingInputScreen(onBack: () -> Unit) {
                                     }
                                 }
                             } else {
-                                // Tampilan Kotak Kosong (Mencadangkan ruang grid agar tidak bergeser)
                                 Box(
                                     modifier = Modifier
                                         .height(28.dp)
@@ -750,4 +787,4 @@ fun StowingInputScreen(onBack: () -> Unit) {
             }
         }
     }
-}
+} 
