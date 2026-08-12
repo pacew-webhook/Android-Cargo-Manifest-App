@@ -83,7 +83,7 @@ fun StowingInputScreen(
         }.groupBy { it.second.noPag }
     }
 
-    // --- POP-UP DIALOG KONFIRMASI DELETE ---
+    // --- POP-UP DIALOG KONFIRMASI DELETE ---[span_4](start_span)[span_4](end_span)
     if (viewModel.deleteType != DeleteType.NONE) {
         AlertDialog(
             onDismissRequest = { viewModel.dismissDeleteDialog() },
@@ -121,7 +121,7 @@ fun StowingInputScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        // --- HEADER ---
+        // --- HEADER ---[span_5](start_span)[span_5](end_span)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -164,7 +164,7 @@ fun StowingInputScreen(
             }
         }
 
-        // --- CARD FORM INPUT ---
+        // --- CARD FORM INPUT ---[span_6](start_span)[span_6](end_span)
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
@@ -201,7 +201,7 @@ fun StowingInputScreen(
                     if (viewModel.existingPags.isNotEmpty()) {
                         ExposedDropdownMenuBox(
                             expanded = viewModel.expandedPag,
-                            onExpandedChange = { viewModel.setExpandedPag(!viewModel.expandedPag) },
+                            onExpandedChange = { viewModel.updateExpandedPag(!viewModel.expandedPag) },
                             modifier = Modifier.weight(1f)
                         ) {
                             OutlinedTextField(
@@ -216,14 +216,14 @@ fun StowingInputScreen(
                             )
                             ExposedDropdownMenu(
                                 expanded = viewModel.expandedPag,
-                                onDismissRequest = { viewModel.setExpandedPag(false) }
+                                onDismissRequest = { viewModel.updateExpandedPag(false) }
                             ) {
                                 viewModel.existingPags.forEach { pag ->
                                     DropdownMenuItem(
                                         text = { Text(pag) },
                                         onClick = {
                                             viewModel.updateNoPag(pag)
-                                            viewModel.setExpandedPag(false)
+                                            viewModel.updateExpandedPag(false)
                                         }
                                     )
                                 }
@@ -300,7 +300,7 @@ fun StowingInputScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // --- RINCIAN INPUT KG ---
+                // --- RINCIAN INPUT KG ---[span_7](start_span)[span_7](end_span)
                 if (viewModel.currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${viewModel.currentActiveEntries.size} Koli):",
@@ -393,7 +393,8 @@ fun StowingInputScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-       // --- DAFTAR CARGO TERGROUPING ---
+        // --- DAFTAR CARGO TERGROUPING ---[span_8](start_span)[span_8](end_span)
+           // --- DAFTAR CARGO TERGROUPING ---[span_8](start_span)[span_8](end_span)
         val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
         val grandTotalKoli = viewModel.cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
 
@@ -438,8 +439,8 @@ fun StowingInputScreen(
                 val pagKey = group.key
                 val itemsInGroup = group.value
 
-                val groupTotalKg = itemsInGroup.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
-                val groupTotalKoli = itemsInGroup.sumOf { it.second.pcsQty.toIntOrNull() ?: 0 }
+                val groupTotalKg = itemsInGroup.sumOf { item -> item.second.subTotal.toDoubleOrNull() ?: 0.0 }
+                val groupTotalKoli = itemsInGroup.sumOf { item -> item.second.pcsQty.toIntOrNull() ?: 0 }
 
                 val formattedGroupKg = if (groupTotalKg % 1.0 == 0.0) {
                     groupTotalKg.toLong().toString()
@@ -522,4 +523,4 @@ fun StowingInputScreen(
             }
         }
     }
-}
+}val
