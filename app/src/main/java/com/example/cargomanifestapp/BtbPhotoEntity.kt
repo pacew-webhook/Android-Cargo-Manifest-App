@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 
 @Entity(
-    tableName = "btb_photo",
+    tableName = "btb_photo_table",
     foreignKeys = [
         ForeignKey(
             entity = BtbEntity::class,
@@ -19,7 +19,6 @@ import androidx.room.PrimaryKey
 )
 data class BtbPhotoEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val btbId: Long,
-    val photoUri: String,
-    val createdAt: Long = System.currentTimeMillis()
+    val btbId: String,
+    val photoUri: String
 )

@@ -3,11 +3,15 @@ package com.example.cargomanifestapp
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.rememberLauncherForActivityResult
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
+import coil.compose.AsyncImage
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -34,6 +38,11 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.launch
+import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
 import java.text.DecimalFormat
@@ -77,8 +86,67 @@ fun BtbScreen(onBackClick: () -> Unit) {
     var inputBeratText by remember { mutableStateOf("") }
     var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
 
+    val database = remember { CargoDatabase.getDatabase(context) }
+    val btbViewModel: BtbViewModel = viewModel(
+        factory = remember {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                    return BtbViewModel(BtbRepository(database.btbDao())) as T
+                }
+            }
+        }
+    )
+    val savedEntities by btbViewModel.btbs.collectAsStateWithLifecycle()
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
     var editingId by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(savedEntities) {
+        savedBtbList.clear()
+        savedEntities.forEach { entity ->
+            val weights = mutableListOf<Double>()
+            try {
+                val array = JSONArray(entity.daftarTimbanganJson)
+                for (i in 0 until array.length()) weights.add(array.getDouble(i))
+            } catch (_: Exception) {}
+            val photos = mutableListOf<String>()
+            try {
+                val array = JSONArray(entity.photoUrisJson)
+                for (i in 0 until array.length()) photos.add(array.getString(i))
+            } catch (_: Exception) {}
+            savedBtbList.add(
+                BtbFormData(
+                    id = entity.id,
+                    hariTanggal = entity.hariTanggal,
+                    customerName = entity.customerName,
+                    trademarks = entity.trademarks,
+                    jenisBarang = entity.jenisBarang,
+                    daftarTimbangan = weights,
+                    photoUris = photos
+                )
+            )
+        }
+    }
+
+    var editingPhotos by remember { mutableStateOf<List<String>>(emptyList()) }
+    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
+    val cameraLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { success ->
+        val uri = pendingPhotoUri
+        if (success && uri != null) {
+            editingPhotos = editingPhotos + uri.toString()
+        } else if (uri != null) {
+            BtbPhotoStorage.deletePhoto(context, uri.toString())
+        }
+        pendingPhotoUri = null
+    }
+
+    fun takeBtbPhoto() {
+        val uri = BtbPhotoStorage.createPhotoUri(context)
+        pendingPhotoUri = uri
+        cameraLauncher.launch(uri)
+    }
 
     val customerFocus = remember { FocusRequester() }
     val trademarkFocus = remember { FocusRequester() }
@@ -91,6 +159,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
         jenisBarang = ""
         inputBeratText = ""
         daftarTimbangan = emptyList()
+        editingPhotos = emptyList()
         editingId = null
     }
 
@@ -285,6 +354,65 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             }
                         }
 
+                        // Foto bukti: ditambahkan tanpa mengubah desain form yang sudah ada.
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Foto Bukti",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF4A148C)
+                            )
+
+                            if (editingPhotos.isNotEmpty()) {
+                                LazyRow(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    items(editingPhotos) { uriString ->
+                                        Card(
+                                            modifier = Modifier.size(120.dp),
+                                            shape = RoundedCornerShape(8.dp)
+                                        ) {
+                                            Box(modifier = Modifier.fillMaxSize()) {
+                                                AsyncImage(
+                                                    model = Uri.parse(uriString),
+                                                    contentDescription = "Foto BTB",
+                                                    modifier = Modifier.fillMaxSize()
+                                                )
+                                                IconButton(
+                                                    onClick = {
+                                                        editingPhotos = editingPhotos.filterNot { it == uriString }
+                                                        BtbPhotoStorage.deletePhoto(context, uriString)
+                                                    },
+                                                    modifier = Modifier.align(Alignment.TopEnd)
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = "Hapus foto",
+                                                        tint = Color.Red
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Button(
+                                onClick = { takeBtbPhoto() },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color(0xFF311B92)
+                                ),
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text(
+                                    if (editingPhotos.isEmpty()) "📷 Ambil Foto" else "📷 Ambil Foto Lagi",
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+
                         Button(
                             onClick = {
                                 if (customerName.isEmpty() || daftarTimbangan.isEmpty()) {
@@ -298,19 +426,15 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                     customerName = customerName,
                                     trademarks = trademarks,
                                     jenisBarang = jenisBarang,
-                                    daftarTimbangan = daftarTimbangan
+                                    daftarTimbangan = daftarTimbangan,
+                                    photoUris = editingPhotos
                                 )
 
-                                if (editingId != null) {
-                                    val idx = savedBtbList.indexOfFirst { it.id == editingId }
-                                    if (idx != -1) savedBtbList[idx] = formData
-                                } else {
-                                    savedBtbList.add(formData)
+                                btbViewModel.save(formData) {
+                                    resetForm()
+                                    customerFocus.requestFocus()
+                                    Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
                                 }
-
-                                resetForm()
-                                customerFocus.requestFocus()
-                                Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -350,14 +474,17 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 trademarks = btb.trademarks
                                 jenisBarang = btb.jenisBarang
                                 daftarTimbangan = btb.daftarTimbangan
+                                editingPhotos = btb.photoUris
                                 editingId = btb.id
                                 customerFocus.requestFocus()
                             }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
                             }
                             IconButton(onClick = {
-                                savedBtbList.remove(btb)
-                                if (editingId == btb.id) resetForm()
+                                btb.photoUris.forEach { BtbPhotoStorage.deletePhoto(context, it) }
+                                btbViewModel.delete(btb.id) {
+                                    if (editingId == btb.id) resetForm()
+                                }
                             }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
                             }

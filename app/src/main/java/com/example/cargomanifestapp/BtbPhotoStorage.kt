@@ -16,14 +16,14 @@ object BtbPhotoStorage {
         return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
     }
 
-    fun resolveFile(context: Context, uri: Uri): File? {
-        val root = File(context.filesDir, "btb_photos").canonicalFile
-        val name = uri.lastPathSegment ?: return null
-        val candidate = File(root, name).canonicalFile
-        return if (candidate.path.startsWith(root.path + File.separator) || candidate == root) candidate else null
-    }
-
     fun deletePhoto(context: Context, uriString: String) {
-        resolveFile(context, Uri.parse(uriString))?.delete()
+        try {
+            val uri = Uri.parse(uriString)
+            val dir = File(context.filesDir, "btb_photos").canonicalFile
+            val path = uri.path ?: return
+            val file = File(path).canonicalFile
+            if (file.path.startsWith(dir.path + File.separator)) file.delete()
+        } catch (_: Exception) {
+        }
     }
 }

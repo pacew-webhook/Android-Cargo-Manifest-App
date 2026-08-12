@@ -15,7 +15,8 @@ data class BtbFormData(
     val customerName: String = "",
     val trademarks: String = "",
     val jenisBarang: String = "",
-    val daftarTimbangan: List<Double> = emptyList()
+    val daftarTimbangan: List<Double> = emptyList(),
+    val photoUris: List<String> = emptyList()
 ) {
     val totalBerat: Double get() = daftarTimbangan.sum()
     val jumlahKoli: Int get() = daftarTimbangan.size

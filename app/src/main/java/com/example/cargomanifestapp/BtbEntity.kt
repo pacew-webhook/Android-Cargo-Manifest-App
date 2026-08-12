@@ -3,12 +3,13 @@ package com.example.cargomanifestapp
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "btb")
+@Entity(tableName = "btb_table")
 data class BtbEntity(
-    @PrimaryKey(autoGenerate = true) val id: Long = 0,
-    val tanggal: String,
-    val customer: String,
-    val trademark: String,
+    @PrimaryKey val id: String,
+    val hariTanggal: String,
+    val customerName: String,
+    val trademarks: String,
     val jenisBarang: String,
-    val totalBerat: Double
+    val daftarTimbanganJson: String,
+    val photoUrisJson: String
 )

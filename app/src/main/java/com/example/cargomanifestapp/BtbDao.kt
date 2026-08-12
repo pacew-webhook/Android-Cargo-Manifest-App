@@ -2,30 +2,37 @@ package com.example.cargomanifestapp
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface BtbDao {
-    @Insert
-    suspend fun insertBtb(btb: BtbEntity): Long
+    @Query("SELECT * FROM btb_table ORDER BY rowid DESC")
+    fun observeBtbs(): Flow<List<BtbEntity>>
+
+    @Query("SELECT * FROM btb_photo_table WHERE btbId = :btbId ORDER BY id ASC")
+    suspend fun getPhotos(btbId: String): List<BtbPhotoEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertBtb(btb: BtbEntity)
 
     @Insert
     suspend fun insertPhotos(photos: List<BtbPhotoEntity>)
 
-    @Query("SELECT * FROM btb ORDER BY id DESC")
-    fun observeAll(): Flow<List<BtbEntity>>
+    @Query("DELETE FROM btb_photo_table WHERE btbId = :btbId")
+    suspend fun deletePhotos(btbId: String)
 
-    @Query("SELECT * FROM btb WHERE id = :id LIMIT 1")
-    suspend fun getById(id: Long): BtbEntity?
+    @Query("DELETE FROM btb_table WHERE id = :btbId")
+    suspend fun deleteBtb(btbId: String)
 
-    @Query("SELECT * FROM btb_photo WHERE btbId = :btbId ORDER BY id ASC")
-    suspend fun getPhotos(btbId: Long): List<BtbPhotoEntity>
-
-    @Query("DELETE FROM btb WHERE id = :id")
-    suspend fun deleteBtb(id: Long)
-
-    @Query("DELETE FROM btb_photo WHERE btbId = :btbId")
-    suspend fun deletePhotos(btbId: Long)
+    @Transaction
+    suspend fun upsertWithPhotos(btb: BtbEntity, photos: List<String>) {
+        deletePhotos(btb.id)
+        upsertBtb(btb)
+        if (photos.isNotEmpty()) {
+            insertPhotos(photos.map { BtbPhotoEntity(btbId = btb.id, photoUri = it) })
+        }
+    }
 }

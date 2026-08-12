@@ -16,6 +16,7 @@ import androidx.room.RoomDatabase
 )
 abstract class CargoDatabase : RoomDatabase() {
     abstract fun cargoDao(): CargoDao
+    abstract fun btbDao(): BtbDao
 
     companion object {
         @Volatile
@@ -33,5 +34,4 @@ abstract class CargoDatabase : RoomDatabase() {
             }
         }
     }
-    abstract fun btbDao(): BtbDao
 }

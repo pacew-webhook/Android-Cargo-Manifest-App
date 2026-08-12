@@ -1,22 +1,16 @@
 package com.example.cargomanifestapp
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class BtbRepository(private val dao: BtbDao) {
-    fun observeAll(): Flow<List<BtbEntity>> = dao.observeAll()
+    fun observeBtbs(): Flow<List<BtbEntity>> = dao.observeBtbs()
 
-    suspend fun save(
-        btb: BtbEntity,
-        photoUris: List<String>
-    ): Long {
-        val id = dao.insertBtb(btb)
-        if (photoUris.isNotEmpty()) {
-            dao.insertPhotos(photoUris.map { BtbPhotoEntity(btbId = id, photoUri = it) })
-        }
-        return id
-    }
+    suspend fun getPhotos(id: String): List<String> =
+        dao.getPhotos(id).map { it.photoUri }
 
-    suspend fun photos(id: Long): List<BtbPhotoEntity> = dao.getPhotos(id)
+    suspend fun save(btb: BtbEntity, photoUris: List<String>) =
+        dao.upsertWithPhotos(btb, photoUris)
 
-    suspend fun delete(id: Long) = dao.deleteBtb(id)
+    suspend fun delete(id: String) = dao.deleteBtb(id)
 }
