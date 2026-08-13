@@ -343,6 +343,16 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 resetForm()
                                 customerFocus.requestFocus()
                                 Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
+
+                                // Setelah BTB berhasil dibuat, lanjutkan ke penerbitan label.
+                                context.startActivity(
+                                    Intent(context, BtbLabelActivity::class.java).apply {
+                                        putExtra(
+                                            BtbLabelActivity.EXTRA_BTB_JSON,
+                                            BtbLabelUtils.encode(formData)
+                                        )
+                                    }
+                                )
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             colors = ButtonDefaults.buttonColors(
