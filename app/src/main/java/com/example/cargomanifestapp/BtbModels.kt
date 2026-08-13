@@ -214,13 +214,18 @@ object BtbExcelWriter {
                 format = "0.00"
             )
 
+            // Gunakan style kolom A sebagai basis agar nilai PEMBULATAN
+            // tidak mewarisi format/warna cell B template yang pada beberapa
+            // viewer terlihat kosong. Nilainya tetap NUMERIC agar bisa dihitung.
             replaceWithNumericCell(
                 workbook = workbook,
                 sheet = sheet,
                 rowIndex = rowIndex,
                 colIndex = 1,
                 value = rounded,
-                format = "0.00"
+                format = "0.00",
+                styleSourceColIndex = 0,
+                horizontalAlignment = HorizontalAlignment.CENTER
             )
         }
 
@@ -292,11 +297,14 @@ object BtbExcelWriter {
         rowIndex: Int,
         colIndex: Int,
         value: Double,
-        format: String
+        format: String,
+        styleSourceColIndex: Int? = null,
+        horizontalAlignment: HorizontalAlignment? = null
     ) {
         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
         val oldCell = row.getCell(colIndex)
-        val oldStyle = oldCell?.cellStyle
+        val styleCell = if (styleSourceColIndex != null) row.getCell(styleSourceColIndex) else oldCell
+        val oldStyle = styleCell?.cellStyle
 
         if (oldCell != null) {
             row.removeCell(oldCell)
@@ -310,6 +318,9 @@ object BtbExcelWriter {
             style.dataFormat = workbook.createDataFormat().getFormat(format)
             cell.cellStyle = style
         }
+        if (horizontalAlignment != null) {
+            cell.cellStyle = cloneWithAlignment(workbook, cell.cellStyle, horizontalAlignment)
+        }
         cell.setCellValue(value)
         cell.setCellType(CellType.NUMERIC)
     }
@@ -322,6 +333,18 @@ object BtbExcelWriter {
     private fun clearCell(row: Row, colIndex: Int) {
         val cell = row.getCell(colIndex) ?: return
         cell.setBlank()
+    }
+
+
+    private fun cloneWithAlignment(
+        workbook: Workbook,
+        source: org.apache.poi.ss.usermodel.CellStyle,
+        alignment: HorizontalAlignment
+    ): org.apache.poi.ss.usermodel.CellStyle {
+        val style = workbook.createCellStyle()
+        style.cloneStyleFrom(source)
+        style.alignment = alignment
+        return style
     }
 
     private fun cloneWithFormat(workbook: Workbook, source: org.apache.poi.ss.usermodel.CellStyle, format: String): org.apache.poi.ss.usermodel.CellStyle {
