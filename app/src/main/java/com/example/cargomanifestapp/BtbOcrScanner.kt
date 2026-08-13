@@ -241,26 +241,35 @@ Kembalikan JSON sesuai schema.
         }
     }
 
-    private fun layoutSchema(): JSONObject = JSONObject()
-        .put("type", "object")
-        .put("properties", JSONObject()
-            .put("weightColumn", JSONObject()
-                .put("type", "object")
-                .put("properties", boxProperties())
-                .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax"))))
-            .put("rows", JSONObject()
-                .put("type", "array")
-                .put("items", JSONObject()
-                    .put("type", "object")
-                    .put("properties", JSONObject()
-                        .put("row", JSONObject().put("type", "integer"))
-                        .put("box", JSONObject()
-                            .put("type", "object")
-                            .put("properties", boxProperties())
-                            .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax"))))
-                    )
-                    .put("required", JSONArray(listOf("row", "box")))))
-        .put("required", JSONArray(listOf("rows")))
+    private fun layoutSchema(): JSONObject {
+        val boxSchema = JSONObject()
+            .put("type", "object")
+            .put("properties", boxProperties())
+            .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax")))
+
+        val weightColumnSchema = JSONObject()
+            .put("type", "object")
+            .put("properties", boxProperties())
+            .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax")))
+
+        val rowItemSchema = JSONObject()
+            .put("type", "object")
+            .put("properties", JSONObject()
+                .put("row", JSONObject().put("type", "integer"))
+                .put("box", boxSchema))
+            .put("required", JSONArray(listOf("row", "box")))
+
+        val rowsSchema = JSONObject()
+            .put("type", "array")
+            .put("items", rowItemSchema)
+
+        return JSONObject()
+            .put("type", "object")
+            .put("properties", JSONObject()
+                .put("weightColumn", weightColumnSchema)
+                .put("rows", rowsSchema))
+            .put("required", JSONArray(listOf("rows")))
+    }
 
     private fun rowSchema(): JSONObject = JSONObject()
         .put("type", "object")
