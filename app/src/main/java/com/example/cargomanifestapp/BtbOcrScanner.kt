@@ -181,7 +181,7 @@ HASIL PEMBACAAN PERTAMA:
 
     private fun buildResult(rows: List<List<Int>>, prefix: String): Result {
         val normalizedRows = rows.take(10).toMutableList()
-        while (normalizedRows.size < 10) normalizedRows += emptyList()
+        while (normalizedRows.size < 10) normalizedRows.add(emptyList())
 
         val weights = normalizedRows.flatten().map { it.toDouble() }
         val rowTexts = normalizedRows.map { row -> row.joinToString(" ") }
