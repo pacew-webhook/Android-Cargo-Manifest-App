@@ -1,10 +1,33 @@
 package com.example.cargomanifestapp
 
+import org.json.JSONArray
+import org.json.JSONObject
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+
+
+private fun btbWeightsToJson(weights: List<Any>): String {
+    val array = JSONArray()
+    for (item in weights) {
+        val obj = JSONObject()
+        val cls = item::class
+        fun value(name: String): Any? = try {
+            cls.members.firstOrNull { it.name == name }?.call(item)
+        } catch (_: Exception) { null }
+
+        value("beratAsli")?.let { obj.put("beratAsli", it.toString().toDoubleOrNull() ?: 0.0) }
+        value("beratPembulatan")?.let { obj.put("beratPembulatan", it.toString().toDoubleOrNull() ?: 0.0) }
+        value("beratFinal")?.let { obj.put("beratFinal", it.toString().toDoubleOrNull() ?: 0.0) }
+        value("weight")?.let { obj.put("weight", it.toString().toDoubleOrNull() ?: 0.0) }
+        value("kg")?.let { obj.put("kg", it.toString().toDoubleOrNull() ?: 0.0) }
+        array.put(obj)
+    }
+    return array.toString()
+}
 
 class BtbViewModel(private val repository: BtbRepository) : ViewModel() {
     val btbs = repository.observeBtbs()
