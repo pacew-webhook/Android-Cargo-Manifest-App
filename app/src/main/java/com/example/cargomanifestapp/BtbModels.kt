@@ -76,8 +76,9 @@ object BtbExcelWriter {
         dataList.forEachIndexed { index, data ->
             val sheet = sheets[index]
             val baseName = "BTB ${index + 1} ${sanitizeSheetName(data.customerName.ifBlank { "Data" })}"
-            sheet.sheetName = uniqueSheetName(baseName, usedNames)
-            usedNames += sheet.sheetName
+            val uniqueName = uniqueSheetName(baseName, usedNames)
+            workbook.setSheetName(index, uniqueName)
+            usedNames += uniqueName
         }
 
         // Semua clone sudah dibuat dari template asli sebelum sheet pertama diubah.
