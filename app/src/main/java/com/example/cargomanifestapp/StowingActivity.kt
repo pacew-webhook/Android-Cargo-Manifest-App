@@ -66,6 +66,9 @@ fun StowingInputScreen(
     var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
     var showScanResultDialog by remember { mutableStateOf(false) }
     var scannedWeightsText by remember { mutableStateOf("") }
+    var scannedNoPagText by remember { mutableStateOf("") }
+    var scannedCustomerText by remember { mutableStateOf("") }
+    var scannedDescriptionText by remember { mutableStateOf("") }
     var scanRawText by remember { mutableStateOf("") }
     var scanRowsText by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
@@ -90,6 +93,9 @@ fun StowingInputScreen(
                 scannedWeightsText = result.weights.joinToString(", ") {
                     if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
                 }
+                scannedNoPagText = result.noPag
+                scannedCustomerText = result.customer
+                scannedDescriptionText = result.description
                 scanRawText = result.rawText
                 scanRowsText = result.rows.mapIndexed { index, row -> "Baris ${index + 1}: ${if (row.isBlank()) "(tidak terbaca)" else row}" }.joinToString("\n")
                 showScanResultDialog = true
@@ -190,6 +196,41 @@ fun StowingInputScreen(
                         "Periksa angka di bawah. Jika ada yang salah, koreksi sebelum memasukkan ke Form Stowing.",
                         fontSize = 12.sp
                     )
+                    Text(
+                        "Data BTB yang terbaca (cocokkan sebelum digunakan):",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = scannedNoPagText,
+                            onValueChange = { scannedNoPagText = it },
+                            label = { Text("NO PAG") },
+                            placeholder = { Text("Jika terlihat") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = scannedCustomerText,
+                            onValueChange = { scannedCustomerText = it },
+                            label = { Text("Customer") },
+                            placeholder = { Text("Jika terlihat") },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    OutlinedTextField(
+                        value = scannedDescriptionText,
+                        onValueChange = { scannedDescriptionText = it },
+                        label = { Text("Description / Jenis Barang") },
+                        placeholder = { Text("Jika terlihat") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
                     OutlinedTextField(
                         value = scannedWeightsText,
                         onValueChange = { scannedWeightsText = it },
@@ -240,7 +281,7 @@ fun StowingInputScreen(
                         )
                     }
                     Text(
-                        "OCR tulisan tangan tetap dapat salah. Periksa semua angka sebelum menekan Gunakan Hasil.",
+                        "OCR tulisan tangan tetap dapat salah. Periksa NO PAG, Customer, Description dan semua angka sebelum menekan Gunakan Hasil.",
                         fontSize = 11.sp,
                         color = Color(0xFFB00020)
                     )
@@ -268,6 +309,12 @@ fun StowingInputScreen(
                             if (importedCount != values.size) {
                                 importedCount = viewModel.applyScannedWeights(values)
                             }
+
+                            // Terapkan teks BTB ke Form Stowing setelah pengguna memeriksa/koreksi.
+                            // Field kosong tidak menimpa input manual yang sudah ada.
+                            if (scannedNoPagText.isNotBlank()) viewModel.updateNoPag(scannedNoPagText)
+                            if (scannedCustomerText.isNotBlank()) viewModel.updateCustomer(scannedCustomerText)
+                            if (scannedDescriptionText.isNotBlank()) viewModel.updateDescription(scannedDescriptionText)
 
                             val finalCount = viewModel.currentActiveEntries.size
                             if (finalCount == values.size) {

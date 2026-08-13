@@ -37,7 +37,11 @@ object BtbOcrScanner {
         val rows: List<String> = emptyList(),
         val expectedRows: Int = 0,
         val calculatedTotalKg: Double = weights.sum(),
-        val verificationMessage: String = ""
+        val verificationMessage: String = "",
+        // Teks non-KG yang berhasil dibaca dari BTB. Dibiarkan kosong bila tidak terlihat.
+        val noPag: String = "",
+        val customer: String = "",
+        val description: String = ""
     )
 
     private data class Box(val ymin: Int, val xmin: Int, val ymax: Int, val xmax: Int)
@@ -98,9 +102,17 @@ TUGAS UTAMA:
     tercakup sampai baris terakhir. Jika ragu masih ada baris/angka yang terlewat, set false.
 13. totalDetected wajib sama dengan jumlah seluruh angka pada semua rows.
 
-Kembalikan JSON SAJA, tanpa markdown dan tanpa teks tambahan, dengan format PERSIS:
-{"rows":[{"row":1,"weights":[57,57,20]}],"isComplete":true,"totalDetected":3}
+Selain angka KG, baca juga teks identitas yang terlihat pada BTB untuk membantu pengguna mencocokkan
+data dengan Form Stowing. Jangan menebak. Jika sebuah field tidak terlihat/jelas, isi string kosong.
+- noPag: cari label seperti NO PAG, PAG, NO. PAG, nomor PAG, atau kode PAG.
+- customer: cari nama customer/penerima yang jelas. Prioritaskan label CUSTOMER/CUSTOMER NAME/NAMA PENERIMA.
+- description: baca nama/jenis barang pada label JENIS BARANG/DESCRIPTION. Ambil teks barang, BUKAN angka KG.
+Jika ada lebih dari satu kandidat, pilih yang paling jelas dan paling dekat dengan label terkait.
 
+Kembalikan JSON SAJA, tanpa markdown dan tanpa teks tambahan, dengan format PERSIS:
+{"fields":{"noPag":"001 MYI","customer":"ULIN","description":"PINANG"},"rows":[{"row":1,"weights":[57,57,20]}],"isComplete":true,"totalDetected":3}
+
+fields wajib ada. Jangan mengarang teks. Jika tidak terbaca gunakan string kosong.
 rows harus berisi SEMUA baris yang terlihat sampai baris terakhir. Jangan membatasi jumlah rows atau jumlah weights. totalDetected harus sama dengan jumlah semua angka pada seluruh rows.
 """
 
@@ -125,7 +137,9 @@ Aturan:
 - Kembalikan semua baris data yang terlihat, bukan tepat 4 baris.
 - Set isComplete=true hanya jika seluruh tabel yang terlihat sudah tercakup.
 - totalDetected harus sama dengan jumlah angka pada seluruh rows.
-- Kembalikan JSON SAJA dengan format: {"rows":[{"row":1,"weights":[57,57]}],"isComplete":true,"totalDetected":2}
+- Periksa juga fields non-KG. noPag = nomor/kode PAG jika terlihat; customer = customer/penerima;
+  description = nama/jenis barang. Jangan mengarang dan jangan memasukkan angka KG ke description.
+- Kembalikan JSON SAJA dengan format: {"fields":{"noPag":"","customer":"","description":""},"rows":[{"row":1,"weights":[57,57]}],"isComplete":true,"totalDetected":2}
 
 HASIL PEMBACAAN PERTAMA:
 """
@@ -162,6 +176,8 @@ HASIL PEMBACAAN PERTAMA:
                 firstCount == 20 ||
                 firstParsed.dropLast(1).any { it.isEmpty() }
 
+            var parsedFields = parseFields(firstJson)
+
             val parsed = if (!needsVerification && firstCount > 0) {
                 firstParsed
             } else {
@@ -176,6 +192,10 @@ HASIL PEMBACAAN PERTAMA:
                 }
                 val verified = parseRows(verifiedJson)
                 val verifiedMeta = parseMeta(verifiedJson)
+                val verifiedFields = parseFields(verifiedJson)
+                if (verifiedFields.noPag.isNotBlank() || verifiedFields.customer.isNotBlank() || verifiedFields.description.isNotBlank()) {
+                    parsedFields = verifiedFields
+                }
 
                 when {
                     verified.isEmpty() -> firstParsed
@@ -185,7 +205,7 @@ HASIL PEMBACAAN PERTAMA:
                 }
             }
 
-            buildResult(parsed, "Gemini: ${parsed.sumOf { it.size }} koli terbaca.")
+            buildResult(parsed, "Gemini: ${parsed.sumOf { it.size }} koli terbaca.", parsedFields)
         } catch (e: Exception) {
             Result(
                 emptyList(),
@@ -202,7 +222,7 @@ HASIL PEMBACAAN PERTAMA:
         BtbPhotoStorage.deletePhoto(context, uri.toString())
     }
 
-    private fun buildResult(rows: List<List<Int>>, prefix: String): Result {
+    private fun buildResult(rows: List<List<Int>>, prefix: String, fields: ScanFields = ScanFields()): Result {
         // V13.5: jangan truncate hasil Gemini. Semua baris dan semua angka dipertahankan.
         val normalizedRows = rows.map { it.toList() }
 
@@ -219,7 +239,10 @@ HASIL PEMBACAAN PERTAMA:
             rows = rowTexts,
             expectedRows = normalizedRows.size,
             calculatedTotalKg = total,
-            verificationMessage = "$prefix Koli terbaca: $count. Total dihitung aplikasi = ${formatKg(total)} KG."
+            verificationMessage = "$prefix Koli terbaca: $count. Total dihitung aplikasi = ${formatKg(total)} KG.",
+            noPag = fields.noPag,
+            customer = fields.customer,
+            description = fields.description
         )
     }
 
@@ -356,6 +379,12 @@ HASIL PEMBACAAN PERTAMA:
     }
     */
 
+    private data class ScanFields(
+        val noPag: String = "",
+        val customer: String = "",
+        val description: String = ""
+    )
+
     private data class ParseMeta(
         val isComplete: Boolean,
         val totalDetected: Int
@@ -367,6 +396,27 @@ HASIL PEMBACAAN PERTAMA:
             isComplete = root.optBoolean("isComplete", false),
             totalDetected = root.optInt("totalDetected", 0)
         )
+    }
+
+    private fun parseFields(json: String): ScanFields {
+        return try {
+            val root = JSONObject(json)
+            val fields = root.optJSONObject("fields") ?: return ScanFields()
+            ScanFields(
+                noPag = sanitizeOcrText(fields.optString("noPag", ""), 80),
+                customer = sanitizeOcrText(fields.optString("customer", ""), 120),
+                description = sanitizeOcrText(fields.optString("description", ""), 160)
+            )
+        } catch (_: Exception) {
+            ScanFields()
+        }
+    }
+
+    private fun sanitizeOcrText(value: String, maxLength: Int): String {
+        return value.replace(Regex("\\s+"), " ")
+            .replace(Regex("[\\r\\n\\t]"), " ")
+            .trim()
+            .take(maxLength)
     }
 
     private fun parseRows(json: String): List<List<Int>> {
