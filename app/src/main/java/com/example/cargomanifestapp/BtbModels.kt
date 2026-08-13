@@ -137,135 +137,171 @@ object BtbExcelWriter {
     ) {
         require(data.daftarTimbangan.isNotEmpty()) { "Data timbangan BTB kosong" }
 
-        // Ukuran kolom dibuat eksplisit. Kolom A dan B tidak pernah di-merge/hidden.
+        // =============================================================
+        // BTB EXCEL - SIMPLE LAYOUT
+        // Dibuat mengikuti desain sederhana yang diinginkan:
+        // putih, garis tipis abu-abu, aksen biru, tanpa dekorasi berlebih.
+        // Kolom A = HASIL SCAN, B = PEMBULATAN.
+        // =============================================================
         sheet.setColumnWidth(0, 18 * 256)
         sheet.setColumnWidth(1, 18 * 256)
-        sheet.setColumnWidth(2, 10 * 256)
-        sheet.setColumnWidth(3, 10 * 256)
+        sheet.setColumnWidth(2, 14 * 256)
+        sheet.setColumnWidth(3, 14 * 256)
         sheet.setColumnWidth(4, 14 * 256)
-        sheet.setColumnWidth(5, 12 * 256)
-        sheet.setColumnWidth(6, 12 * 256)
-        sheet.setColumnWidth(7, 12 * 256)
-        sheet.setColumnHidden(0, false)
-        sheet.setColumnHidden(1, false)
+        for (c in 0..4) sheet.setColumnHidden(c, false)
+        sheet.setDisplayGridlines(true)
 
-        val titleStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.CENTER
+        val blue = org.apache.poi.ss.usermodel.IndexedColors.BLUE.index
+        val lightBlue = org.apache.poi.ss.usermodel.IndexedColors.PALE_BLUE.index
+        val white = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index
+        val black = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
+        val grey = org.apache.poi.ss.usermodel.IndexedColors.GREY_50_PERCENT.index
+
+        fun font(color: Short, bold: Boolean = false, size: Short = 11) =
+            workbook.createFont().apply {
+                this.color = color
+                this.bold = bold
+                fontHeightInPoints = size
+            }
+
+        fun baseStyle(
+            alignment: HorizontalAlignment,
+            bold: Boolean = false,
+            fontColor: Short = black,
+            fill: Short = white,
+            size: Short = 11
+        ) = workbook.createCellStyle().apply {
+            this.alignment = alignment
             verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
+            fillForegroundColor = fill
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply {
-                color = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index
-                bold = true
-                fontHeightInPoints = 14
-            })
+            setFont(font(fontColor, bold, size))
+            borderBottom = BorderStyle.THIN
+            borderTop = BorderStyle.THIN
+            borderLeft = BorderStyle.THIN
+            borderRight = BorderStyle.THIN
+            bottomBorderColor = grey
+            topBorderColor = grey
+            leftBorderColor = grey
+            rightBorderColor = grey
         }
-        val labelStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.LEFT
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true })
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
-        }
-        val valueStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.LEFT
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index })
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
-        }
-        val sectionStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index; bold = true })
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
-        }
-        val headerStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true })
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
-        }
-        val numericStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.CENTER
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index })
+
+        val titleStyle = baseStyle(
+            HorizontalAlignment.CENTER,
+            bold = true,
+            fontColor = blue,
+            size = 14
+        )
+        val labelStyle = baseStyle(
+            HorizontalAlignment.LEFT,
+            bold = true
+        )
+        val valueStyle = baseStyle(
+            HorizontalAlignment.LEFT
+        )
+        val sectionStyle = baseStyle(
+            HorizontalAlignment.CENTER,
+            bold = true,
+            fontColor = white,
+            fill = blue
+        )
+        val headerStyle = baseStyle(
+            HorizontalAlignment.CENTER,
+            bold = true
+        )
+        val numericStyle = baseStyle(
+            HorizontalAlignment.CENTER
+        ).apply {
             dataFormat = workbook.createDataFormat().getFormat("0.00")
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
-        val totalLabelStyle = workbook.createCellStyle().apply {
-            alignment = HorizontalAlignment.RIGHT
-            verticalAlignment = VerticalAlignment.CENTER
-            fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
-            fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index; bold = true; fontHeightInPoints = 13 })
-            borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
-            borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
+        val totalLabelStyle = baseStyle(
+            HorizontalAlignment.RIGHT,
+            bold = true,
+            fontColor = blue,
+            size = 13
+        )
+        val totalValueStyle = baseStyle(
+            HorizontalAlignment.CENTER,
+            bold = true,
+            fontColor = black,
+            size = 11
+        ).apply {
+            dataFormat = workbook.createDataFormat().getFormat("0.00")
         }
 
-        mergeAndStyle(sheet, 0, 1, 0, 4, titleStyle, "SLIP BUKTI TIMBANG BARANG (BTB)")
-        mergeAndStyle(sheet, 2, 2, 0, 2, labelStyle, "Hari / Tgl")
-        mergeAndStyle(sheet, 2, 2, 3, 6, valueStyle, data.hariTanggal)
-        mergeAndStyle(sheet, 3, 3, 0, 2, labelStyle, "NAME CUSTOMER")
-        mergeAndStyle(sheet, 3, 3, 3, 6, valueStyle, data.customerName)
-        mergeAndStyle(sheet, 4, 4, 0, 2, labelStyle, "TRADEMARKS")
-        mergeAndStyle(sheet, 4, 4, 3, 6, valueStyle, data.trademarks)
-        mergeAndStyle(sheet, 6, 6, 0, 4, sectionStyle, "DATA TIMBANGAN")
-        mergeAndStyle(sheet, 7, 7, 0, 4, sectionStyle, "JENIS BARANG :")
-        mergeAndStyle(sheet, 8, 8, 0, 4, sectionStyle, data.jenisBarang)
+        // Informasi utama.
+        mergeAndStyle(sheet, 0, 0, 0, 4, titleStyle, "SLIP BUKTI TIMBANG BARANG (BTB)")
+        mergeAndStyle(sheet, 2, 2, 0, 1, labelStyle, "Hari / Tgl")
+        mergeAndStyle(sheet, 2, 2, 2, 4, valueStyle, data.hariTanggal)
+        mergeAndStyle(sheet, 3, 3, 0, 1, labelStyle, "NAME CUSTOMER")
+        mergeAndStyle(sheet, 3, 3, 2, 4, valueStyle, data.customerName)
+        mergeAndStyle(sheet, 4, 4, 0, 1, labelStyle, "TRADEMARKS")
+        mergeAndStyle(sheet, 4, 4, 2, 4, valueStyle, data.trademarks)
 
+        // Bagian utama BTB.
+        mergeAndStyle(sheet, 5, 5, 0, 4, sectionStyle, "DATA TIMBANGAN")
+        mergeAndStyle(sheet, 6, 6, 0, 4, sectionStyle, "JENIS BARANG :")
+        mergeAndStyle(sheet, 7, 7, 0, 4, sectionStyle, data.jenisBarang)
+
+        // Header hasil scan/pembulatan.
         setStyledText(sheet, 9, 0, "HASIL SCAN", headerStyle)
         setStyledText(sheet, 9, 1, "PEMBULATAN", headerStyle)
         for (c in 2..4) setStyledText(sheet, 9, c, "", headerStyle)
 
-        data.daftarTimbangan.forEachIndexed { index, original ->
-            val row = 10 + index
-            val r = sheet.getRow(row) ?: sheet.createRow(row)
-            r.getCell(0) ?: r.createCell(0)
-            r.getCell(1) ?: r.createCell(1)
-            r.getCell(0).cellStyle = numericStyle
-            r.getCell(1).cellStyle = numericStyle
-            r.getCell(0).setCellValue(original)
-            r.getCell(1).setCellValue(roundWeight(original))
-            for (c in 2..4) {
-                r.getCell(c) ?: r.createCell(c)
-                r.getCell(c).cellStyle = numericStyle
+        // Bersihkan area data dan siapkan minimal 13 baris seperti template.
+        val firstDataRow = 10
+        val minimumDataRows = 13
+        val dataRows = maxOf(minimumDataRows, data.daftarTimbangan.size)
+        val totalRow = firstDataRow + dataRows
+
+        for (i in 0 until dataRows) {
+            val row = sheet.getRow(firstDataRow + i) ?: sheet.createRow(firstDataRow + i)
+            for (c in 0..4) {
+                val cell = row.getCell(c) ?: row.createCell(c)
+                cell.setBlank()
+                cell.cellStyle = if (c <= 1) numericStyle else headerStyle
             }
         }
 
-        // Pertahankan posisi TOTAL pada Excel row 24 untuk data sampai 13 koli,
-        // dan otomatis turun jika jumlah koli lebih banyak.
-        val totalRow = maxOf(23, 10 + data.daftarTimbangan.size + 1)
-        val total = sheet.getRow(totalRow) ?: sheet.createRow(totalRow)
-        for (c in 0..4) total.getCell(c) ?: total.createCell(c)
-        mergeAndStyle(sheet, totalRow, totalRow, 0, 3, totalLabelStyle, "TOTAL :")
-        total.getCell(4).cellStyle = numericStyle
-        total.getCell(4).setCellValue(data.totalBeratPembulatan)
-
-        val footer = totalRow + 3
-        setStyledText(sheet, footer, 0, "Petugas,", labelStyle)
-
-        // Tidak ada formula sama sekali di area BTB. Semua hasil sudah berupa nilai numeric.
-        require(sheet.getRow(9).getCell(1).stringCellValue == "PEMBULATAN")
+        // Nilai asli dan pembulatan adalah NUMERIC, bukan formula.
         data.daftarTimbangan.forEachIndexed { index, original ->
-            val row = sheet.getRow(10 + index)
-            require(row.getCell(1).cellType == CellType.NUMERIC)
-            require(kotlin.math.abs(row.getCell(1).numericCellValue - roundWeight(original)) < 0.000001)
+            val row = sheet.getRow(firstDataRow + index)
+                ?: sheet.createRow(firstDataRow + index)
+            val scan = row.getCell(0) ?: row.createCell(0)
+            val rounded = row.getCell(1) ?: row.createCell(1)
+            scan.cellStyle = numericStyle
+            rounded.cellStyle = numericStyle
+            scan.setCellValue(original)
+            rounded.setCellValue(roundWeight(original))
         }
-        require(kotlin.math.abs(sheet.getRow(totalRow).getCell(4).numericCellValue - data.totalBeratPembulatan) < 0.000001)
+
+        // TOTAL selalu memakai jumlah pembulatan.
+        mergeAndStyle(sheet, totalRow, totalRow, 0, 3, totalLabelStyle, "TOTAL :")
+        val totalCell = sheet.getRow(totalRow)?.getCell(4)
+            ?: sheet.getRow(totalRow)!!.createCell(4)
+        totalCell.cellStyle = totalValueStyle
+        totalCell.setCellValue(data.totalBeratPembulatan)
+
+        // Footer sederhana.
+        setStyledText(sheet, totalRow + 3, 0, "Petugas,", labelStyle)
+
+        // Validasi keras sebelum file disimpan.
+        require(sheet.getRow(9)?.getCell(1)?.stringCellValue == "PEMBULATAN")
+        data.daftarTimbangan.forEachIndexed { index, original ->
+            val row = sheet.getRow(firstDataRow + index)
+                ?: error("Baris data BTB tidak terbentuk")
+            val rounded = row.getCell(1)
+                ?: error("Cell PEMBULATAN tidak terbentuk")
+            require(rounded.cellType == CellType.NUMERIC) {
+                "Cell PEMBULATAN bukan NUMERIC"
+            }
+            require(kotlin.math.abs(rounded.numericCellValue - roundWeight(original)) < 0.000001) {
+                "Nilai PEMBULATAN salah"
+            }
+        }
+        require(kotlin.math.abs(totalCell.numericCellValue - data.totalBeratPembulatan) < 0.000001) {
+            "TOTAL pembulatan tidak sesuai"
+        }
     }
 
     private fun mergeAndStyle(
