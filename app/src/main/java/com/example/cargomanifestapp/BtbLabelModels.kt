@@ -2,11 +2,8 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
@@ -29,6 +26,20 @@ data class BtbLabelItem(
 ) {
     val labelId: String
         get() = "$btbId-L${labelNumber.toString().padStart(2, '0')}"
+
+    /**
+     * The BTB trademark field may be entered as:
+     *   NAME/PHONE
+     *   NAME - PHONE
+     *   NAME | PHONE
+     * or simply NAME.
+     * The label prints only the name on the left and the phone on the right.
+     */
+    val trademarkName: String
+        get() = BtbLabelUtils.extractTrademarkName(trademarks)
+
+    val phoneNumber: String
+        get() = BtbLabelUtils.extractPhoneNumber(trademarks)
 }
 
 object BtbLabelUtils {
@@ -45,6 +56,26 @@ object BtbLabelUtils {
                 beratPembulatan = roundWeight(weight)
             )
         }
+
+    fun extractTrademarkName(value: String): String {
+        val raw = value.trim()
+        if (raw.isBlank()) return "-"
+        val parts = raw.split("/", "|", " - ", "—", limit = 2)
+        return parts.firstOrNull()?.trim().takeUnless { it.isNullOrBlank() } ?: "-"
+    }
+
+    fun extractPhoneNumber(value: String): String {
+        val raw = value.trim()
+        if (raw.isBlank()) return ""
+        val parts = raw.split("/", "|", " - ", "—", limit = 2)
+        if (parts.size > 1) {
+            val candidate = parts[1].trim()
+            if (candidate.any { it.isDigit() }) return candidate
+        }
+        // Fallback: find a phone-like sequence anywhere in the field.
+        val match = Regex("(?:\\+?62|0)\\d[\\d .-]{7,}").find(raw)
+        return match?.value?.trim() ?: ""
+    }
 
     fun encode(data: BtbFormData): String {
         val root = org.json.JSONObject()
@@ -192,26 +223,12 @@ object BtbLabelPdfWriter {
         // Outer page/template border.
         canvas.drawRect(LEFT, TOP, RIGHT, BOTTOM, borderPaint)
 
-        // Logo area.
-        val logo = BitmapFactory.decodeResource(context.resources, R.drawable.logo_app)
-        if (logo != null) {
-            val maxW = 95f
-            val maxH = 72f
-            val scale = minOf(maxW / logo.width, maxH / logo.height)
-            val w = logo.width * scale
-            val h = logo.height * scale
-            val dst = RectF(
-                (PAGE_WIDTH - w) / 2f,
-                TOP + 8f,
-                (PAGE_WIDTH + w) / 2f,
-                TOP + 8f + h
-            )
-            canvas.drawBitmap(logo, null, dst, null)
-        }
-        canvas.drawText("MY INDO AIRLINES", PAGE_WIDTH / 2f, TOP + 88f, airlinePaint)
+        // Logo is intentionally omitted from the generated label.
+        // Keep the airline name centered at the top, matching the requested template.
+        canvas.drawText("MY INDO AIRLINES", PAGE_WIDTH / 2f, TOP + 56f, airlinePaint)
 
         // Orange LABEWA CARGO title bar.
-        val titleTop = TOP + 102f
+        val titleTop = TOP + 70f
         val titleBottom = titleTop + 54f
         canvas.drawRect(LEFT, titleTop, RIGHT, titleBottom, orangeFillPaint)
         canvas.drawText("LABEWA CARGO", (LEFT + RIGHT) / 2f, titleTop + 39f, whiteBold)
@@ -238,7 +255,7 @@ object BtbLabelPdfWriter {
 
         // Row 1: Destination / total pcs.
         drawLabel(canvas, "Tujuan/Destination", LEFT + 7f, gridTop + 23f, body)
-        drawValue(canvas, "-", LEFT + 7f, gridTop + 55f, bodyBold)
+        drawValue(canvas, "WMX", LEFT + 7f, gridTop + 55f, bodyBold)
         drawLabel(canvas, "Jumlah Kiriman/Ttl. No. of Pcs", colX + 7f, gridTop + 23f, body)
         drawValue(canvas, "${totalLabels} PCS", colX + 7f, gridTop + 55f, bodyBold)
 
@@ -255,10 +272,12 @@ object BtbLabelPdfWriter {
         )
 
         // Row 3: Other information.
+        // Requested layout: trademark name on the left, phone number on the far right.
         drawLabel(canvas, "Keterangan lain/Other Information", LEFT + 7f, row2Bottom + 22f, body)
-        drawValue(canvas, "Customer: ${label.customerName.ifBlank { "-" }}", LEFT + 7f, row2Bottom + 47f, bodyBold)
-        if (label.trademarks.isNotBlank()) {
-            drawValue(canvas, "Trademark: ${label.trademarks}", LEFT + 210f, row2Bottom + 47f, body)
+        drawValue(canvas, label.trademarkName, LEFT + 7f, row2Bottom + 47f, bodyBold)
+        if (label.phoneNumber.isNotBlank()) {
+            val phonePaint = Paint(bodyBold).apply { textAlign = Paint.Align.RIGHT }
+            drawValue(canvas, label.phoneNumber, RIGHT - 7f, row2Bottom + 47f, phonePaint)
         }
 
         // Row 4: Origin / House Waybill.
