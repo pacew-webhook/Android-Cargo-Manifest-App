@@ -344,15 +344,9 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 customerFocus.requestFocus()
                                 Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
 
-                                // Setelah BTB berhasil dibuat, lanjutkan ke penerbitan label.
-                                context.startActivity(
-                                    Intent(context, BtbLabelActivity::class.java).apply {
-                                        putExtra(
-                                            BtbLabelActivity.EXTRA_BTB_JSON,
-                                            BtbLabelUtils.encode(formData)
-                                        )
-                                    }
-                                )
+                                // FIX18: Simpan BTB tidak lagi langsung membuka penerbitan label.
+                                // Penerbitan label dilakukan dari daftar BTB tersimpan,
+                                // berdampingan dengan fungsi export Excel.
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -397,6 +391,22 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
                             }
+
+                            // FIX18: Penerbitan label dipindahkan ke daftar BTB,
+                            // sehingga tidak terjadi otomatis saat tombol Simpan BTB ditekan.
+                            IconButton(onClick = {
+                                context.startActivity(
+                                    Intent(context, BtbLabelActivity::class.java).apply {
+                                        putExtra(
+                                            BtbLabelActivity.EXTRA_BTB_JSON,
+                                            BtbLabelUtils.encode(btb)
+                                        )
+                                    }
+                                )
+                            }) {
+                                Icon(Icons.Default.Share, contentDescription = "Terbitkan Label", tint = Color(0xFF6A1B9A))
+                            }
+
                             IconButton(onClick = {
                                 savedBtbList.remove(btb)
                                 if (editingId == btb.id) resetForm()
