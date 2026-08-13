@@ -218,7 +218,10 @@ class StowingViewModel : ViewModel() {
      */
     fun deleteKgEntry(index: Int) {
         if (index in currentKgEntries.indices) {
-            currentKgEntries.removeAt(index)
+            // Pertahankan posisi/kolom seperti V13.5.2: jangan removeAt(),
+            // karena removeAt() akan menggeser semua KG setelahnya.
+            // Dengan null, slot yang dihapus tetap kosong pada posisinya.
+            currentKgEntries[index] = null
             lastScanImportedCount = 0
             inputKg = ""
         }
