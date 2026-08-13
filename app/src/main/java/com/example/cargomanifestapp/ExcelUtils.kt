@@ -157,26 +157,35 @@ object ExcelUtils {
         val templateCapacity = 24
 
         /*
-         * Grouping Manifest:
+         * Grouping Manifest FIX V13.5.4:
          *
-         * Customer + Description
+         * Manifest harus 1 baris untuk setiap kombinasi PAG + Customer +
+         * Description (+ PTI jika memang berbeda). Jangan menggabungkan
+         * PAG yang berbeda hanya karena Customer dan Description sama.
          *
          * Contoh:
          *
-         * CUSTOMER A | PINANG | 1
-         * CUSTOMER A | PINANG | 2
+         * 002 MYI | ULIN | PINANG | 72  | 1732
+         * 001 MYI | ULIN | PINANG | 144 | 3349
          *
-         * menjadi:
+         * tidak boleh menjadi satu baris:
          *
-         * CUSTOMER A | PINANG | 3
+         * ULIN | PINANG | 216 | 5081
+         *
+         * Ini juga mencegah nilai rata-rata Weight (Net/Cly) dihitung
+         * dari gabungan seluruh PAG.
          */
         val groupedManifest = cargoList
             .filter {
-                it.customer.isNotBlank() &&
+                it.noPag.isNotBlank() &&
+                    it.customer.isNotBlank() &&
                     it.description.isNotBlank()
             }
             .groupBy {
-                "${normalize(it.customer)}|${normalize(it.description)}"
+                "${normalize(it.noPag)}|" +
+                    "${normalize(it.customer)}|" +
+                    "${normalize(it.description)}|" +
+                    normalize(it.pti)
             }
             .map { (_, items) ->
 
