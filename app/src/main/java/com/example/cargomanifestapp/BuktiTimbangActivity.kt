@@ -113,17 +113,23 @@ fun BtbScreen(onBackClick: () -> Unit) {
         editingId = null
     }
 
-    fun exportAndShare(btbData: BtbFormData) {
+    fun exportAndShareAll(dataList: List<BtbFormData>) {
         try {
-            val cacheFile = File(context.cacheDir, "BTB_${btbData.customerName.ifEmpty { "Export" }}.xlsx")
-            val templateInputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
-            
-            FileOutputStream(cacheFile).use { fos ->
-                val tempUri = Uri.fromFile(cacheFile)
-                BtbExcelWriter.fillBtbTemplate(context, templateInputStream, tempUri, btbData)
+            if (dataList.isEmpty()) {
+                Toast.makeText(context, "Belum ada data BTB untuk diekspor.", Toast.LENGTH_SHORT).show()
+                return
             }
 
-            val fileUri: Uri = FileProvider.getUriForFile(
+            val cacheFile = File(
+                context.cacheDir,
+                "BTB_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.xlsx"
+            )
+            context.assets.open("Bukti_Timbang_Barang_BTB.xlsx").use { template ->
+                val tempUri = Uri.fromFile(cacheFile)
+                BtbExcelWriter.fillAllBtbTemplates(context, template, tempUri, dataList)
+            }
+
+            val fileUri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.provider",
                 cacheFile
@@ -171,16 +177,14 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             trademarks = trademarks,
                             jenisBarang = jenisBarang,
                             daftarTimbangan = daftarTimbangan,
-                        photoUris = photoUris.map { it.toString() }
+                            photoUris = photoUris.map { it.toString() }
                         )
-
-                        if (daftarTimbangan.isNotEmpty()) {
-                            exportAndShare(activeData)
-                        } else if (savedBtbList.isNotEmpty()) {
-                            exportAndShare(savedBtbList.last())
-                        } else {
-                            Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
+                        val allData = savedBtbList.toMutableList()
+                        if (daftarTimbangan.isNotEmpty() && customerName.isNotBlank()) {
+                            val existing = allData.indexOfFirst { it.id == activeData.id }
+                            if (existing >= 0) allData[existing] = activeData else allData.add(activeData)
                         }
+                        exportAndShareAll(allData)
                     }) {
                         Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF2E7D32))
                     }

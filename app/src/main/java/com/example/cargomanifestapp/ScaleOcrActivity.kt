@@ -7,10 +7,12 @@ import android.os.Build
 import android.os.Bundle
 import android.os.VibrationEffect
 import android.os.Vibrator
+import android.net.Uri
 import android.widget.Button
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import androidx.camera.core.ImageAnalysis
@@ -39,13 +41,21 @@ class ScaleOcrActivity : ComponentActivity() {
     private lateinit var detectedText: TextView
     private lateinit var useButton: Button
     private lateinit var rescanButton: Button
+    private lateinit var galleryButton: Button
 
     private val cameraExecutor = Executors.newSingleThreadExecutor()
     private lateinit var recognizer: TextRecognizer
+    private var cameraProvider: ProcessCameraProvider? = null
     private var currentWeight: Double? = null
     private var lastCandidate: Double? = null
     private var stableCount = 0
     private var acceptedForSession: Double? = null
+
+    private val galleryLauncher = registerForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let { processGalleryImage(it) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -55,6 +65,7 @@ class ScaleOcrActivity : ComponentActivity() {
         detectedText = findViewById(R.id.tvDetected)
         useButton = findViewById(R.id.btnUseWeight)
         rescanButton = findViewById(R.id.btnRescan)
+        galleryButton = findViewById(R.id.btnUploadPhoto)
         recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
 
         useButton.setOnClickListener {
@@ -71,6 +82,10 @@ class ScaleOcrActivity : ComponentActivity() {
             stableCount = 0
             detectedText.text = "Menunggu angka..."
             useButton.isEnabled = false
+        }
+
+        galleryButton.setOnClickListener {
+            galleryLauncher.launch("image/*")
         }
 
         if (hasCameraPermission()) startCamera()
@@ -91,10 +106,56 @@ class ScaleOcrActivity : ComponentActivity() {
         }
     }
 
+    private fun processGalleryImage(uri: Uri) {
+        currentWeight = null
+        acceptedForSession = null
+        lastCandidate = null
+        stableCount = 0
+        useButton.isEnabled = false
+        detectedText.text = "Membaca foto..."
+        cameraProvider?.unbindAll()
+
+        // Kamera tetap menjadi mode utama. Saat foto dipilih, OCR dilakukan satu kali
+        // pada gambar asli dari galeri tanpa mengubah algoritma pembacaan timbangan.
+        cameraExecutor.execute {
+            try {
+                val image = InputImage.fromFilePath(this, uri)
+                recognizer.process(image)
+                    .addOnSuccessListener { text ->
+                        val candidate = findBestWeight(text, image.width, image.height, restrictScanArea = false)
+                        runOnUiThread {
+                            if (candidate != null) {
+                                currentWeight = candidate
+                                acceptedForSession = candidate
+                                detectedText.text = String.format(Locale.US, "%.2f KG", candidate)
+                                useButton.isEnabled = true
+                                useButton.text = "Gunakan ${String.format(Locale.US, "%.2f", candidate)} KG"
+                            } else {
+                                detectedText.text = "Angka timbangan tidak ditemukan"
+                                Toast.makeText(this, "Coba foto lebih dekat dan fokuskan display timbangan.", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
+                    .addOnFailureListener { error ->
+                        runOnUiThread {
+                            detectedText.text = "Gagal membaca foto"
+                            Toast.makeText(this, "OCR foto gagal: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+            } catch (e: Exception) {
+                runOnUiThread {
+                    detectedText.text = "Foto tidak dapat dibaca"
+                    Toast.makeText(this, "Foto tidak dapat dibuka: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
             val provider = providerFuture.get()
+            cameraProvider = provider
             val preview = Preview.Builder().build().also {
                 it.setSurfaceProvider(previewView.surfaceProvider)
             }
@@ -140,7 +201,7 @@ class ScaleOcrActivity : ComponentActivity() {
         }
     }
 
-    private fun findBestWeight(text: com.google.mlkit.vision.text.Text, width: Int, height: Int): Double? {
+    private fun findBestWeight(text: com.google.mlkit.vision.text.Text, width: Int, height: Int, restrictScanArea: Boolean = true): Double? {
         data class Candidate(val value: Double, val decimal: Boolean, val distance: Double)
         val candidates = mutableListOf<Candidate>()
 
@@ -160,7 +221,7 @@ class ScaleOcrActivity : ComponentActivity() {
                 val cy = (box.centerY().toDouble() / height).coerceIn(0.0, 1.0)
                 // Area scan: mengikuti kotak di bagian atas preview tempat display timbangan diarahkan.
                 val inScanArea = cx in 0.08..0.92 && cy in 0.05..0.48
-                if (!inScanArea) continue
+                if (restrictScanArea && !inScanArea) continue
 
                 val decimal = match.groupValues[1].contains('.')
                 val distance = abs(cx - 0.5) + abs(cy - 0.25)

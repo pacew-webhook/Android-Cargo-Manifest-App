@@ -10,21 +10,14 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 
-private fun btbWeightsToJson(weights: List<Any>): String {
+private fun btbWeightsToJson(weights: List<Double>): String {
     val array = JSONArray()
-    for (item in weights) {
-        val obj = JSONObject()
-        val cls = item::class
-        fun value(name: String): Any? = try {
-            cls.members.firstOrNull { it.name == name }?.call(item)
-        } catch (_: Exception) { null }
-
-        value("beratAsli")?.let { obj.put("beratAsli", it.toString().toDoubleOrNull() ?: 0.0) }
-        value("beratPembulatan")?.let { obj.put("beratPembulatan", it.toString().toDoubleOrNull() ?: 0.0) }
-        value("beratFinal")?.let { obj.put("beratFinal", it.toString().toDoubleOrNull() ?: 0.0) }
-        value("weight")?.let { obj.put("weight", it.toString().toDoubleOrNull() ?: 0.0) }
-        value("kg")?.let { obj.put("kg", it.toString().toDoubleOrNull() ?: 0.0) }
-        array.put(obj)
+    weights.forEach { weight ->
+        array.put(JSONObject().apply {
+            put("beratAsli", weight)
+            put("beratPembulatan", kotlin.math.floor(weight + 0.5))
+            put("beratFinal", kotlin.math.floor(weight + 0.5))
+        })
     }
     return array.toString()
 }
