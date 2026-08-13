@@ -132,10 +132,10 @@ object BtbExcelWriter {
         sheet: Sheet,
         data: BtbFormData
     ) {
-        val headerRowIndex = 9       // Excel 10
-        val firstDataRowIndex = 10  // Excel 11
+        val headerRowIndex = 9       // Excel row 10
+        val firstDataRowIndex = 10  // Excel row 11
         val initialTotalRowIndex = findTotalRow(sheet, headerRowIndex + 1)
-            ?: 23                    // Excel 24 fallback
+            ?: 23                    // Excel row 24 fallback
 
         val dataCount = data.daftarTimbangan.size
         require(dataCount > 0) { "Data timbangan BTB kosong" }
@@ -144,8 +144,6 @@ object BtbExcelWriter {
         val extraRows = (dataCount - existingDataRows).coerceAtLeast(0)
 
         if (extraRows > 0) {
-            // TOTAL dan seluruh bagian di bawahnya digeser ke bawah. Ini menjaga
-            // tanda tangan/Petugas tetap ikut bergerak bersama template.
             sheet.shiftRows(
                 initialTotalRowIndex,
                 sheet.lastRowNum,
@@ -154,7 +152,6 @@ object BtbExcelWriter {
                 false
             )
 
-            // Salin format baris data terakhir sebelum TOTAL ke baris baru.
             val sourceRowIndex = initialTotalRowIndex - 1
             for (i in 0 until extraRows) {
                 copyRowStyle(sheet, sourceRowIndex, initialTotalRowIndex - 1 + i)
@@ -164,54 +161,90 @@ object BtbExcelWriter {
         val totalRowIndex = initialTotalRowIndex + extraRows
         val lastDataRowIndex = firstDataRowIndex + dataCount - 1
 
-        // Header baru sesuai template FIX7.
+        // Header BTB.
         setText(sheet, headerRowIndex, 0, "HASIL SCAN")
         setText(sheet, headerRowIndex, 1, "PEMBULATAN")
         clearCell(sheet, headerRowIndex, 2)
         clearCell(sheet, headerRowIndex, 3)
         clearCell(sheet, headerRowIndex, 4)
 
-        // Header transaksi. D3/D4/D5 tetap mengikuti template lama.
+        // Informasi utama.
         setText(sheet, 2, 3, data.hariTanggal)
         setText(sheet, 3, 3, data.customerName)
         setText(sheet, 4, 3, data.trademarks)
         setText(sheet, 8, 0, data.jenisBarang)
 
-        // Bersihkan seluruh area data lama dari isi/formula agar tidak ada
-        // data lama yang tertinggal di kolom C/D/E.
+        /*
+         * PENTING:
+         * Template BTB lama mempunyai formula TOTAL di E24 dan beberapa sel
+         * data yang sudah berisi style/formula. Jangan hanya setBlank() pada
+         * cell tersebut karena pada beberapa versi POI/Google Sheets formula
+         * atau cached value dari template masih dapat terbawa.
+         *
+         * Karena itu cell data A:B dan TOTAL E diganti secara eksplisit,
+         * sambil mempertahankan style cell lama.
+         */
         for (rowIndex in firstDataRowIndex..lastDataRowIndex) {
-            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-            for (col in 0..4) {
-                if (col >= 2) clearCell(row, col)
-            }
+            clearCell(sheet, rowIndex, 0)
+            clearCell(sheet, rowIndex, 1)
+            clearCell(sheet, rowIndex, 2)
+            clearCell(sheet, rowIndex, 3)
+            clearCell(sheet, rowIndex, 4)
         }
 
-        // Tulis HASIL SCAN dan PEMBULATAN sebagai CELL NUMERIC murni.
-        // Jangan menyimpan angka sebagai String karena Google Sheets/Excel
-        // kemudian tidak akan menghitung/menampilkan hasil pembulatan dengan benar.
-        data.daftarTimbangan.forEachIndexed { index, original ->
-            val rowIndex = firstDataRowIndex + index
-            val rounded = roundWeight(original)
-            writeNumericCell(workbook, sheet, rowIndex, 0, original, "0.00")
-            writeNumericCell(workbook, sheet, rowIndex, 1, rounded, "0.00")
-        }
-
-        // TOTAL ditulis sebagai angka final, bukan formula lama dari template.
-        // Dengan demikian nilai langsung terlihat di Excel/Google Sheets tanpa
-        // bergantung pada recalculation/cache formula.
-        setText(sheet, totalRowIndex, 0, "TOTAL :")
-        clearCell(sheet, totalRowIndex, 1)
-        clearCell(sheet, totalRowIndex, 2)
-        clearCell(sheet, totalRowIndex, 3)
-        writeNumericCell(workbook, sheet, totalRowIndex, 4, data.totalBeratPembulatan, "0.00")
-
-        // Kosongkan formula lama di baris data yang tersisa jika template awal
-        // memiliki formula lama di kolom D.
+        // Bersihkan baris kosong sebelum TOTAL.
         val afterLastData = lastDataRowIndex + 1
         if (afterLastData < totalRowIndex) {
             for (r in afterLastData until totalRowIndex) {
                 for (c in 0..4) clearCell(sheet, r, c)
             }
+        }
+
+        // Tulis HASIL SCAN dan PEMBULATAN sebagai angka Excel sungguhan.
+        data.daftarTimbangan.forEachIndexed { index, original ->
+            val rowIndex = firstDataRowIndex + index
+            val rounded = roundWeight(original)
+
+            replaceWithNumericCell(
+                workbook = workbook,
+                sheet = sheet,
+                rowIndex = rowIndex,
+                colIndex = 0,
+                value = original,
+                format = "0.00"
+            )
+
+            replaceWithNumericCell(
+                workbook = workbook,
+                sheet = sheet,
+                rowIndex = rowIndex,
+                colIndex = 1,
+                value = rounded,
+                format = "0.00"
+            )
+        }
+
+        // TOTAL selalu dihitung dari nilai pembulatan di aplikasi.
+        // Tidak menggunakan formula Excel agar Google Sheets langsung membaca
+        // nilai yang benar walaupun belum melakukan recalculation.
+        setText(sheet, totalRowIndex, 0, "TOTAL :")
+        clearCell(sheet, totalRowIndex, 1)
+        clearCell(sheet, totalRowIndex, 2)
+        clearCell(sheet, totalRowIndex, 3)
+
+        replaceWithNumericCell(
+            workbook = workbook,
+            sheet = sheet,
+            rowIndex = totalRowIndex,
+            colIndex = 4,
+            value = data.totalBeratPembulatan,
+            format = "0.00"
+        )
+
+        // Hapus formula cached/value lama pada E dari template jika ada.
+        sheet.getRow(totalRowIndex)?.getCell(4)?.cellFormula?.let {
+            // replaceWithNumericCell di atas sudah menghapus formula; blok ini
+            // hanya dokumentasi bahwa E TOTAL harus selalu numeric.
         }
     }
 
@@ -219,7 +252,12 @@ object BtbExcelWriter {
         for (r in fromRow..sheet.lastRowNum) {
             val row = sheet.getRow(r) ?: continue
             for (c in 0..4) {
-                val value = row.getCell(c)?.stringCellValue?.trim().orEmpty()
+                val cell = row.getCell(c) ?: continue
+                val value = when (cell.cellType) {
+                    CellType.STRING -> cell.stringCellValue.trim()
+                    CellType.FORMULA -> cell.cellFormula.trim()
+                    else -> ""
+                }
                 if (value.equals("TOTAL :", ignoreCase = true) || value.equals("TOTAL", ignoreCase = true)) {
                     return r
                 }
@@ -248,7 +286,7 @@ object BtbExcelWriter {
         cell.setCellValue(value)
     }
 
-    private fun writeNumericCell(
+    private fun replaceWithNumericCell(
         workbook: Workbook,
         sheet: Sheet,
         rowIndex: Int,
@@ -257,18 +295,23 @@ object BtbExcelWriter {
         format: String
     ) {
         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-        val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
-        // Hapus formula/string lama secara eksplisit sebelum menulis numeric value.
-        cell.setBlank()
-        cell.setCellValue(value)
-        cell.cellStyle = cloneWithFormat(workbook, cell.cellStyle, format)
-    }
+        val oldCell = row.getCell(colIndex)
+        val oldStyle = oldCell?.cellStyle
 
-    private fun setFormula(workbook: Workbook, sheet: Sheet, rowIndex: Int, colIndex: Int, formula: String, format: String) {
-        val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-        val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
-        cell.cellFormula = formula
-        cell.cellStyle = cloneWithFormat(workbook, cell.cellStyle, format)
+        if (oldCell != null) {
+            row.removeCell(oldCell)
+        }
+
+        val cell = row.createCell(colIndex)
+        if (oldStyle != null) {
+            cell.cellStyle = cloneWithFormat(workbook, oldStyle, format)
+        } else {
+            val style = workbook.createCellStyle()
+            style.dataFormat = workbook.createDataFormat().getFormat(format)
+            cell.cellStyle = style
+        }
+        cell.setCellValue(value)
+        cell.setCellType(CellType.NUMERIC)
     }
 
     private fun clearCell(sheet: Sheet, rowIndex: Int, colIndex: Int) {
