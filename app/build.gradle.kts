@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.cargomanifestapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "1.13.5.5-BTB-LABEL-FIX2"
+        versionCode = 25
+        versionName = "1.13.5.5-BTB-LABEL-FIX3"
 
         val geminiApiKey = project.findProperty("GEMINI_API_KEY")?.toString() ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.replace("\"", "\\\"")}\"")
@@ -64,6 +64,7 @@ android {
 }
 
 dependencies {
+    implementation("androidx.compose.material:material-icons-extended")
 
     // Room Database
     val roomVersion = "2.6.1"
