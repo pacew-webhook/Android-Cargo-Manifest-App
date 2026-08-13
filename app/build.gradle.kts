@@ -14,7 +14,7 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 25
-        versionName = "1.13.5.5-BTB-LABEL-FIX3"
+        versionName = "1.13.5.5-BTB-LABEL-FIX5"
 
         val geminiApiKey = project.findProperty("GEMINI_API_KEY")?.toString() ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.replace("\"", "\\\"")}\"")
