@@ -191,16 +191,15 @@ object BtbExcelWriter {
         val png = createQrPng(payload)
         val pictureIndex = workbook.addPicture(png, Workbook.PICTURE_TYPE_PNG)
         val drawing = sheet.createDrawingPatriarch()
-        val anchor = XSSFClientAnchor().apply {
-            col1 = 6 // G
-            row1 = 1 // Excel row 2
-            col2 = 10 // K
-            row2 = 9 // Excel row 10
-            dx1 = 0
-            dy1 = 0
-            dx2 = 0
-            dy2 = 0
-        }
+        val anchor = XSSFClientAnchor()
+        anchor.setCol1(6) // G
+        anchor.setRow1(1) // Excel row 2
+        anchor.setCol2(10) // K
+        anchor.setRow2(9) // Excel row 10
+        anchor.setDx1(0)
+        anchor.setDy1(0)
+        anchor.setDx2(0)
+        anchor.setDy2(0)
         drawing.createPicture(anchor, pictureIndex).resize(1.0)
     }
 
