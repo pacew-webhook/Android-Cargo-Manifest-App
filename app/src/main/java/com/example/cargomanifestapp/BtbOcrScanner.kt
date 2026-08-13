@@ -306,7 +306,11 @@ HASIL PEMBACAAN PERTAMA:
             "btbBox",
             JSONObject()
                 .put("type", "object")
-                .put("properties", boxProperties())
+                .put("properties", JSONObject()
+                    .put("ymin", JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 1000))
+                    .put("xmin", JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 1000))
+                    .put("ymax", JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 1000))
+                    .put("xmax", JSONObject().put("type", "integer").put("minimum", 0).put("maximum", 1000)))
                 .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax")))
         ))
         .put("required", JSONArray(listOf("btbBox")))
