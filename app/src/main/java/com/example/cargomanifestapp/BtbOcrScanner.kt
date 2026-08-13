@@ -43,7 +43,7 @@ object BtbOcrScanner {
     private data class Box(val ymin: Int, val xmin: Int, val ymax: Int, val xmax: Int)
 
     private const val MODEL = "gemini-3.1-flash-lite"
-    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/$MODEL:generateContent"
+    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
 
     /**
      * V13.2 - Gemini 3.1 Flash-Lite BTB scanner.
@@ -70,15 +70,18 @@ Jangan memberikan angka berat. Hanya lokasi kertas BTB.
 """
 
     private const val EXTRACT_PROMPT = """
-Baca FOTO BTB yang diberikan secara visual. FOTO SUDAH DI-CROP ke kertas BTB.
+Baca FOTO BTB yang diberikan secara visual. Foto bisa berupa foto penuh dari kamera/galeri
+atau sudah dekat dengan kertas BTB. Temukan tabel BTB langsung dari foto dan fokus hanya pada
+4 baris tulisan tangan berat. Jangan membutuhkan crop terpisah dari aplikasi.
 
 TUGAS UTAMA:
 1. Fokus hanya pada kolom paling kiri bertuliskan JENIS BARANG. Tulisan tangan di kolom itu
    adalah angka berat per koli.
 2. Form BTB pada foto ini memiliki 4 baris data horizontal di bawah header tabel.
-3. Setiap baris target berisi maksimal 5 angka berat yang dibaca dari kiri ke kanan.
-4. Kembalikan tepat 4 objek baris, row=1 sampai row=4. Jika satu baris kosong atau tidak
-   terbaca, weights untuk baris itu harus [] .
+3. Setiap baris target pada BTB ini berisi 5 angka berat yang dibaca dari kiri ke kanan.
+4. Kembalikan tepat 4 objek baris, row=1 sampai row=4. Usahakan membaca SEMUA 5 angka
+   pada setiap baris. Jika satu angka benar-benar tidak terbaca, jangan mengarang; masukkan
+   angka lain yang terlihat dan biarkan posisi yang tidak terbaca tidak diisi.
 5. Baca maksimal 5 angka dari kiri ke kanan dalam setiap baris dan jangan mengambil angka dari baris lain.
 6. Jangan membaca angka dari header, tanggal, nama customer, kolom JUMLAH KOLI, kolom BERAT,
    kolom JUMLAH BERAT (KG), TOTAL, monitor, atau latar belakang.
@@ -129,41 +132,40 @@ HASIL PEMBACAAN PERTAMA:
         val source = loadBitmapCorrectOrientation(context, uri)
             ?: return@withContext Result(emptyList(), verificationMessage = "Foto BTB tidak dapat dibaca")
 
-        val normalized = downscale(source, 3200)
+        val normalized = downscale(source, 2400)
         if (normalized !== source) source.recycle()
 
         try {
-            val btb = try {
-                val locateJson = generateJson(apiKey, LOCATE_PROMPT, normalized, locateSchema())
-                val box = parseBox(JSONObject(locateJson).optJSONObject("btbBox"))
-                cropBox(normalized, box, 0.03f, 0.03f) ?: normalized
-            } catch (_: Exception) {
-                normalized
-            }
+            // V13.4 speed/accuracy: jangan selalu melakukan 3 request Gemini.
+            // Satu request langsung membaca seluruh foto. Jika hasil tidak lengkap,
+            // barulah jalankan satu request verifikasi tambahan. Ini memangkas waktu
+            // scan normal secara signifikan tanpa mengorbankan fallback untuk foto sulit.
+            val firstJson = generateJson(apiKey, EXTRACT_PROMPT, normalized, rowsSchema())
+            val firstParsed = parseRows(firstJson)
+            val firstCount = firstParsed.sumOf { it.size }
 
-            val ownsCrop = btb !== normalized
-            try {
-                val firstJson = generateJson(apiKey, EXTRACT_PROMPT, btb, rowsSchema())
+            val parsed = if (firstCount == 20 && firstParsed.all { it.size == 5 }) {
+                firstParsed
+            } else {
                 val verifiedJson = try {
                     generateJson(
                         apiKey,
                         VERIFY_PROMPT + firstJson,
-                        btb,
+                        normalized,
                         rowsSchema()
                     )
                 } catch (_: Exception) {
                     firstJson
                 }
-
-                val parsed = parseRows(verifiedJson)
-                if (parsed.all { it.isEmpty() }) {
-                    val firstParsed = parseRows(firstJson)
-                    return@withContext buildResult(firstParsed, "Gemini visual pass menghasilkan baris kosong; memakai pass pertama.")
-                }
-                buildResult(parsed, "Gemini 2-pass: pembacaan baris + verifikasi visual.")
-            } finally {
-                if (ownsCrop) btb.recycle()
+                val verified = parseRows(verifiedJson)
+                if (verified.sumOf { it.size } >= firstCount) verified else firstParsed
             }
+
+            buildResult(parsed, if (parsed.sumOf { it.size } == 20) {
+                "Gemini cepat: 4 baris lengkap (20 koli)."
+            } else {
+                "Gemini cepat + verifikasi: ${parsed.sumOf { it.size }} koli terbaca."
+            })
         } catch (e: Exception) {
             Result(
                 emptyList(),
@@ -227,8 +229,7 @@ HASIL PEMBACAAN PERTAMA:
         val generationConfig = JSONObject()
             .put("responseMimeType", "application/json")
             .put("responseJsonSchema", schema)
-            .put("temperature", 0.0)
-            .put("thinkingConfig", JSONObject().put("thinkingLevel", "high"))
+            .put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
 
         val body = JSONObject()
             .put("contents", contents)
