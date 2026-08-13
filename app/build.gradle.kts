@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.cargomanifestapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.13.5.5-BTB-EXCEL-FIX16-QR"
+        versionCode = 21
+        versionName = "1.13.5.5-BTB-EXCEL-FIX17"
 
         val geminiApiKey = project.findProperty("GEMINI_API_KEY")?.toString() ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.replace("\"", "\\\"")}\"")
@@ -96,7 +96,6 @@ dependencies {
     implementation("com.google.android.gms:play-services-mlkit-text-recognition:19.0.0")
 
     // Apache POI (Excel)
-    implementation("com.google.zxing:core:3.5.3")
 
     implementation("org.apache.poi:poi:5.2.3")
     implementation("org.apache.poi:poi-ooxml:5.2.3") {
