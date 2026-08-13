@@ -27,6 +27,10 @@ class StowingViewModel : ViewModel() {
     var inputKg by mutableStateOf("")
         private set
 
+    // Jumlah item yang benar-benar berhasil dipindahkan dari dialog scan ke form.
+    var lastScanImportedCount by mutableStateOf(0)
+        private set
+
     var editingIndex by mutableStateOf<Int?>(null)
         private set
 
@@ -108,11 +112,28 @@ class StowingViewModel : ViewModel() {
         }
     }
 
-    /** Mengganti seluruh daftar KG dengan hasil scan BTB yang sudah dikoreksi. */
-    fun applyScannedWeights(weights: List<Double>) {
+    /**
+     * V13.3 FIX: memindahkan SELURUH hasil scan BTB ke Rincian Input KG.
+     *
+     * Jangan mengandalkan referensi List dari dialog/Compose. Buat snapshot baru,
+     * bersihkan state lama, lalu masukkan satu per satu ke SnapshotStateList.
+     * Cara ini menjaga jumlah dan urutan item tetap sama dengan hasil scan.
+     */
+    fun applyScannedWeights(weights: List<Double>): Int {
+        val cleanWeights = weights
+            .asSequence()
+            .filter { it.isFinite() && it > 0.0 }
+            .map { it }
+            .toList()
+
         currentKgEntries.clear()
-        currentKgEntries.addAll(weights.filter { it.isFinite() && it > 0.0 })
+        cleanWeights.forEach { weight ->
+            currentKgEntries.add(weight)
+        }
+
         inputKg = ""
+        lastScanImportedCount = currentKgEntries.count { it != null }
+        return lastScanImportedCount
     }
 
     fun addKgEntry(onInvalidInput: () -> Unit) {
@@ -188,6 +209,21 @@ class StowingViewModel : ViewModel() {
         editingIndex = null
     }
 
+    /**
+     * Menghapus satu pecahan KG secara langsung tanpa konfirmasi.
+     *
+     * KG adalah data detail yang sering perlu dikoreksi satu per satu, sehingga
+     * klik ikon 🗑️ langsung menghilangkan item dan menghitung ulang total.
+     * Konfirmasi tetap digunakan untuk data PAG/customer dan reset seluruh data.
+     */
+    fun deleteKgEntry(index: Int) {
+        if (index in currentKgEntries.indices) {
+            currentKgEntries.removeAt(index)
+            lastScanImportedCount = 0
+            inputKg = ""
+        }
+    }
+
     fun showDeleteDialog(type: DeleteType, itemIdx: Int? = null, kgIdx: Int? = null) {
         deleteType = type
         itemIndexToDelete = itemIdx
@@ -219,9 +255,7 @@ class StowingViewModel : ViewModel() {
                 }
             }
             DeleteType.KG_ENTRY -> {
-                kgIndexToDelete?.let { idx ->
-                    if (idx in currentKgEntries.indices) currentKgEntries[idx] = null
-                }
+                kgIndexToDelete?.let { idx -> deleteKgEntry(idx) }
             }
             DeleteType.NONE -> Unit
         }

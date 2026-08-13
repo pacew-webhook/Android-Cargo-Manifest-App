@@ -249,22 +249,41 @@ fun StowingInputScreen(
             confirmButton = {
                 Button(
                     onClick = {
+                        // V13.3 FIX: snapshot seluruh angka dari dialog sebelum dipindahkan.
                         val values = scannedWeightsText
-                            .replace("\n", ",")
-                            .split(",", ";", " ", "\n")
-                            .mapNotNull { it.trim().toDoubleOrNull() }
-                            .filter { it > 0.0 }
+                            .replace('\n', ',')
+                            .split(',', ';', ' ', '\t', '\r')
+                            .mapNotNull { token ->
+                                token.trim().replace(',', '.').toDoubleOrNull()
+                            }
+                            .filter { it.isFinite() && it > 0.0 }
+                            .toList()
 
                         if (values.isEmpty()) {
                             Toast.makeText(context, "Tidak ada angka KG yang valid.", Toast.LENGTH_SHORT).show()
                         } else {
-                            viewModel.applyScannedWeights(values)
-                            showScanResultDialog = false
-                            Toast.makeText(
-                                context,
-                                "${values.size} koli dimasukkan ke Rincian Input KG",
-                                Toast.LENGTH_SHORT
-                            ).show()
+                            var importedCount = viewModel.applyScannedWeights(values)
+
+                            // Retry deterministik bila state belum menerima seluruh item.
+                            if (importedCount != values.size) {
+                                importedCount = viewModel.applyScannedWeights(values)
+                            }
+
+                            val finalCount = viewModel.currentActiveEntries.size
+                            if (finalCount == values.size) {
+                                showScanResultDialog = false
+                                Toast.makeText(
+                                    context,
+                                    "Berhasil: $finalCount/${values.size} koli masuk ke Rincian Input KG",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Transfer KG belum lengkap: $finalCount/${values.size}. Coba tekan Gunakan Hasil lagi.",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
                 ) {
@@ -557,6 +576,14 @@ fun StowingInputScreen(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
+                    if (viewModel.lastScanImportedCount > 0) {
+                        Text(
+                            text = "Hasil scan terakhir: ${viewModel.lastScanImportedCount} koli berhasil dimasukkan",
+                            fontSize = 10.sp,
+                            color = Color(0xFF2E7D32),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                     Spacer(modifier = Modifier.height(4.dp))
 
                     LazyVerticalGrid(
@@ -584,7 +611,9 @@ fun StowingInputScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                         IconButton(
-                                            onClick = { viewModel.showDeleteDialog(DeleteType.KG_ENTRY, kgIdx = index) },
+                                            // Hapus pecahan KG langsung tanpa dialog konfirmasi.
+                                            // Konfirmasi hanya dipakai untuk data PAG/customer dan hapus semua data.
+                                            onClick = { viewModel.deleteKgEntry(index) },
                                             modifier = Modifier.size(14.dp)
                                         ) {
                                             Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
