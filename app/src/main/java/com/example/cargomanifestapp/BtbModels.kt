@@ -37,6 +37,23 @@ data class BtbFormData(
 /** Aturan BTB: pecahan < .50 turun, >= .50 naik ke kilogram berikutnya. */
 fun roundWeight(weight: Double): Double = floor(weight + 0.5)
 
+fun btbWeightsToJson(weights: List<Double>): String =
+    org.json.JSONArray().apply { weights.forEach { put(it) } }.toString()
+
+fun btbWeightsFromJson(json: String): List<Double> {
+    return try {
+        val array = org.json.JSONArray(json)
+        buildList {
+            for (i in 0 until array.length()) {
+                val value = array.optDouble(i, Double.NaN)
+                if (value.isFinite() && value > 0.0) add(value)
+            }
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+}
+
 object BtbExcelWriter {
 
     /**

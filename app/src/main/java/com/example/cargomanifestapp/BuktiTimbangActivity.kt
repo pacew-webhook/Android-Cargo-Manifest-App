@@ -145,7 +145,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     }
 
     fun tambahBerat() {
-        val weight = inputBeratText.toDoubleOrNull()
+        val weight = WeightUtils.parse(inputBeratText)
         if (weight != null && weight > 0) {
             daftarTimbangan = daftarTimbangan + weight
             inputBeratText = ""

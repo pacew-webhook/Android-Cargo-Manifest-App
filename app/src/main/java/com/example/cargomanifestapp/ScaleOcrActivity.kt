@@ -224,6 +224,11 @@ class ScaleOcrActivity : ComponentActivity() {
                     .entries
                     .sortedWith(
                         compareByDescending<Map.Entry<String, Int>> { it.value }
+                            .thenByDescending { key ->
+                                // Timbangan digital umumnya menampilkan dua digit desimal.
+                                // Jangan mengubah 13.41 menjadi 13.00 hanya karena pembulatan.
+                                key.key.count { it == '.' }
+                            }
                             .thenBy { abs((it.key.toDoubleOrNull() ?: 0.0) - 50.0) }
                     )
                     .firstOrNull()
@@ -287,15 +292,14 @@ class ScaleOcrActivity : ComponentActivity() {
             for (line in block.lines) {
                 val box = line.boundingBox ?: continue
                 val raw = line.text
-                    .replace(',', '.')
                     .replace('O', '0', ignoreCase = true)
                     .replace('I', '1')
                     .replace('l', '1')
                     .replace('S', '5', ignoreCase = true)
 
-                val matches = Regex("(?<!\\d)(\\d{1,4}(?:\\.\\d{1,2})?)(?!\\d)").findAll(raw)
+                val matches = Regex("(?<!\\d)(\\d{1,4}(?:[.,]\\d{1,2})?)(?!\\d)").findAll(raw)
                 for (match in matches) {
-                    val value = match.groupValues[1].toDoubleOrNull() ?: continue
+                    val value = WeightUtils.parse(match.groupValues[1]) ?: continue
                     if (value <= 0.0 || value > 9999.0) continue
 
                     val cx = (box.centerX().toDouble() / max(1, width)).coerceIn(0.0, 1.0)
@@ -311,7 +315,7 @@ class ScaleOcrActivity : ComponentActivity() {
                     }
                     val centerBonus = 2.0 - (abs(cx - 0.5) + abs(cy - 0.22))
                     val sizeBonus = (h * 20.0).coerceIn(0.0, 4.0) + (w * 4.0).coerceIn(0.0, 2.0)
-                    val decimalBonus = if (match.groupValues[1].contains('.')) 5.0 else 0.0
+                    val decimalBonus = if (match.groupValues[1].contains('.') || match.groupValues[1].contains(',')) 5.0 else 0.0
                     val plausibleBonus = if (value <= 200.0) 2.0 else -2.0
 
                     candidates += Candidate(
