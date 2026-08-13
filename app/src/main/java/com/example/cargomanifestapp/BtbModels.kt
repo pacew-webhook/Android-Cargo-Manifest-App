@@ -154,18 +154,18 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply {
+            setFont(workbook.createFont().apply {
                 color = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index
                 bold = true
                 fontHeightInPoints = 14
-            }
+            })
         }
         val labelStyle = workbook.createCellStyle().apply {
             alignment = HorizontalAlignment.LEFT
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true })
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
@@ -174,7 +174,7 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index })
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
@@ -183,7 +183,7 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index; bold = true }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index; bold = true })
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
@@ -192,7 +192,7 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index; bold = true })
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
@@ -201,7 +201,7 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index })
             dataFormat = workbook.createDataFormat().getFormat("0.00")
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
@@ -211,7 +211,7 @@ object BtbExcelWriter {
             verticalAlignment = VerticalAlignment.CENTER
             fillForegroundColor = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
             fillPattern = org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND
-            font = workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index; bold = true; fontHeightInPoints = 13 }
+            setFont(workbook.createFont().apply { color = org.apache.poi.ss.usermodel.IndexedColors.LIGHT_BLUE.index; bold = true; fontHeightInPoints = 13 })
             borderBottom = BorderStyle.THIN; borderTop = BorderStyle.THIN
             borderLeft = BorderStyle.THIN; borderRight = BorderStyle.THIN
         }
