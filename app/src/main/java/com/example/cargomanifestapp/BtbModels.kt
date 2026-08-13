@@ -186,21 +186,24 @@ object BtbExcelWriter {
             }
         }
 
-        // Tulis HASIL SCAN dan PEMBULATAN saja.
+        // Tulis HASIL SCAN dan PEMBULATAN sebagai CELL NUMERIC murni.
+        // Jangan menyimpan angka sebagai String karena Google Sheets/Excel
+        // kemudian tidak akan menghitung/menampilkan hasil pembulatan dengan benar.
         data.daftarTimbangan.forEachIndexed { index, original ->
             val rowIndex = firstDataRowIndex + index
-            setNumeric(workbook, sheet, rowIndex, 0, original, "0.00")
-            setNumeric(workbook, sheet, rowIndex, 1, roundWeight(original), "0.00")
+            val rounded = roundWeight(original)
+            writeNumericCell(workbook, sheet, rowIndex, 0, original, "0.00")
+            writeNumericCell(workbook, sheet, rowIndex, 1, rounded, "0.00")
         }
 
-        // Pastikan label TOTAL tetap menggunakan merge template A:D.
-        // Jika template pernah diedit manual dan merge hilang, kita tetap
-        // tidak membuat struktur baru selain mengisi sel label yang ada.
+        // TOTAL ditulis sebagai angka final, bukan formula lama dari template.
+        // Dengan demikian nilai langsung terlihat di Excel/Google Sheets tanpa
+        // bergantung pada recalculation/cache formula.
         setText(sheet, totalRowIndex, 0, "TOTAL :")
         clearCell(sheet, totalRowIndex, 1)
         clearCell(sheet, totalRowIndex, 2)
         clearCell(sheet, totalRowIndex, 3)
-        setNumeric(workbook, sheet, totalRowIndex, 4, data.totalBeratPembulatan, "0.00")
+        writeNumericCell(workbook, sheet, totalRowIndex, 4, data.totalBeratPembulatan, "0.00")
 
         // Kosongkan formula lama di baris data yang tersisa jika template awal
         // memiliki formula lama di kolom D.
@@ -245,9 +248,18 @@ object BtbExcelWriter {
         cell.setCellValue(value)
     }
 
-    private fun setNumeric(workbook: Workbook, sheet: Sheet, rowIndex: Int, colIndex: Int, value: Double, format: String) {
+    private fun writeNumericCell(
+        workbook: Workbook,
+        sheet: Sheet,
+        rowIndex: Int,
+        colIndex: Int,
+        value: Double,
+        format: String
+    ) {
         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
         val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
+        // Hapus formula/string lama secara eksplisit sebelum menulis numeric value.
+        cell.setBlank()
         cell.setCellValue(value)
         cell.cellStyle = cloneWithFormat(workbook, cell.cellStyle, format)
     }

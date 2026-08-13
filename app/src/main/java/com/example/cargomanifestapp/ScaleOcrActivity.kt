@@ -173,7 +173,9 @@ class ScaleOcrActivity : ComponentActivity() {
             val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
             recognizer.process(image)
                 .addOnSuccessListener { text ->
-                    val candidate = findBestWeight(text, image.width, image.height)
+                    // Hanya baca area kotak SCAN, bukan seluruh frame kamera.
+                    // Ini mencegah angka dari jam/status/objek lain menjadi hasil OCR.
+                    val candidate = findBestWeight(text, image.width, image.height, cameraOnly = true)
                     if (candidate != null) processCandidate(candidate)
                 }
                 .addOnCompleteListener { imageProxy.close() }
@@ -257,7 +259,7 @@ class ScaleOcrActivity : ComponentActivity() {
         val image = InputImage.fromBitmap(bitmap, 0)
         recognizer.process(image)
             .addOnSuccessListener { text ->
-                findBestWeight(text, bitmap.width, bitmap.height)?.let { output += it }
+                findBestWeight(text, bitmap.width, bitmap.height, cameraOnly = false)?.let { output += it }
             }
             .addOnCompleteListener { latch.countDown() }
         latch.await(4, TimeUnit.SECONDS)
@@ -278,7 +280,8 @@ class ScaleOcrActivity : ComponentActivity() {
     private fun findBestWeight(
         text: com.google.mlkit.vision.text.Text,
         width: Int,
-        height: Int
+        height: Int,
+        cameraOnly: Boolean = false
     ): Double? {
         data class Candidate(
             val value: Double,
@@ -307,15 +310,23 @@ class ScaleOcrActivity : ComponentActivity() {
                     val h = box.height().toDouble() / max(1, height)
                     val w = box.width().toDouble() / max(1, width)
 
-                    // Display timbangan biasanya berada di area atas dan tengah.
+                    // Kamera: kotak SCAN berada di bagian atas-tengah. Kandidat
+                    // di luar zona ini DITOLAK, bukan sekadar diberi skor rendah.
+                    // Upload foto tetap memakai scoring karena posisi display pada
+                    // foto dapat berubah setelah crop/rotasi.
+                    if (cameraOnly && !(cy in 0.06..0.36 && cx in 0.08..0.92)) continue
+
                     val areaBonus = when {
-                        cy <= 0.38 && cx in 0.15..0.85 -> 4.0
-                        cy <= 0.50 && cx in 0.08..0.92 -> 2.0
-                        else -> -2.0
+                        cy in 0.08..0.32 && cx in 0.18..0.82 -> 6.0
+                        cy in 0.06..0.36 && cx in 0.08..0.92 -> 3.0
+                        else -> -3.0
                     }
                     val centerBonus = 2.0 - (abs(cx - 0.5) + abs(cy - 0.22))
                     val sizeBonus = (h * 20.0).coerceIn(0.0, 4.0) + (w * 4.0).coerceIn(0.0, 2.0)
-                    val decimalBonus = if (match.groupValues[1].contains('.') || match.groupValues[1].contains(',')) 5.0 else 0.0
+                    val hasDecimal = match.groupValues[1].contains('.') || match.groupValues[1].contains(',')
+                    if (cameraOnly && !hasDecimal) continue
+                    if (cameraOnly && h < 0.035) continue
+                    val decimalBonus = if (hasDecimal) 7.0 else 0.0
                     val plausibleBonus = if (value <= 200.0) 2.0 else -2.0
 
                     candidates += Candidate(
