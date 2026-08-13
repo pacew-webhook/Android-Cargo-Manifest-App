@@ -9,8 +9,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.LocalPrintshop
 import androidx.compose.material3.*
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -84,7 +85,7 @@ private fun BtbLabelScreen(
                 modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92))
             ) {
-                Icon(Icons.Default.Print, contentDescription = null)
+                Icon(Icons.Default.LocalPrintshop, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
                 Text("TERBITKAN & BAGIKAN LABEL")
             }
