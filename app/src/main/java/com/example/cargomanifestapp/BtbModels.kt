@@ -162,8 +162,8 @@ object BtbExcelWriter {
         val lastDataRowIndex = firstDataRowIndex + dataCount - 1
 
         // Header BTB.
-        setText(sheet, headerRowIndex, 0, "HASIL SCAN")
-        setText(sheet, headerRowIndex, 1, "PEMBULATAN")
+        setHeaderText(workbook, sheet, headerRowIndex, 0, "HASIL SCAN")
+        setHeaderText(workbook, sheet, headerRowIndex, 1, "PEMBULATAN")
         clearCell(sheet, headerRowIndex, 2)
         clearCell(sheet, headerRowIndex, 3)
         clearCell(sheet, headerRowIndex, 4)
@@ -224,7 +224,7 @@ object BtbExcelWriter {
                 colIndex = 1,
                 value = rounded,
                 format = "0.00",
-                styleSourceColIndex = 0,
+                styleSourceColIndex = 1,
                 horizontalAlignment = HorizontalAlignment.CENTER
             )
         }
@@ -251,6 +251,27 @@ object BtbExcelWriter {
         // menyebabkan: "Cannot get a FORMULA value from a NUMERIC cell".
         // replaceWithNumericCell() di atas sudah menghapus cell lama
         // beserta formula/cached value-nya.
+    }
+
+    /**
+     * Paksa header Excel dibuat ulang sebagai STRING + style header asli.
+     * Ini mencegah header PEMBULATAN hilang ketika template memiliki cache
+     * atau struktur cell yang berbeda pada versi Google Sheets/POI tertentu.
+     */
+    private fun setHeaderText(
+        workbook: Workbook,
+        sheet: Sheet,
+        rowIndex: Int,
+        colIndex: Int,
+        value: String
+    ) {
+        val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+        val oldCell = row.getCell(colIndex)
+        val oldStyle = oldCell?.cellStyle
+        if (oldCell != null) row.removeCell(oldCell)
+        val cell = row.createCell(colIndex, CellType.STRING)
+        if (oldStyle != null) cell.cellStyle = oldStyle
+        cell.setCellValue(value)
     }
 
     private fun findTotalRow(sheet: Sheet, fromRow: Int): Int? {
@@ -310,7 +331,7 @@ object BtbExcelWriter {
             row.removeCell(oldCell)
         }
 
-        val cell = row.createCell(colIndex)
+        val cell = row.createCell(colIndex, CellType.NUMERIC)
         if (oldStyle != null) {
             cell.cellStyle = cloneWithFormat(workbook, oldStyle, format)
         } else {
@@ -321,8 +342,11 @@ object BtbExcelWriter {
         if (horizontalAlignment != null) {
             cell.cellStyle = cloneWithAlignment(workbook, cell.cellStyle, horizontalAlignment)
         }
+        // setCellValue(Double) membuat cell NUMERIC secara langsung.
+        // Jangan memanggil setCellType() lagi karena pada beberapa versi POI
+        // perubahan tipe setelah value ditulis dapat membuat hasil ekspor
+        // tidak terbaca konsisten oleh Google Sheets.
         cell.setCellValue(value)
-        cell.setCellType(CellType.NUMERIC)
     }
 
     private fun clearCell(sheet: Sheet, rowIndex: Int, colIndex: Int) {
