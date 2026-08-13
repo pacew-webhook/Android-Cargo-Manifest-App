@@ -241,11 +241,11 @@ object BtbExcelWriter {
             format = "0.00"
         )
 
-        // Hapus formula cached/value lama pada E dari template jika ada.
-        sheet.getRow(totalRowIndex)?.getCell(4)?.cellFormula?.let {
-            // replaceWithNumericCell di atas sudah menghapus formula; blok ini
-            // hanya dokumentasi bahwa E TOTAL harus selalu numeric.
-        }
+        // FIX2: jangan pernah membaca cellFormula setelah cell TOTAL
+        // diganti menjadi NUMERIC. Mengakses cellFormula pada cell NUMERIC
+        // menyebabkan: "Cannot get a FORMULA value from a NUMERIC cell".
+        // replaceWithNumericCell() di atas sudah menghapus cell lama
+        // beserta formula/cached value-nya.
     }
 
     private fun findTotalRow(sheet: Sheet, fromRow: Int): Int? {
