@@ -78,7 +78,7 @@ object BtbExcelWriter {
     }
 
     private fun safeSheetName(workbook: XSSFWorkbook, requested: String): String {
-        val base = requested.replace(Regex("[\\/?*\[\]:]"), "_").take(31).ifBlank { "BTB" }
+        val base = requested.replace(Regex("""[\\/?*\[\]:]"""), "_").take(31).ifBlank { "BTB" }
         var name = base
         var n = 2
         while (workbook.getSheet(name) != null) {
