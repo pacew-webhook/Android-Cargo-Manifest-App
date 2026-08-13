@@ -70,7 +70,7 @@ object BtbOcrScanner {
             val raw = StringBuilder()
 
             for ((index, rowRect) in rows.withIndex()) {
-                val rowBitmap = safeCrop(bitmap, rowRect.first, rowRect.second, rowRect.third, rowRect.fourth)
+                val rowBitmap = safeCrop(bitmap, rowRect.left, rowRect.top, rowRect.right, rowRect.bottom)
                 if (rowBitmap == null) {
                     rowResults += ""
                     continue
