@@ -1,7 +1,6 @@
 package com.example.cargomanifestapp
 
 import android.content.Context
-import android.graphics.Bitmap
 import android.net.Uri
 import org.apache.poi.ss.usermodel.BorderStyle
 import org.apache.poi.ss.usermodel.Cell
@@ -12,17 +11,11 @@ import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.VerticalAlignment
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
-import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.floor
-import com.google.zxing.BarcodeFormat
-import com.google.zxing.MultiFormatWriter
-import com.google.zxing.common.BitMatrix
-import org.apache.poi.util.Units
-import org.apache.poi.xssf.usermodel.XSSFClientAnchor
 
 /**
  * Model data utama untuk Bukti Timbang Barang.
@@ -139,70 +132,6 @@ object BtbExcelWriter {
             workbook.close()
         }
     }
-
-
-    /**
-     * QR BTB: hanya menyimpan ID unik BTB, bukan seluruh data.
-     * Contoh payload: BTB_ID:BTB-260814-123456
-     */
-    private fun createBtbQrId(data: BtbFormData): String {
-        val datePart = try {
-            SimpleDateFormat("yyMMdd", Locale.US).format(Date(data.id.toLong()))
-        } catch (_: Exception) {
-            SimpleDateFormat("yyMMdd", Locale.US).format(Date())
-        }
-        val uniquePart = data.id.takeLast(6).padStart(6, '0')
-        return "BTB-$datePart-$uniquePart"
-    }
-
-    private fun createQrPng(payload: String, size: Int = 360): ByteArray {
-        val matrix: BitMatrix = MultiFormatWriter().encode(
-            payload,
-            BarcodeFormat.QR_CODE,
-            size,
-            size,
-            mapOf(
-                com.google.zxing.EncodeHintType.MARGIN to 1,
-                com.google.zxing.EncodeHintType.CHARACTER_SET to "UTF-8"
-            )
-        )
-        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        for (x in 0 until size) {
-            for (y in 0 until size) {
-                bitmap.setPixel(
-                    x, y,
-                    if (matrix[x, y]) android.graphics.Color.BLACK
-                    else android.graphics.Color.WHITE
-                )
-            }
-        }
-        return ByteArrayOutputStream().use { out ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-            bitmap.recycle()
-            out.toByteArray()
-        }
-    }
-
-    private fun insertBtbQrCode(
-        workbook: XSSFWorkbook,
-        sheet: Sheet,
-        payload: String
-    ) {
-        val png = createQrPng(payload)
-        val pictureIndex = workbook.addPicture(png, Workbook.PICTURE_TYPE_PNG)
-        val drawing = sheet.createDrawingPatriarch()
-        val anchor = XSSFClientAnchor()
-        anchor.setCol1(6) // G
-        anchor.setRow1(1) // Excel row 2
-        anchor.setCol2(10) // K
-        anchor.setRow2(9) // Excel row 10
-        anchor.setDx1(0)
-        anchor.setDy1(0)
-        anchor.setDx2(0)
-        anchor.setDy2(0)
-        drawing.createPicture(anchor, pictureIndex).resize(1.0)
-    }
-
     private fun createAndFillBtbSheet(
         workbook: XSSFWorkbook,
         sheet: Sheet,
@@ -221,11 +150,6 @@ object BtbExcelWriter {
         sheet.setColumnWidth(2, 10 * 256) // C
         sheet.setColumnWidth(3, 10 * 256) // D
         sheet.setColumnWidth(4, 14 * 256) // E
-        sheet.setColumnWidth(5, 3 * 256)  // F spacer
-        sheet.setColumnWidth(6, 12 * 256) // G QR area
-        sheet.setColumnWidth(7, 12 * 256) // H QR area
-        sheet.setColumnWidth(8, 12 * 256) // I QR area
-        sheet.setColumnWidth(9, 12 * 256) // J QR area
         sheet.setDisplayGridlines(true)
 
         val blue = org.apache.poi.ss.usermodel.IndexedColors.BLUE.index
@@ -296,12 +220,6 @@ object BtbExcelWriter {
         mergeAndStyle(sheet, 3, 3, 2, 4, valueStyle, data.customerName)
         mergeAndStyle(sheet, 4, 4, 0, 1, labelStyle, "TRADEMARKS")
         mergeAndStyle(sheet, 4, 4, 2, 4, valueStyle, data.trademarks)
-
-        // QR Code: hanya berisi ID BTB agar QR ringkas dan stabil.
-        val btbQrId = createBtbQrId(data)
-        setStyledText(sheet, 1, 5, "ID BTB", labelStyle)
-        mergeAndStyle(sheet, 1, 6, 6, 9, valueStyle, btbQrId)
-        insertBtbQrCode(workbook, sheet, btbQrId)
 
         // Baris 7: DATA TIMBANGAN.
         mergeAndStyle(sheet, 5, 5, 0, 4, sectionStyle, "DATA TIMBANGAN")
