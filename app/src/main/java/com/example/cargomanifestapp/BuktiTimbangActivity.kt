@@ -113,23 +113,21 @@ fun BtbScreen(onBackClick: () -> Unit) {
         editingId = null
     }
 
-    fun exportAndShareAll(dataList: List<BtbFormData>) {
+    fun exportAndShareAll(btbDataList: List<BtbFormData>) {
         try {
-            if (dataList.isEmpty()) {
+            val cleanList = btbDataList
+                .filter { it.customerName.isNotBlank() && it.daftarTimbangan.isNotEmpty() }
+                .distinctBy { it.id }
+            if (cleanList.isEmpty()) {
                 Toast.makeText(context, "Belum ada data BTB untuk diekspor.", Toast.LENGTH_SHORT).show()
                 return
             }
 
-            val cacheFile = File(
-                context.cacheDir,
-                "BTB_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())}.xlsx"
-            )
-            context.assets.open("Bukti_Timbang_Barang_BTB.xlsx").use { template ->
-                val tempUri = Uri.fromFile(cacheFile)
-                BtbExcelWriter.fillAllBtbTemplates(context, template, tempUri, dataList)
-            }
+            val cacheFile = File(context.cacheDir, "BTB_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.xlsx")
+            val outputUri = Uri.fromFile(cacheFile)
+            BtbExcelWriter.fillBtbWorkbook(context, outputUri, cleanList)
 
-            val fileUri = FileProvider.getUriForFile(
+            val fileUri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.provider",
                 cacheFile
@@ -172,6 +170,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                     }
                     IconButton(onClick = {
                         val activeData = BtbFormData(
+                            id = editingId ?: "ACTIVE_UNSAVED",
                             hariTanggal = currentDateStr,
                             customerName = customerName,
                             trademarks = trademarks,
@@ -179,12 +178,21 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             daftarTimbangan = daftarTimbangan,
                             photoUris = photoUris.map { it.toString() }
                         )
-                        val allData = savedBtbList.toMutableList()
-                        if (daftarTimbangan.isNotEmpty() && customerName.isNotBlank()) {
-                            val existing = allData.indexOfFirst { it.id == activeData.id }
-                            if (existing >= 0) allData[existing] = activeData else allData.add(activeData)
+
+                        val exportList = if (daftarTimbangan.isNotEmpty() && customerName.isNotBlank()) {
+                            val merged = savedBtbList.toMutableList()
+                            val existingIndex = merged.indexOfFirst { it.id == activeData.id }
+                            if (existingIndex >= 0) merged[existingIndex] = activeData else merged.add(activeData)
+                            merged
+                        } else {
+                            savedBtbList.toList()
                         }
-                        exportAndShareAll(allData)
+
+                        if (exportList.isNotEmpty()) {
+                            exportAndShareAll(exportList)
+                        } else {
+                            Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
+                        }
                     }) {
                         Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF2E7D32))
                     }
