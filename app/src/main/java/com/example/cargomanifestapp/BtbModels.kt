@@ -138,21 +138,19 @@ object BtbExcelWriter {
         require(data.daftarTimbangan.isNotEmpty()) { "Data timbangan BTB kosong" }
 
         // =============================================================
-        // BTB EXCEL - SIMPLE LAYOUT
-        // Dibuat mengikuti desain sederhana yang diinginkan:
-        // putih, garis tipis abu-abu, aksen biru, tanpa dekorasi berlebih.
-        // Kolom A = HASIL SCAN, B = PEMBULATAN.
+        // BTB EXCEL - LAYOUT FIX13
+        // Mengikuti screenshot referensi:
+        // A:B = JENIS BARANG, C = HASIL SCAN, D = spacer, E = PEMBULATAN.
+        // TOTAL berada di A:D dan nilainya di E.
         // =============================================================
-        sheet.setColumnWidth(0, 18 * 256)
-        sheet.setColumnWidth(1, 18 * 256)
-        sheet.setColumnWidth(2, 14 * 256)
-        sheet.setColumnWidth(3, 14 * 256)
-        sheet.setColumnWidth(4, 14 * 256)
-        for (c in 0..4) sheet.setColumnHidden(c, false)
+        sheet.setColumnWidth(0, 16 * 256) // A
+        sheet.setColumnWidth(1, 16 * 256) // B
+        sheet.setColumnWidth(2, 10 * 256) // C
+        sheet.setColumnWidth(3, 10 * 256) // D
+        sheet.setColumnWidth(4, 14 * 256) // E
         sheet.setDisplayGridlines(true)
 
         val blue = org.apache.poi.ss.usermodel.IndexedColors.BLUE.index
-        val lightBlue = org.apache.poi.ss.usermodel.IndexedColors.PALE_BLUE.index
         val white = org.apache.poi.ss.usermodel.IndexedColors.WHITE.index
         val black = org.apache.poi.ss.usermodel.IndexedColors.BLACK.index
         val grey = org.apache.poi.ss.usermodel.IndexedColors.GREY_50_PERCENT.index
@@ -186,50 +184,33 @@ object BtbExcelWriter {
             rightBorderColor = grey
         }
 
-        val titleStyle = baseStyle(
-            HorizontalAlignment.CENTER,
-            bold = true,
-            fontColor = blue,
-            size = 14
-        )
-        val labelStyle = baseStyle(
-            HorizontalAlignment.LEFT,
-            bold = true
-        )
-        val valueStyle = baseStyle(
-            HorizontalAlignment.LEFT
-        )
+        val titleStyle = baseStyle(HorizontalAlignment.CENTER, bold = true, size = 14)
+        val labelStyle = baseStyle(HorizontalAlignment.LEFT, bold = true)
+        val valueStyle = baseStyle(HorizontalAlignment.LEFT)
         val sectionStyle = baseStyle(
             HorizontalAlignment.CENTER,
             bold = true,
             fontColor = white,
             fill = blue
         )
-        val headerStyle = baseStyle(
-            HorizontalAlignment.CENTER,
-            bold = true
-        )
-        val numericStyle = baseStyle(
-            HorizontalAlignment.CENTER
-        ).apply {
+        val headerStyle = baseStyle(HorizontalAlignment.CENTER, bold = true)
+        val numericStyle = baseStyle(HorizontalAlignment.CENTER).apply {
             dataFormat = workbook.createDataFormat().getFormat("0.00")
         }
+        val blankDataStyle = baseStyle(HorizontalAlignment.CENTER)
         val totalLabelStyle = baseStyle(
             HorizontalAlignment.RIGHT,
             bold = true,
-            fontColor = blue,
             size = 13
         )
         val totalValueStyle = baseStyle(
             HorizontalAlignment.CENTER,
-            bold = true,
-            fontColor = black,
-            size = 11
+            bold = true
         ).apply {
             dataFormat = workbook.createDataFormat().getFormat("0.00")
         }
 
-        // Informasi utama.
+        // Baris 1-5: identitas BTB.
         mergeAndStyle(sheet, 0, 0, 0, 4, titleStyle, "SLIP BUKTI TIMBANG BARANG (BTB)")
         mergeAndStyle(sheet, 2, 2, 0, 1, labelStyle, "Hari / Tgl")
         mergeAndStyle(sheet, 2, 2, 2, 4, valueStyle, data.hariTanggal)
@@ -238,59 +219,75 @@ object BtbExcelWriter {
         mergeAndStyle(sheet, 4, 4, 0, 1, labelStyle, "TRADEMARKS")
         mergeAndStyle(sheet, 4, 4, 2, 4, valueStyle, data.trademarks)
 
-        // Bagian utama BTB.
+        // Baris 7: DATA TIMBANGAN.
         mergeAndStyle(sheet, 5, 5, 0, 4, sectionStyle, "DATA TIMBANGAN")
-        mergeAndStyle(sheet, 6, 6, 0, 4, sectionStyle, "JENIS BARANG :")
-        mergeAndStyle(sheet, 7, 7, 0, 4, sectionStyle, data.jenisBarang)
 
-        // Header hasil scan/pembulatan.
-        setStyledText(sheet, 9, 0, "HASIL SCAN", headerStyle)
-        setStyledText(sheet, 9, 1, "PEMBULATAN", headerStyle)
-        for (c in 2..4) setStyledText(sheet, 9, c, "", headerStyle)
+        // Baris 8: header sesuai screenshot terbaru. Tidak ada baris
+        // "JENIS BARANG :" tambahan; nama barang langsung masuk ke A:B
+        // pada baris data pertama.
+        mergeAndStyle(sheet, 6, 6, 0, 1, headerStyle, "JENIS BARANG")
+        setStyledText(sheet, 6, 2, "HASIL SCAN", headerStyle)
+        setStyledText(sheet, 6, 3, "", headerStyle)
+        setStyledText(sheet, 6, 4, "PEMBULATAN", headerStyle)
 
-        // Bersihkan area data dan siapkan minimal 13 baris seperti template.
-        val firstDataRow = 10
+        // Baris data dimulai pada baris Excel 8. Minimal 13 baris data
+        // (Excel 8-20), satu baris kosong (21), lalu TOTAL pada baris 22
+        // seperti screenshot.
+        val firstDataRow = 7
         val minimumDataRows = 13
         val dataRows = maxOf(minimumDataRows, data.daftarTimbangan.size)
-        val totalRow = firstDataRow + dataRows
+        val totalRow = firstDataRow + dataRows + 1
 
         for (i in 0 until dataRows) {
-            val row = sheet.getRow(firstDataRow + i) ?: sheet.createRow(firstDataRow + i)
-            for (c in 0..4) {
+            val rowIndex = firstDataRow + i
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+            row.heightInPoints = 18f
+
+            // A:B adalah satu area jenis barang.
+            for (c in 0..1) {
                 val cell = row.getCell(c) ?: row.createCell(c)
                 cell.setBlank()
-                cell.cellStyle = if (c <= 1) numericStyle else headerStyle
+                cell.cellStyle = headerStyle
+            }
+            if (i < data.daftarTimbangan.size) {
+                mergeAndStyle(sheet, rowIndex, rowIndex, 0, 1, headerStyle, data.jenisBarang)
+            } else {
+                // Tetap dua kolom dengan garis rapi pada baris kosong.
+                row.getCell(0).cellStyle = blankDataStyle
+                row.getCell(1).cellStyle = blankDataStyle
+            }
+
+            // C = hasil scan, D = kolom kosong/spacer, E = pembulatan.
+            for (c in 2..4) {
+                val cell = row.getCell(c) ?: row.createCell(c)
+                cell.setBlank()
+                cell.cellStyle = if (c == 3) blankDataStyle else numericStyle
+            }
+
+            if (i < data.daftarTimbangan.size) {
+                row.getCell(2).setCellValue(data.daftarTimbangan[i])
+                row.getCell(2).cellStyle = numericStyle
+                row.getCell(4).setCellValue(roundWeight(data.daftarTimbangan[i]))
+                row.getCell(4).cellStyle = numericStyle
             }
         }
 
-        // Nilai asli dan pembulatan adalah NUMERIC, bukan formula.
-        data.daftarTimbangan.forEachIndexed { index, original ->
-            val row = sheet.getRow(firstDataRow + index)
-                ?: sheet.createRow(firstDataRow + index)
-            val scan = row.getCell(0) ?: row.createCell(0)
-            val rounded = row.getCell(1) ?: row.createCell(1)
-            scan.cellStyle = numericStyle
-            rounded.cellStyle = numericStyle
-            scan.setCellValue(original)
-            rounded.setCellValue(roundWeight(original))
-        }
-
-        // TOTAL selalu memakai jumlah pembulatan.
+        // TOTAL: label A:D, nilai E. Nilai TOTAL selalu hasil pembulatan.
         mergeAndStyle(sheet, totalRow, totalRow, 0, 3, totalLabelStyle, "TOTAL :")
         val totalCell = sheet.getRow(totalRow)?.getCell(4)
             ?: sheet.getRow(totalRow)!!.createCell(4)
         totalCell.cellStyle = totalValueStyle
         totalCell.setCellValue(data.totalBeratPembulatan)
 
-        // Footer sederhana.
-        setStyledText(sheet, totalRow + 3, 0, "Petugas,", labelStyle)
+        // Footer seperti screenshot.
+        setStyledText(sheet, totalRow + 4, 0, "Petugas,", labelStyle)
 
-        // Validasi keras sebelum file disimpan.
-        require(sheet.getRow(9)?.getCell(1)?.stringCellValue == "PEMBULATAN")
+        // Validasi keras agar desain baru tidak mengorbankan pembulatan.
+        require(sheet.getRow(6)?.getCell(4)?.stringCellValue == "PEMBULATAN")
         data.daftarTimbangan.forEachIndexed { index, original ->
             val row = sheet.getRow(firstDataRow + index)
                 ?: error("Baris data BTB tidak terbentuk")
-            val rounded = row.getCell(1)
+            val rounded = row.getCell(4)
                 ?: error("Cell PEMBULATAN tidak terbentuk")
             require(rounded.cellType == CellType.NUMERIC) {
                 "Cell PEMBULATAN bukan NUMERIC"
