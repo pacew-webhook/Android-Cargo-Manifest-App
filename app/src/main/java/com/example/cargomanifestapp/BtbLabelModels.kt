@@ -1,12 +1,15 @@
 package com.example.cargomanifestapp
 
 import android.content.Context
+import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
 import androidx.core.content.FileProvider
-import android.content.Intent
 import android.net.Uri
 import java.io.File
 import java.io.FileOutputStream
@@ -80,64 +83,44 @@ object BtbLabelUtils {
     }
 }
 
+/**
+ * Generator PDF label cargo.
+ *
+ * Desain mengikuti template LABEWA CARGO:
+ * - Logo + MY INDO AIRLINES di bagian atas
+ * - Header oranye LABEWA CARGO
+ * - No. SMU/Air Waybill No.
+ * - Tujuan / Jumlah Kiriman
+ * - Transit / Berat tiap koli
+ * - Keterangan lain
+ * - Origin Station / House Waybill No.
+ *
+ * Data yang memang tersedia dari BTB tetap diambil otomatis.
+ * Field yang belum tersedia pada model BTB ditampilkan "-" agar tidak
+ * mengarang data operasional.
+ */
 object BtbLabelPdfWriter {
     private const val PAGE_WIDTH = 595
     private const val PAGE_HEIGHT = 842
+
+    private const val LEFT = 36f
+    private const val RIGHT = 559f
+    private const val TOP = 32f
+    private const val BOTTOM = 810f
+    private const val ORANGE = 0xFFE66A00.toInt()
 
     fun createPdf(context: Context, data: BtbFormData): File {
         val labels = BtbLabelUtils.createLabels(data)
         require(labels.isNotEmpty()) { "BTB belum mempunyai data timbangan." }
 
         val document = PdfDocument()
-        val titlePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = 24f
-        }
-        val headerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-            textSize = 16f
-        }
-        val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 15f }
-        val smallPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { textSize = 12f }
-        val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = 2f
-        }
 
         labels.forEachIndexed { index, label ->
             val pageInfo = PdfDocument.PageInfo.Builder(PAGE_WIDTH, PAGE_HEIGHT, index + 1).create()
             val page = document.startPage(pageInfo)
-            val canvas: Canvas = page.canvas
+            val canvas = page.canvas
 
-            canvas.drawRect(36f, 36f, 559f, 806f, linePaint)
-            canvas.drawText("LABEL CARGO", 55f, 80f, titlePaint)
-            canvas.drawText("BTB: ${label.btbId}", 55f, 112f, headerPaint)
-            canvas.drawText("LABEL: ${label.labelId}", 55f, 138f, headerPaint)
-
-            canvas.drawText("Hari / Tgl", 55f, 185f, smallPaint)
-            canvas.drawText(label.hariTanggal, 190f, 185f, bodyPaint)
-
-            canvas.drawText("CUSTOMER", 55f, 220f, smallPaint)
-            canvas.drawText(label.customerName, 190f, 220f, bodyPaint)
-
-            canvas.drawText("TRADEMARKS", 55f, 255f, smallPaint)
-            canvas.drawText(label.trademarks.ifBlank { "-" }, 190f, 255f, bodyPaint)
-
-            canvas.drawText("JENIS BARANG", 55f, 290f, smallPaint)
-            canvas.drawText(label.jenisBarang.ifBlank { "-" }, 190f, 290f, bodyPaint)
-
-            canvas.drawText("TOTAL", 55f, 370f, smallPaint)
-            canvas.drawText(String.format(Locale.US, "%.0f KG", label.beratPembulatan), 190f, 370f, headerPaint)
-
-            canvas.drawText("Label ${label.labelNumber} dari ${labels.size}", 55f, 450f, bodyPaint)
-            canvas.drawText("ID: ${label.labelId}", 55f, 485f, smallPaint)
-
-            canvas.drawText("Dokumen turunan dari BTB", 55f, 755f, smallPaint)
-            canvas.drawText(
-                SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date()),
-                55f, 780f, smallPaint
-            )
-
+            drawLabelPage(context, canvas, data, label, labels.size)
             document.finishPage(page)
         }
 
@@ -145,9 +128,164 @@ object BtbLabelPdfWriter {
             context.cacheDir,
             "LABEL_${data.id}_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.pdf"
         )
+
         FileOutputStream(file).use { document.writeTo(it) }
         document.close()
         return file
+    }
+
+    private fun drawLabelPage(
+        context: Context,
+        canvas: Canvas,
+        data: BtbFormData,
+        label: BtbLabelItem,
+        totalLabels: Int
+    ) {
+        canvas.drawColor(android.graphics.Color.WHITE)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = ORANGE
+            strokeWidth = 2.2f
+        }
+        val thinOrangePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            color = ORANGE
+            strokeWidth = 1.4f
+        }
+        val orangeFillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = ORANGE
+        }
+        val blackBold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = 15f
+        }
+        val body = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(80, 65, 60)
+            textSize = 13f
+        }
+        val bodyBold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(80, 65, 60)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = 14f
+        }
+        val whiteBold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.WHITE
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = 29f
+        }
+        val airlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.rgb(30, 55, 100)
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = 17f
+            textAlign = Paint.Align.CENTER
+        }
+        val centerBlackBold = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = android.graphics.Color.BLACK
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            textSize = 14f
+            textAlign = Paint.Align.CENTER
+        }
+
+        // Outer page/template border.
+        canvas.drawRect(LEFT, TOP, RIGHT, BOTTOM, borderPaint)
+
+        // Logo area.
+        val logo = BitmapFactory.decodeResource(context.resources, R.drawable.logo_app)
+        if (logo != null) {
+            val maxW = 95f
+            val maxH = 72f
+            val scale = minOf(maxW / logo.width, maxH / logo.height)
+            val w = logo.width * scale
+            val h = logo.height * scale
+            val dst = RectF(
+                (PAGE_WIDTH - w) / 2f,
+                TOP + 8f,
+                (PAGE_WIDTH + w) / 2f,
+                TOP + 8f + h
+            )
+            canvas.drawBitmap(logo, null, dst, null)
+        }
+        canvas.drawText("MY INDO AIRLINES", PAGE_WIDTH / 2f, TOP + 88f, airlinePaint)
+
+        // Orange LABEWA CARGO title bar.
+        val titleTop = TOP + 102f
+        val titleBottom = titleTop + 54f
+        canvas.drawRect(LEFT, titleTop, RIGHT, titleBottom, orangeFillPaint)
+        canvas.drawText("LABEWA CARGO", (LEFT + RIGHT) / 2f, titleTop + 39f, whiteBold)
+
+        // No. SMU/Air Waybill No.
+        val awbTop = titleBottom
+        val awbBottom = awbTop + 98f
+        canvas.drawLine(LEFT, awbBottom, RIGHT, awbBottom, thinOrangePaint)
+        drawLabel(canvas, "No. SMU/Air Waybill No.", LEFT + 7f, awbTop + 24f, body)
+        drawValue(canvas, label.btbId, LEFT + 7f, awbTop + 56f, blackBold)
+
+        // Main two-column grid.
+        val gridTop = awbBottom
+        val colX = 297.5f
+        val row1Bottom = gridTop + 112f
+        val row2Bottom = row1Bottom + 112f
+        val row3Bottom = row2Bottom + 62f
+        val gridBottom = row3Bottom + 112f
+
+        canvas.drawLine(colX, gridTop, colX, row2Bottom, thinOrangePaint)
+        canvas.drawLine(LEFT, row1Bottom, RIGHT, row1Bottom, thinOrangePaint)
+        canvas.drawLine(LEFT, row2Bottom, RIGHT, row2Bottom, thinOrangePaint)
+        canvas.drawLine(LEFT, row3Bottom, RIGHT, row3Bottom, thinOrangePaint)
+
+        // Row 1: Destination / total pcs.
+        drawLabel(canvas, "Tujuan/Destination", LEFT + 7f, gridTop + 23f, body)
+        drawValue(canvas, "-", LEFT + 7f, gridTop + 55f, bodyBold)
+        drawLabel(canvas, "Jumlah Kiriman/Ttl. No. of Pcs", colX + 7f, gridTop + 23f, body)
+        drawValue(canvas, "${totalLabels} PCS", colX + 7f, gridTop + 55f, bodyBold)
+
+        // Row 2: Transit / weight.
+        drawLabel(canvas, "Stn. Transit/Transfer Points", LEFT + 7f, row1Bottom + 23f, body)
+        drawValue(canvas, "-", LEFT + 7f, row1Bottom + 55f, bodyBold)
+        drawLabel(canvas, "Berat tiap koli/weight of this piece", colX + 7f, row1Bottom + 23f, body)
+        drawValue(
+            canvas,
+            String.format(Locale.US, "%.0f KG", label.beratPembulatan),
+            colX + 7f,
+            row1Bottom + 55f,
+            bodyBold
+        )
+
+        // Row 3: Other information.
+        drawLabel(canvas, "Keterangan lain/Other Information", LEFT + 7f, row2Bottom + 22f, body)
+        drawValue(canvas, "Customer: ${label.customerName.ifBlank { "-" }}", LEFT + 7f, row2Bottom + 47f, bodyBold)
+        if (label.trademarks.isNotBlank()) {
+            drawValue(canvas, "Trademark: ${label.trademarks}", LEFT + 210f, row2Bottom + 47f, body)
+        }
+
+        // Row 4: Origin / House Waybill.
+        drawLabel(canvas, "Bandara asal/Origin Station", LEFT + 7f, row3Bottom + 23f, body)
+        drawValue(canvas, "-", LEFT + 7f, row3Bottom + 55f, bodyBold)
+        drawLabel(canvas, "House Waybill No.", colX + 7f, row3Bottom + 23f, body)
+        drawValue(canvas, label.labelId, colX + 7f, row3Bottom + 55f, bodyBold)
+
+        // Footer metadata kept inside the template border.
+        drawValue(canvas, "Label ${label.labelNumber} dari $totalLabels", LEFT + 7f, gridBottom + 36f, body)
+        drawValue(canvas, "ID: ${label.labelId}", LEFT + 7f, gridBottom + 62f, body)
+        drawValue(canvas, "Dokumen turunan dari BTB", LEFT + 7f, BOTTOM - 42f, body)
+        drawValue(
+            canvas,
+            SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date()),
+            LEFT + 7f,
+            BOTTOM - 18f,
+            body
+        )
+    }
+
+    private fun drawLabel(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint) {
+        canvas.drawText(text, x, y, paint)
+    }
+
+    private fun drawValue(canvas: Canvas, text: String, x: Float, y: Float, paint: Paint) {
+        canvas.drawText(text, x, y, paint)
     }
 
     fun sharePdf(context: Context, file: File) {
