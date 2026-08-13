@@ -42,11 +42,11 @@ object BtbOcrScanner {
 
     private data class Box(val ymin: Int, val xmin: Int, val ymax: Int, val xmax: Int)
 
-    private const val MODEL = "gemini-2.5-flash"
+    private const val MODEL = "gemini-2.5-flash-lite"
     private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
 
     /**
-     * V13.1 - Gemini BTB scanner.
+     * V13.2 - Gemini BTB scanner (Flash-Lite endpoint fix).
      *
      * Important design change from the previous V13:
      * - Do NOT ask Gemini to invent row coordinates for every line.
@@ -247,7 +247,9 @@ HASIL PEMBACAAN PERTAMA:
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (status !in 200..299) {
-                throw IllegalStateException("Gemini API HTTP $status: ${response.take(700)}")
+                throw IllegalStateException(
+                    "Gemini API HTTP $status (model=$MODEL): ${response.take(700)}"
+                )
             }
 
             val root = JSONObject(response)
