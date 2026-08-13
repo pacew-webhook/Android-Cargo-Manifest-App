@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResult
 import androidx.activity.compose.rememberLauncherForActivityResult
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -84,7 +85,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     var trademarks by remember { mutableStateOf("") }
     var jenisBarang by remember { mutableStateOf("") }
     var inputBeratText by remember { mutableStateOf("") }
-    var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
+    var daftarTimbangan by remember { mutableStateOf<List<BtbWeight>>(emptyList()) }
 
     val database = remember { CargoDatabase.getDatabase(context) }
     val btbViewModel: BtbViewModel = viewModel(
@@ -104,11 +105,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     LaunchedEffect(savedEntities) {
         savedBtbList.clear()
         savedEntities.forEach { entity ->
-            val weights = mutableListOf<Double>()
-            try {
-                val array = JSONArray(entity.daftarTimbanganJson)
-                for (i in 0 until array.length()) weights.add(array.getDouble(i))
-            } catch (_: Exception) {}
+            val weights = btbWeightsFromJson(entity.daftarTimbanganJson)
             val photos = mutableListOf<String>()
             try {
                 val array = JSONArray(entity.photoUrisJson)
@@ -146,6 +143,23 @@ fun BtbScreen(onBackClick: () -> Unit) {
         val uri = BtbPhotoStorage.createPhotoUri(context)
         pendingPhotoUri = uri
         cameraLauncher.launch(uri)
+    }
+
+    val scaleOcrLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val weight = result.data?.getDoubleExtra(ScaleOcrActivity.EXTRA_WEIGHT, -1.0) ?: -1.0
+            if (weight > 0) {
+                daftarTimbangan = daftarTimbangan + BtbWeight(original = weight)
+                inputBeratText = ""
+                Toast.makeText(context, "OCR timbangan: ${weight.toCleanString()} KG", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    fun scanTimbangan() {
+        scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
     }
 
     val customerFocus = remember { FocusRequester() }
@@ -199,7 +213,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     fun tambahBerat() {
         val weight = inputBeratText.toDoubleOrNull()
         if (weight != null && weight > 0) {
-            daftarTimbangan = daftarTimbangan + weight
+            daftarTimbangan = daftarTimbangan + BtbWeight(original = weight)
             inputBeratText = ""
             beratFocus.requestFocus()
         } else {
@@ -327,11 +341,19 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             ) {
                                 Text("+ KG", fontWeight = FontWeight.Bold)
                             }
+                            Button(
+                                onClick = { scanTimbangan() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                modifier = Modifier.height(56.dp),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("⚖️ OCR", fontWeight = FontWeight.Bold)
+                            }
                         }
 
                         if (daftarTimbangan.isNotEmpty()) {
                             Text(
-                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
+                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Final: ${daftarTimbangan.sumOf { it.final }.toCleanString()} KG",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2E7D32)
@@ -343,13 +365,46 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 daftarTimbangan.forEachIndexed { index, weight ->
-                                    SuggestionChip(
-                                        onClick = {
-                                            daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
-                                        },
-                                        label = { Text(weight.toCleanString()) },
-                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
-                                    )
+                                    Card(
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE7F6)),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Column(modifier = Modifier.padding(8.dp)) {
+                                            Text("${index + 1}. Asli ${weight.original.toCleanString()} KG", fontSize = 11.sp)
+                                            Text("Bulat ${weight.rounded.toCleanString()} KG", fontSize = 11.sp)
+                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                SuggestionChip(
+                                                    onClick = {
+                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply {
+                                                            set(index, weight.copy(final = weight.original))
+                                                        }
+                                                    },
+                                                    label = { Text("Asli") },
+                                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                                        containerColor = if (weight.final == weight.original) Color(0xFFC8E6C9) else Color.White
+                                                    )
+                                                )
+                                                SuggestionChip(
+                                                    onClick = {
+                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply {
+                                                            set(index, weight.copy(final = weight.rounded))
+                                                        }
+                                                    },
+                                                    label = { Text("Bulat") },
+                                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                                        containerColor = if (weight.final == weight.rounded) Color(0xFFC8E6C9) else Color.White
+                                                    )
+                                                )
+                                                SuggestionChip(
+                                                    onClick = {
+                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
+                                                    },
+                                                    label = { Text("Hapus") }
+                                                )
+                                            }
+                                            Text("Final: ${weight.final.toCleanString()} KG", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -472,7 +527,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("${btb.customerName} (${btb.trademarks.ifEmpty { "-" }})", fontWeight = FontWeight.Bold)
                             Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
-                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                            Text("Koli: ${btb.jumlahKoli} | Asli: ${btb.totalBeratAsli.toCleanString()} | Bulat: ${btb.totalBeratPembulatan.toCleanString()} | Final: ${btb.totalBeratFinal.toCleanString()} KG", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
                         Row {
                             IconButton(onClick = {
