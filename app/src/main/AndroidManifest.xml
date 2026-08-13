@@ -41,6 +41,13 @@
             android:label="Bukti Timbang Barang"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
+        <!-- Penerbitan label turunan dari BTB -->
+        <activity
+            android:name="com.example.cargomanifestapp.BtbLabelActivity"
+            android:exported="false"
+            android:label="Terbitkan Label"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- OCR langsung display timbangan untuk BTB -->
         <activity
             android:name="com.example.cargomanifestapp.ScaleOcrActivity"
