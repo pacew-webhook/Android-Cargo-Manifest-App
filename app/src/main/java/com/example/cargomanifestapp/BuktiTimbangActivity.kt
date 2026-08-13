@@ -1,18 +1,15 @@
 package com.example.cargomanifestapp
 
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.result.ActivityResult
-import androidx.activity.compose.rememberLauncherForActivityResult
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.compose.foundation.layout.*
-import coil.compose.AsyncImage
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -39,11 +36,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.launch
-import org.json.JSONArray
 import java.io.File
 import java.io.FileOutputStream
 import java.text.DecimalFormat
@@ -51,10 +43,11 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+// Import FlowRow dari foundation.layout
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
-// Extension Function: Menghilangkan .0 pada angka bulat
+// Extension Function: Menghilangkan .0 pada angka bulat (contoh: 50.0 -> "50", 50.5 -> "50.5")
 fun Double.toCleanString(): String {
     return if (this % 1.0 == 0.0) {
         this.toLong().toString()
@@ -85,81 +78,22 @@ fun BtbScreen(onBackClick: () -> Unit) {
     var trademarks by remember { mutableStateOf("") }
     var jenisBarang by remember { mutableStateOf("") }
     var inputBeratText by remember { mutableStateOf("") }
-    var daftarTimbangan by remember { mutableStateOf<List<BtbWeight>>(emptyList()) }
+    var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
+    // Disiapkan untuk foto BTB/galeri. Tetap kosong jika fitur foto belum digunakan.
+    val photoUris = remember { mutableStateListOf<Uri>() }
 
-    val database = remember { CargoDatabase.getDatabase(context) }
-    val btbViewModel: BtbViewModel = viewModel(
-        factory = remember {
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
-                    return BtbViewModel(BtbRepository(database.btbDao())) as T
-                }
-            }
-        }
-    )
-    val savedEntities by btbViewModel.btbs.collectAsStateWithLifecycle()
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
     var editingId by remember { mutableStateOf<String?>(null) }
-
-    LaunchedEffect(savedEntities) {
-        savedBtbList.clear()
-        savedEntities.forEach { entity ->
-            val weights = btbWeightsFromJson(entity.daftarTimbanganJson)
-            val photos = mutableListOf<String>()
-            try {
-                val array = JSONArray(entity.photoUrisJson)
-                for (i in 0 until array.length()) photos.add(array.getString(i))
-            } catch (_: Exception) {}
-            savedBtbList.add(
-                BtbFormData(
-                    id = entity.id,
-                    hariTanggal = entity.hariTanggal,
-                    customerName = entity.customerName,
-                    trademarks = entity.trademarks,
-                    jenisBarang = entity.jenisBarang,
-                    daftarTimbangan = weights,
-                    photoUris = photos
-                )
-            )
-        }
-    }
-
-    var editingPhotos by remember { mutableStateOf<List<String>>(emptyList()) }
-    var pendingPhotoUri by remember { mutableStateOf<Uri?>(null) }
-    val cameraLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { success ->
-        val uri = pendingPhotoUri
-        if (success && uri != null) {
-            editingPhotos = editingPhotos + uri.toString()
-        } else if (uri != null) {
-            BtbPhotoStorage.deletePhoto(context, uri.toString())
-        }
-        pendingPhotoUri = null
-    }
-
-    fun takeBtbPhoto() {
-        val uri = BtbPhotoStorage.createPhotoUri(context)
-        pendingPhotoUri = uri
-        cameraLauncher.launch(uri)
-    }
-
     val scaleOcrLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
+        contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        if (result.resultCode == android.app.Activity.RESULT_OK) {
-            val weight = result.data?.getDoubleExtra(ScaleOcrActivity.EXTRA_WEIGHT, -1.0) ?: -1.0
-            if (weight > 0) {
-                daftarTimbangan = daftarTimbangan + BtbWeight(original = weight)
-                inputBeratText = ""
-                Toast.makeText(context, "OCR timbangan: ${weight.toCleanString()} KG", Toast.LENGTH_SHORT).show()
+        if (result.resultCode == Activity.RESULT_OK) {
+            val weight = result.data?.getDoubleExtra(ScaleOcrActivity.EXTRA_WEIGHT, Double.NaN) ?: Double.NaN
+            if (!weight.isNaN() && weight > 0.0) {
+                inputBeratText = weight.toCleanString()
+                beratFocus.requestFocus()
             }
         }
-    }
-
-    fun scanTimbangan() {
-        scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
     }
 
     val customerFocus = remember { FocusRequester() }
@@ -173,24 +107,17 @@ fun BtbScreen(onBackClick: () -> Unit) {
         jenisBarang = ""
         inputBeratText = ""
         daftarTimbangan = emptyList()
-        editingPhotos = emptyList()
         editingId = null
     }
 
-    fun exportAndShare(listToExport: List<BtbFormData>) {
-        if (listToExport.isEmpty()) {
-            Toast.makeText(context, "Tidak ada data BTB untuk diekspor!", Toast.LENGTH_SHORT).show()
-            return
-        }
-
+    fun exportAndShare(btbData: BtbFormData) {
         try {
-            val fileNameCustomer = listToExport.first().customerName.ifEmpty { "Export" }
-            val cacheFile = File(context.cacheDir, "BTB_${fileNameCustomer}.xlsx")
+            val cacheFile = File(context.cacheDir, "BTB_${btbData.customerName.ifEmpty { "Export" }}.xlsx")
             val templateInputStream = context.assets.open("Bukti_Timbang_Barang_BTB.xlsx")
-
+            
             FileOutputStream(cacheFile).use { fos ->
                 val tempUri = Uri.fromFile(cacheFile)
-                BtbExcelWriter.fillBtbTemplateMulti(context, templateInputStream, tempUri, listToExport)
+                BtbExcelWriter.fillBtbTemplate(context, templateInputStream, tempUri, btbData)
             }
 
             val fileUri: Uri = FileProvider.getUriForFile(
@@ -213,7 +140,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     fun tambahBerat() {
         val weight = inputBeratText.toDoubleOrNull()
         if (weight != null && weight > 0) {
-            daftarTimbangan = daftarTimbangan + BtbWeight(original = weight)
+            daftarTimbangan = daftarTimbangan + weight
             inputBeratText = ""
             beratFocus.requestFocus()
         } else {
@@ -243,14 +170,10 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             daftarTimbangan = daftarTimbangan
                         )
 
-                        // Ekspor gabungan dari daftar yang sudah disimpan + data aktif di form
-                        val exportList = savedBtbList.toMutableList()
                         if (daftarTimbangan.isNotEmpty()) {
-                            exportList.add(activeData)
-                        }
-
-                        if (exportList.isNotEmpty()) {
-                            exportAndShare(exportList)
+                            exportAndShare(activeData)
+                        } else if (savedBtbList.isNotEmpty()) {
+                            exportAndShare(savedBtbList.last())
                         } else {
                             Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
                         }
@@ -342,129 +265,39 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 Text("+ KG", fontWeight = FontWeight.Bold)
                             }
                             Button(
-                                onClick = { scanTimbangan() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                onClick = {
+                                    scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
+                                },
                                 modifier = Modifier.height(56.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
-                                Text("⚖️ OCR", fontWeight = FontWeight.Bold)
+                                Text("📷", fontSize = 20.sp)
                             }
                         }
 
                         if (daftarTimbangan.isNotEmpty()) {
                             Text(
-                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Final: ${daftarTimbangan.sumOf { it.final }.toCleanString()} KG",
+                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2E7D32)
                             )
 
+                            // Tampilan Chip Timbangan Otomatis Pindah Baris
                             FlowRow(
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 daftarTimbangan.forEachIndexed { index, weight ->
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = Color(0xFFEDE7F6)),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Column(modifier = Modifier.padding(8.dp)) {
-                                            Text("${index + 1}. Asli ${weight.original.toCleanString()} KG", fontSize = 11.sp)
-                                            Text("Bulat ${weight.rounded.toCleanString()} KG", fontSize = 11.sp)
-                                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                SuggestionChip(
-                                                    onClick = {
-                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply {
-                                                            set(index, weight.copy(final = weight.original))
-                                                        }
-                                                    },
-                                                    label = { Text("Asli") },
-                                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                                        containerColor = if (weight.final == weight.original) Color(0xFFC8E6C9) else Color.White
-                                                    )
-                                                )
-                                                SuggestionChip(
-                                                    onClick = {
-                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply {
-                                                            set(index, weight.copy(final = weight.rounded))
-                                                        }
-                                                    },
-                                                    label = { Text("Bulat") },
-                                                    colors = SuggestionChipDefaults.suggestionChipColors(
-                                                        containerColor = if (weight.final == weight.rounded) Color(0xFFC8E6C9) else Color.White
-                                                    )
-                                                )
-                                                SuggestionChip(
-                                                    onClick = {
-                                                        daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
-                                                    },
-                                                    label = { Text("Hapus") }
-                                                )
-                                            }
-                                            Text("Final: ${weight.final.toCleanString()} KG", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
-                                        }
-                                    }
+                                    SuggestionChip(
+                                        onClick = {
+                                            daftarTimbangan = daftarTimbangan.toMutableList().apply { removeAt(index) }
+                                        },
+                                        label = { Text(weight.toCleanString()) },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = Color(0xFFEDE7F6))
+                                    )
                                 }
-                            }
-                        }
-
-                        // Foto bukti: ditambahkan tanpa mengubah desain form yang sudah ada.
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                "Foto Bukti",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF4A148C)
-                            )
-
-                            if (editingPhotos.isNotEmpty()) {
-                                LazyRow(
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    items(editingPhotos) { uriString ->
-                                        Card(
-                                            modifier = Modifier.size(120.dp),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Box(modifier = Modifier.fillMaxSize()) {
-                                                AsyncImage(
-                                                    model = Uri.parse(uriString),
-                                                    contentDescription = "Foto BTB",
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                                IconButton(
-                                                    onClick = {
-                                                        editingPhotos = editingPhotos.filterNot { it == uriString }
-                                                        BtbPhotoStorage.deletePhoto(context, uriString)
-                                                    },
-                                                    modifier = Modifier.align(Alignment.TopEnd)
-                                                ) {
-                                                    Icon(
-                                                        Icons.Default.Delete,
-                                                        contentDescription = "Hapus foto",
-                                                        tint = Color.Red
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            Button(
-                                onClick = { takeBtbPhoto() },
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = Color(0xFF311B92)
-                                ),
-                                modifier = Modifier.fillMaxWidth().height(44.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text(
-                                    if (editingPhotos.isEmpty()) "📷 Ambil Foto" else "📷 Ambil Foto Lagi",
-                                    fontWeight = FontWeight.Bold
-                                )
                             }
                         }
 
@@ -481,21 +314,19 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                     customerName = customerName,
                                     trademarks = trademarks,
                                     jenisBarang = jenisBarang,
-                                    daftarTimbangan = daftarTimbangan,
-                                    photoUris = editingPhotos
+                                    daftarTimbangan = daftarTimbangan
                                 )
 
-                                val newPhotoSet = editingPhotos.toSet()
-                                btbViewModel.save(formData) { oldPhotoUris ->
-                                    // Hapus file lama yang sudah tidak direferensikan oleh BTB.
-                                    oldPhotoUris
-                                        .filterNot { it in newPhotoSet }
-                                        .forEach { BtbPhotoStorage.deletePhoto(context, it) }
-
-                                    resetForm()
-                                    customerFocus.requestFocus()
-                                    Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
+                                if (editingId != null) {
+                                    val idx = savedBtbList.indexOfFirst { it.id == editingId }
+                                    if (idx != -1) savedBtbList[idx] = formData
+                                } else {
+                                    savedBtbList.add(formData)
                                 }
+
+                                resetForm()
+                                customerFocus.requestFocus()
+                                Toast.makeText(context, "Data BTB Berhasil Disimpan!", Toast.LENGTH_SHORT).show()
                             },
                             modifier = Modifier.fillMaxWidth().height(48.dp),
                             colors = ButtonDefaults.buttonColors(
@@ -527,7 +358,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text("${btb.customerName} (${btb.trademarks.ifEmpty { "-" }})", fontWeight = FontWeight.Bold)
                             Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
-                            Text("Koli: ${btb.jumlahKoli} | Asli: ${btb.totalBeratAsli.toCleanString()} | Bulat: ${btb.totalBeratPembulatan.toCleanString()} | Final: ${btb.totalBeratFinal.toCleanString()} KG", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                            Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
                         Row {
                             IconButton(onClick = {
@@ -535,17 +366,14 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 trademarks = btb.trademarks
                                 jenisBarang = btb.jenisBarang
                                 daftarTimbangan = btb.daftarTimbangan
-                                editingPhotos = btb.photoUris
                                 editingId = btb.id
                                 customerFocus.requestFocus()
                             }) {
                                 Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF1976D2))
                             }
                             IconButton(onClick = {
-                                btbViewModel.delete(btb.id) { oldPhotoUris ->
-                                    BtbPhotoStorage.deletePhotos(context, oldPhotoUris)
-                                    if (editingId == btb.id) resetForm()
-                                }
+                                savedBtbList.remove(btb)
+                                if (editingId == btb.id) resetForm()
                             }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
                             }
