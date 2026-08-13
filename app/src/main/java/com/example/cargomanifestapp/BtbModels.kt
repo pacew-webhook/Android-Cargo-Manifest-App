@@ -41,7 +41,7 @@ object BtbExcelWriter {
 
     /**
      * Mengisi template BTB tanpa mengubah desain/template dasar.
-     * Struktur data FIX6:
+     * Struktur data FIX7:
      *   A = HASIL SCAN
      *   B = PEMBULATAN
      *   TOTAL = jumlah kolom B
@@ -78,7 +78,7 @@ object BtbExcelWriter {
     }
 
     private fun safeSheetName(workbook: XSSFWorkbook, requested: String): String {
-        val base = requested.replace(Regex("""[\\/?*\[\]:]"""), "_").take(31).ifBlank { "BTB" }
+        val base = requested.map { ch -> if (ch in "\\/?*[]:") '_' else ch }.joinToString("").take(31).ifBlank { "BTB" }
         var name = base
         var n = 2
         while (workbook.getSheet(name) != null) {
@@ -147,7 +147,7 @@ object BtbExcelWriter {
         val totalRowIndex = initialTotalRowIndex + extraRows
         val lastDataRowIndex = firstDataRowIndex + dataCount - 1
 
-        // Header baru sesuai template FIX6.
+        // Header baru sesuai template FIX7.
         setText(sheet, headerRowIndex, 0, "HASIL SCAN")
         setText(sheet, headerRowIndex, 1, "PEMBULATAN")
         clearCell(sheet, headerRowIndex, 2)
@@ -183,7 +183,7 @@ object BtbExcelWriter {
         clearCell(sheet, totalRowIndex, 1)
         clearCell(sheet, totalRowIndex, 2)
         clearCell(sheet, totalRowIndex, 3)
-        setFormula(workbook, sheet, totalRowIndex, 4, "SUM(B${firstDataRowIndex + 1}:B${lastDataRowIndex + 1})", "0.00")
+        setNumeric(workbook, sheet, totalRowIndex, 4, data.totalBeratPembulatan, "0.00")
 
         // Kosongkan formula lama di baris data yang tersisa jika template awal
         // memiliki formula lama di kolom D.

@@ -44,7 +44,7 @@ import kotlin.math.max
 /**
  * OCR angka langsung dari display timbangan.
  *
- * FIX6:
+ * FIX7:
  * - Kamera dan Upload Foto menggunakan pipeline kandidat OCR yang sama.
  * - Upload foto tidak memakai OCR BTB/label paket.
  * - Kandidat diprioritaskan berdasarkan angka desimal, posisi display,
@@ -190,30 +190,43 @@ class ScaleOcrActivity : ComponentActivity() {
                     ?: throw IllegalArgumentException("Foto tidak dapat dibaca")
                 val bitmap = rotateFromExif(original, uri)
 
-                // Sama seperti kamera: OCR dijalankan pada frame asli. Untuk foto
-                // timbangan penuh, kita juga mencoba crop area display atas agar
-                // angka paket/label di bawah tidak menjadi kandidat.
+                // FIX7: JANGAN OCR seluruh foto. Foto timbangan sering berisi
+                // label paket, tanggal, nomor resi, dll. Angka-angka tersebut
+                // sebelumnya bisa mengalahkan angka pada display timbangan.
+                // Upload sekarang hanya membaca beberapa crop ketat di area
+                // display bagian atas.
                 val candidates = mutableListOf<Double>()
-                runOcr(bitmap, candidates)
+                val displayCrops = listOfNotNull(
+                    // Prioritas pertama: cari langsung area LED merah. Ini
+                    // mencegah angka pada label paket ikut terbaca.
+                    cropRedLedArea(bitmap),
+                    cropDisplayArea(bitmap, 0.05f, 0.27f, 0.12f, 0.88f),
+                    cropDisplayArea(bitmap, 0.07f, 0.24f, 0.18f, 0.82f),
+                    cropDisplayArea(bitmap, 0.04f, 0.32f, 0.08f, 0.92f)
+                )
 
-                val displayCrop = cropDisplayArea(bitmap)
-                if (displayCrop != null) {
+                displayCrops.forEach { crop ->
                     val enlarged = Bitmap.createScaledBitmap(
-                        displayCrop,
-                        displayCrop.width * 2,
-                        displayCrop.height * 2,
+                        crop,
+                        crop.width * 3,
+                        crop.height * 3,
                         true
                     )
                     runOcr(enlarged, candidates)
-                    val enhanced = enhanceForDisplay(enlarged)
-                    runOcr(enhanced, candidates)
+                    runOcr(enhanceForDisplay(enlarged), candidates)
+                    runOcr(enhanceRedDisplay(enlarged), candidates)
                 }
 
                 val best = candidates
-                    .filter { it > 0.0 && it <= 9999.0 }
+                    .filter { it in 0.01..200.0 }
                     .groupingBy { String.format(Locale.US, "%.2f", it) }
                     .eachCount()
-                    .maxByOrNull { it.value }
+                    .entries
+                    .sortedWith(
+                        compareByDescending<Map.Entry<String, Int>> { it.value }
+                            .thenBy { abs((it.key.toDoubleOrNull() ?: 0.0) - 50.0) }
+                    )
+                    .firstOrNull()
                     ?.key
                     ?.toDoubleOrNull()
 
@@ -337,12 +350,70 @@ class ScaleOcrActivity : ComponentActivity() {
         }
     }
 
-    private fun cropDisplayArea(bitmap: Bitmap): Bitmap? {
+    /**
+     * Mencari bounding box piksel merah pada 35% bagian atas foto.
+     * Display timbangan pada foto pengguna menggunakan LED merah, sedangkan
+     * label/resi berada jauh di bawah. Jika area merah ditemukan, crop ini
+     * menjadi sumber OCR paling prioritas.
+     */
+    private fun cropRedLedArea(bitmap: Bitmap): Bitmap? {
         if (bitmap.width < 100 || bitmap.height < 100) return null
-        val left = (bitmap.width * 0.12f).toInt()
-        val top = (bitmap.height * 0.05f).toInt()
-        val right = (bitmap.width * 0.90f).toInt()
-        val bottom = (bitmap.height * 0.38f).toInt()
+
+        val leftLimit = (bitmap.width * 0.08f).toInt()
+        val rightLimit = (bitmap.width * 0.92f).toInt()
+        val topLimit = (bitmap.height * 0.03f).toInt()
+        val bottomLimit = (bitmap.height * 0.35f).toInt()
+
+        var minX = bitmap.width
+        var minY = bitmap.height
+        var maxX = -1
+        var maxY = -1
+        var redPixels = 0
+
+        // Sampling tiap 3 piksel cukup akurat dan jauh lebih ringan untuk foto besar.
+        for (y in topLimit until bottomLimit step 3) {
+            for (x in leftLimit until rightLimit step 3) {
+                val pixel = bitmap.getPixel(x, y)
+                val r = android.graphics.Color.red(pixel)
+                val g = android.graphics.Color.green(pixel)
+                val b = android.graphics.Color.blue(pixel)
+                if (r >= 85 && r > g + 25 && r > b + 25) {
+                    redPixels++
+                    if (x < minX) minX = x
+                    if (y < minY) minY = y
+                    if (x > maxX) maxX = x
+                    if (y > maxY) maxY = y
+                }
+            }
+        }
+
+        if (redPixels < 12 || maxX <= minX || maxY <= minY) return null
+
+        val padX = ((maxX - minX) * 0.35f).toInt().coerceAtLeast(20)
+        val padY = ((maxY - minY) * 0.70f).toInt().coerceAtLeast(20)
+        val left = (minX - padX).coerceAtLeast(0)
+        val top = (minY - padY).coerceAtLeast(0)
+        val right = (maxX + padX).coerceAtMost(bitmap.width)
+        val bottom = (maxY + padY).coerceAtMost(bitmap.height)
+        val width = right - left
+        val height = bottom - top
+        if (width < 40 || height < 25) return null
+
+        return Bitmap.createBitmap(bitmap, left, top, width, height)
+    }
+
+    private fun cropDisplayArea(
+        bitmap: Bitmap,
+        topRatio: Float = 0.05f,
+        bottomRatio: Float = 0.27f,
+        leftRatio: Float = 0.12f,
+        rightRatio: Float = 0.88f
+    ): Bitmap? {
+        if (bitmap.width < 100 || bitmap.height < 100) return null
+        val left = (bitmap.width * leftRatio).toInt().coerceAtLeast(0)
+        val top = (bitmap.height * topRatio).toInt().coerceAtLeast(0)
+        val right = (bitmap.width * rightRatio).toInt().coerceAtMost(bitmap.width)
+        val bottom = (bitmap.height * bottomRatio).toInt().coerceAtMost(bitmap.height)
         val w = right - left
         val h = bottom - top
         if (w <= 0 || h <= 0) return null
@@ -355,6 +426,27 @@ class ScaleOcrActivity : ComponentActivity() {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         val matrix = ColorMatrix().apply { setSaturation(0f) }
         matrix.setScale(1.6f, 1.6f, 1.6f, 1f)
+        paint.colorFilter = ColorMatrixColorFilter(matrix)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return result
+    }
+
+
+    /**
+     * Display timbangan pada foto contoh menggunakan angka LED merah.
+     * Kanal merah diperkuat dan kanal hijau/biru ditekan agar ML Kit
+     * lebih mudah mengenali digit merah tanpa ikut membaca label di bawah.
+     */
+    private fun enhanceRedDisplay(bitmap: Bitmap): Bitmap {
+        val result = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+        val matrix = ColorMatrix(floatArrayOf(
+            2.0f, 0.0f, 0.0f, 0f, -80f,
+            0.15f, 0.15f, 0.15f, 0f, -35f,
+            0.10f, 0.10f, 0.10f, 0f, -35f,
+            0f, 0f, 0f, 1f, 0f
+        ))
         paint.colorFilter = ColorMatrixColorFilter(matrix)
         canvas.drawBitmap(bitmap, 0f, 0f, paint)
         return result
