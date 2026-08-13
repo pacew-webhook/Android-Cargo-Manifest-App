@@ -83,7 +83,7 @@ fun StowingInputScreen(
             if (result.weights.isEmpty()) {
                 Toast.makeText(
                     context,
-                    "Angka KG belum terbaca. Coba pilih/foto BTB yang lebih jelas dan lurus.",
+                    result.verificationMessage.ifBlank { "Angka KG belum terbaca." },
                     Toast.LENGTH_LONG
                 ).show()
             } else {

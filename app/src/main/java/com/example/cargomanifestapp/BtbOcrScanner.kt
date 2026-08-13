@@ -86,6 +86,10 @@ Pisahkan hasil berdasarkan baris. Jangan membaca angka dari header, kolom JUMLAH
 Jangan menebak angka yang tidak terlihat. Jangan menggunakan contoh angka sebagai jawaban.
 Untuk setiap baris, keluarkan hanya angka yang benar-benar terlihat dan dapat dibaca.
 Kembalikan JSON sesuai schema.
+- Prioritaskan tulisan tangan pada kolom JENIS BARANG.
+- Formulir BTB biasanya memiliki sampai 10 baris data. Pertahankan pemisahan baris seperti yang terlihat pada foto.
+- Jangan mengubah satu angka menjadi dua angka dan jangan menggabungkan dua angka menjadi satu.
+- Jika tulisan tampak seperti 51, baca 51; jika tampak seperti 57, baca 57. Jangan mengganti berdasarkan angka contoh.
 """
 
     suspend fun scan(context: Context, uri: Uri): Result = withContext(Dispatchers.IO) {
@@ -108,7 +112,7 @@ Kembalikan JSON sesuai schema.
             val layout = parseLayout(layoutJson)
 
             val rows = layout.rows.sortedBy { it.row }
-            val usefulRows = if (rows.size >= 2) rows else emptyList()
+            val usefulRows = rows.take(12)
 
             if (usefulRows.isEmpty()) {
                 val fallback = generateJson(apiKey, FULL_FALLBACK_PROMPT, image, fullRowsSchema())
@@ -143,12 +147,19 @@ Kembalikan JSON sesuai schema.
                 }
             }
 
-            val total = allWeights.sum()
-            val message = if (allWeights.isNotEmpty()) {
-                "Gemini membaca ${allWeights.size} koli. Total dihitung aplikasi = ${formatKg(total)} KG."
-            } else {
-                "Gemini belum membaca angka KG. Coba foto lebih dekat, lurus, dan seluruh tabel terlihat."
+            // Jangan berhenti hanya karena Gemini salah mendeteksi kotak layout.
+            // Jalankan pembacaan seluruh tabel sebagai fallback agar foto tetap bisa
+            // dibaca walaupun koordinat crop dari langkah pertama kurang tepat.
+            if (allWeights.isEmpty()) {
+                val fallback = generateJson(apiKey, FULL_FALLBACK_PROMPT, image, fullRowsSchema())
+                return@withContext resultFromFullJson(
+                    fallback,
+                    "Layout crop tidak menghasilkan angka; Gemini membaca ulang seluruh tabel."
+                )
             }
+
+            val total = allWeights.sum()
+            val message = "Gemini membaca ${allWeights.size} koli. Total dihitung aplikasi = ${formatKg(total)} KG."
 
             Result(
                 weights = allWeights,
