@@ -42,11 +42,11 @@ object BtbOcrScanner {
 
     private data class Box(val ymin: Int, val xmin: Int, val ymax: Int, val xmax: Int)
 
-    private const val MODEL = "gemini-2.5-flash-lite"
-    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
+    private const val MODEL = "gemini-3.1-flash-lite"
+    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/$MODEL:generateContent"
 
     /**
-     * V13.2 - Gemini BTB scanner (Flash-Lite endpoint fix).
+     * V13.2 - Gemini 3.1 Flash-Lite BTB scanner.
      *
      * Important design change from the previous V13:
      * - Do NOT ask Gemini to invent row coordinates for every line.
@@ -75,11 +75,11 @@ Baca FOTO BTB yang diberikan secara visual. FOTO SUDAH DI-CROP ke kertas BTB.
 TUGAS UTAMA:
 1. Fokus hanya pada kolom paling kiri bertuliskan JENIS BARANG. Tulisan tangan di kolom itu
    adalah angka berat per koli.
-2. Form BTB pada foto ini memiliki 10 baris data horizontal di bawah header tabel.
-3. Segmentasikan berdasarkan GARIS/BARIS TABEL, bukan berdasarkan hasil OCR yang digabung.
-4. Kembalikan tepat 10 objek baris, row=1 sampai row=10. Jika satu baris kosong atau tidak
+2. Form BTB pada foto ini memiliki 4 baris data horizontal di bawah header tabel.
+3. Setiap baris target berisi maksimal 5 angka berat yang dibaca dari kiri ke kanan.
+4. Kembalikan tepat 4 objek baris, row=1 sampai row=4. Jika satu baris kosong atau tidak
    terbaca, weights untuk baris itu harus [] .
-5. Baca angka dari kiri ke kanan dalam setiap baris.
+5. Baca maksimal 5 angka dari kiri ke kanan dalam setiap baris dan jangan mengambil angka dari baris lain.
 6. Jangan membaca angka dari header, tanggal, nama customer, kolom JUMLAH KOLI, kolom BERAT,
    kolom JUMLAH BERAT (KG), TOTAL, monitor, atau latar belakang.
 7. Jangan mengarang angka. Hanya masukkan angka yang benar-benar terlihat sebagai tulisan tangan.
@@ -102,7 +102,8 @@ Di bawah ini ada HASIL PEMBACAAN PERTAMA. Jangan langsung mempercayainya.
 Periksa kembali setiap karakter langsung pada gambar, baris demi baris.
 
 Aturan:
-- Pertahankan pemisahan 10 baris tabel.
+- Pertahankan pemisahan 4 baris tabel.
+- Setiap baris berisi maksimal 5 angka berat.
 - Fokus hanya kolom JENIS BARANG.
 - Jangan mengambil angka dari kolom lain atau header.
 - Jika kandidat salah karena 1 terbaca 7, 5 terbaca 7, 7 terbaca 1, dan sebagainya,
@@ -111,7 +112,7 @@ Aturan:
 - Jangan menambah angka yang tidak terlihat.
 - Jangan menggabungkan dua angka terpisah.
 - Jika sebuah baris memang kosong/tidak terbaca, gunakan weights=[] .
-- Kembalikan tepat 10 baris.
+- Kembalikan tepat 4 baris.
 
 HASIL PEMBACAAN PERTAMA:
 """
@@ -180,8 +181,8 @@ HASIL PEMBACAAN PERTAMA:
     }
 
     private fun buildResult(rows: List<List<Int>>, prefix: String): Result {
-        val normalizedRows = rows.take(10).toMutableList()
-        while (normalizedRows.size < 10) normalizedRows.add(emptyList())
+        val normalizedRows = rows.take(4).toMutableList()
+        while (normalizedRows.size < 4) normalizedRows.add(emptyList())
 
         val weights = normalizedRows.flatten().map { it.toDouble() }
         val rowTexts = normalizedRows.map { row -> row.joinToString(" ") }
@@ -194,7 +195,7 @@ HASIL PEMBACAAN PERTAMA:
                 "Baris ${i + 1}: ${if (row.isEmpty()) "(tidak terbaca)" else row.joinToString(" ")}"
             }.joinToString("\n"),
             rows = rowTexts,
-            expectedRows = 10,
+            expectedRows = 4,
             calculatedTotalKg = total,
             verificationMessage = "$prefix Koli terbaca: $count. Total dihitung aplikasi = ${formatKg(total)} KG."
         )
@@ -227,6 +228,7 @@ HASIL PEMBACAAN PERTAMA:
             .put("responseMimeType", "application/json")
             .put("responseJsonSchema", schema)
             .put("temperature", 0.0)
+            .put("thinkingConfig", JSONObject().put("thinkingLevel", "high"))
 
         val body = JSONObject()
             .put("contents", contents)
@@ -247,9 +249,7 @@ HASIL PEMBACAAN PERTAMA:
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
             if (status !in 200..299) {
-                throw IllegalStateException(
-                    "Gemini API HTTP $status (model=$MODEL): ${response.take(700)}"
-                )
+                throw IllegalStateException("Gemini API HTTP $status (model=$MODEL): ${response.take(700)}")
             }
 
             val root = JSONObject(response)
@@ -301,7 +301,7 @@ HASIL PEMBACAAN PERTAMA:
                 .put("weights", JSONObject()
                     .put("type", "array")
                     .put("items", JSONObject().put("type", "integer"))
-                    .put("maxItems", 12)))
+                    .put("maxItems", 5)))
             .put("required", JSONArray(listOf("row", "weights")))
 
         return JSONObject()
@@ -310,8 +310,8 @@ HASIL PEMBACAAN PERTAMA:
                 .put("rows", JSONObject()
                     .put("type", "array")
                     .put("items", rowSchema)
-                    .put("minItems", 10)
-                    .put("maxItems", 10)))
+                    .put("minItems", 4)
+                    .put("maxItems", 4)))
             .put("required", JSONArray(listOf("rows")))
     }
 
@@ -323,12 +323,12 @@ HASIL PEMBACAAN PERTAMA:
 
     private fun parseRows(json: String): List<List<Int>> {
         val root = JSONObject(json)
-        val array = root.optJSONArray("rows") ?: return List(10) { emptyList() }
-        val byRow = Array(10) { emptyList<Int>() }
+        val array = root.optJSONArray("rows") ?: return List(4) { emptyList() }
+        val byRow = Array(4) { emptyList<Int>() }
         for (i in 0 until array.length()) {
             val obj = array.optJSONObject(i) ?: continue
             val rowNo = obj.optInt("row", i + 1)
-            if (rowNo !in 1..10) continue
+            if (rowNo !in 1..4) continue
             val values = obj.optJSONArray("weights") ?: JSONArray()
             val parsed = mutableListOf<Int>()
             for (j in 0 until values.length()) {
