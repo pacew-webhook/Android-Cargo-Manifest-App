@@ -1,26 +1,10 @@
 package com.example.cargomanifestapp
 
-import org.json.JSONArray
-import org.json.JSONObject
-
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-
-
-private fun btbWeightsToJson(weights: List<Double>): String {
-    val array = JSONArray()
-    weights.forEach { weight ->
-        array.put(JSONObject().apply {
-            put("beratAsli", weight)
-            put("beratPembulatan", kotlin.math.floor(weight + 0.5))
-            put("beratFinal", kotlin.math.floor(weight + 0.5))
-        })
-    }
-    return array.toString()
-}
 
 class BtbViewModel(private val repository: BtbRepository) : ViewModel() {
     val btbs = repository.observeBtbs()
@@ -42,7 +26,7 @@ class BtbViewModel(private val repository: BtbRepository) : ViewModel() {
                     customerName = data.customerName,
                     trademarks = data.trademarks,
                     jenisBarang = data.jenisBarang,
-                    daftarTimbanganJson = btbWeightsToJson(data.daftarTimbangan),
+                    daftarTimbanganJson = serializeBtbWeightsToJson(data.daftarTimbangan),
                     photoUrisJson = photos.toString()
                 ),
                 data.photoUris

@@ -37,7 +37,7 @@ data class BtbFormData(
 /** Aturan BTB: pecahan < .50 turun, >= .50 naik ke kilogram berikutnya. */
 fun roundWeight(weight: Double): Double = floor(weight + 0.5)
 
-fun btbWeightsToJson(weights: List<Double>): String =
+fun serializeBtbWeightsToJson(weights: List<Double>): String =
     org.json.JSONArray().apply { weights.forEach { put(it) } }.toString()
 
 fun btbWeightsFromJson(json: String): List<Double> {
