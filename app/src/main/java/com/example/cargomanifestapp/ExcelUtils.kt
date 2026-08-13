@@ -147,33 +147,29 @@ object ExcelUtils {
     }
 
     /**
-     * Mengisi Sheet Manifest.
+     * Mengisi Sheet Manifest + Stowing Checklist.
+     *
+     * FIX3:
+     * - Baris data tidak lagi dibatasi angka 24.
+     * - Jika data mencapai/menabrak baris TOTAL, baris baru disisipkan
+     *   tepat sebelum TOTAL.
+     * - TOTAL selalu berada setelah seluruh data pada area masing-masing.
+     * - Struktur template, merge cell dan style template dipertahankan.
+     * - Kolom D Manifest (Pcs/Cly) sengaja tetap kosong.
      */
     private fun fillManifestSheet(
         sheet: XSSFSheet,
         cargoList: List<CargoItem>
     ) {
-        val startRow = 13
-        val templateCapacity = 24
+        val startRow = 13 // Excel row 14
+
+        // Posisi TOTAL pada template asli.
+        val baseStowingTotalRow = 36 // Excel row 37
+        val baseManifestTotalRow = 44 // Excel row 45
 
         /*
-         * Grouping Manifest FIX V13.5.4:
-         *
-         * Manifest harus 1 baris untuk setiap kombinasi PAG + Customer +
-         * Description (+ PTI jika memang berbeda). Jangan menggabungkan
-         * PAG yang berbeda hanya karena Customer dan Description sama.
-         *
-         * Contoh:
-         *
-         * 002 MYI | ULIN | PINANG | 72  | 1732
-         * 001 MYI | ULIN | PINANG | 144 | 3349
-         *
-         * tidak boleh menjadi satu baris:
-         *
-         * ULIN | PINANG | 216 | 5081
-         *
-         * Ini juga mencegah nilai rata-rata Weight (Net/Cly) dihitung
-         * dari gabungan seluruh PAG.
+         * Manifest: satu baris untuk setiap kombinasi
+         * PAG + Customer + Description + PTI.
          */
         val groupedManifest = cargoList
             .filter {
@@ -188,55 +184,44 @@ object ExcelUtils {
                     normalize(it.pti)
             }
             .map { (_, items) ->
+                val pcs = items.sumOf {
+                    it.pcsQty.toDoubleOrNull() ?: 0.0
+                }
 
-                val pcs =
-                    items.sumOf {
-                        it.pcsQty.toDoubleOrNull() ?: 0.0
-                    }
+                val totalWeight = items.sumOf {
+                    it.subTotal.toDoubleOrNull() ?: 0.0
+                }
 
-                val totalWeight =
-                    items.sumOf {
-                        it.subTotal.toDoubleOrNull() ?: 0.0
-                    }
-
-                val ptis =
-                    items
-                        .map { it.pti.trim() }
-                        .filter { it.isNotBlank() }
-                        .distinct()
+                val ptis = items
+                    .map { it.pti.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
 
                 items.first().copy(
                     pti = ptis.firstOrNull() ?: "",
                     pcsQty = formatNumber(pcs),
                     subTotal = formatNumber(totalWeight),
-                    // Kolom D (Weight Pcs/Cly) sengaja dikosongkan.
-                    // Berat pada aplikasi adalah berat TOTAL seluruh koli (Sub Total).
-                    // Contoh 26 koli dengan total 624 KG harus diekspor sebagai:
-                    // C = 26, D = kosong, E = 624.
+                    // FIX3: jangan pernah memasukkan berat per koli
+                    // ke kolom D. C = jumlah koli, E = total KG.
                     weight = ""
                 )
             }
 
         /*
-         * Grouping Stowing:
-         *
-         * PAG + Customer + Description
+         * Stowing Checklist: satu baris untuk setiap kombinasi
+         * PAG + Customer + Description.
          */
         val groupedStowing = cargoList
-            .filter {
-                it.noPag.isNotBlank()
-            }
+            .filter { it.noPag.isNotBlank() }
             .groupBy {
                 "${normalize(it.noPag)}|" +
                     "${normalize(it.customer)}|" +
                     normalize(it.description)
             }
             .map { (_, items) ->
-
-                val totalNet =
-                    items.sumOf {
-                        it.subTotal.toDoubleOrNull() ?: 0.0
-                    }
+                val totalNet = items.sumOf {
+                    it.subTotal.toDoubleOrNull() ?: 0.0
+                }
 
                 items.first().copy(
                     subTotal = formatNumber(totalNet)
@@ -244,45 +229,85 @@ object ExcelUtils {
             }
 
         /*
-         * Bersihkan area data lama.
+         * =============================================================
+         * FIX3 - AUTO ROW EXPANSION
+         * =============================================================
+         *
+         * Stowing TOTAL berada di row 37 pada template dan menyediakan
+         * 23 baris data (row 14..36).
+         * Manifest TOTAL berada di row 45 dan menyediakan 31 baris data
+         * (row 14..44).
+         *
+         * Karena keduanya berada dalam satu worksheet, insert dilakukan
+         * dari bagian Stowing terlebih dahulu. Jika Stowing membutuhkan
+         * baris tambahan, semua isi di bawah row 37 ikut turun dan posisi
+         * Manifest TOTAL otomatis ikut turun. Setelah itu baru dihitung
+         * kebutuhan tambahan Manifest.
          */
-        val clearUntil =
+        val stowingCapacity = baseStowingTotalRow - startRow + 1
+        val stowingExtra =
+            maxOf(0, groupedStowing.size - stowingCapacity)
+
+        if (stowingExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = baseStowingTotalRow,
+                count = stowingExtra,
+                styleSourceRowIndex = baseStowingTotalRow - 1
+            )
+        }
+
+        // Setelah insert Stowing, Manifest TOTAL ikut bergeser.
+        val manifestTotalRowAfterStowing =
+            baseManifestTotalRow + stowingExtra
+
+        val manifestCapacityAfterStowing =
+            manifestTotalRowAfterStowing - startRow
+
+        val manifestExtra =
             maxOf(
-                sheet.lastRowNum,
-                startRow + templateCapacity + 40
+                0,
+                groupedManifest.size - manifestCapacityAfterStowing
             )
 
-        for (r in startRow..clearUntil) {
-            val row = sheet.getRow(r) ?: continue
-
-            for (c in 0..12) {
-                row.getCell(c)?.setBlank()
-            }
+        if (manifestExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = manifestTotalRowAfterStowing,
+                count = manifestExtra,
+                styleSourceRowIndex = manifestTotalRowAfterStowing - 1
+            )
         }
+
+        val finalStowingTotalRow =
+            baseStowingTotalRow + stowingExtra
+
+        val finalManifestTotalRow =
+            manifestTotalRowAfterStowing + manifestExtra
 
         /*
-         * Jika data melebihi kapasitas template,
-         * tambahkan baris.
+         * Bersihkan HANYA area data.
+         * Jangan lagi membersihkan sampai lastRowNum karena itu dapat
+         * menghapus isi/template bagian signature dan area bawah sheet.
          */
-        val maxRows =
-            maxOf(
-                groupedManifest.size,
-                groupedStowing.size
-            )
+        // Manifest hanya membersihkan A:G sampai tepat sebelum TOTAL Manifest.
+        clearDataArea(
+            sheet = sheet,
+            startRow = startRow,
+            endRow = finalManifestTotalRow - 1,
+            startCol = 0,
+            endCol = 6
+        )
 
-        if (maxRows > templateCapacity) {
-
-            val extra =
-                maxRows - templateCapacity
-
-            sheet.shiftRows(
-                startRow + templateCapacity,
-                sheet.lastRowNum,
-                extra,
-                true,
-                false
-            )
-        }
+        // Stowing hanya membersihkan H:M sampai tepat sebelum TOTAL Stowing.
+        // Dengan begitu label TOTAL WEIGHT dan area signature template tetap utuh.
+        clearDataArea(
+            sheet = sheet,
+            startRow = startRow,
+            endRow = finalStowingTotalRow - 1,
+            startCol = 7,
+            endCol = 12
+        )
 
         val sampleRow =
             sheet.getRow(startRow)
@@ -293,32 +318,32 @@ object ExcelUtils {
         var totalStowingGross = 0.0
 
         /*
-         * Isi Manifest + Stowing Checklist.
+         * Isi data. Jumlah baris mengikuti jumlah hasil grouping.
+         * Tidak ada lagi angka 24 sebagai pembatas.
          */
+        val maxRows =
+            maxOf(
+                groupedManifest.size,
+                groupedStowing.size
+            )
+
         for (i in 0 until maxRows) {
-
-            val rowIndex =
-                startRow + i
-
+            val rowIndex = startRow + i
             val row =
                 sheet.getRow(rowIndex)
                     ?: sheet.createRow(rowIndex)
 
-            /*
-             * MANIFEST
-             */
+            /* =========================
+             * MANIFEST A:G
+             * ========================= */
             if (i < groupedManifest.size) {
-
-                val item =
-                    groupedManifest[i]
+                val item = groupedManifest[i]
 
                 val pcs =
-                    item.pcsQty.toDoubleOrNull()
-                        ?: 0.0
+                    item.pcsQty.toDoubleOrNull() ?: 0.0
 
                 val subtotal =
-                    item.subTotal.toDoubleOrNull()
-                        ?: 0.0
+                    item.subTotal.toDoubleOrNull() ?: 0.0
 
                 totalManifestPcs += pcs
                 totalManifestWeight += subtotal
@@ -337,6 +362,7 @@ object ExcelUtils {
                     sampleRow?.getCell(1)
                 )
 
+                // C = PCS/Qty.
                 setStyledNumericCell(
                     row,
                     2,
@@ -344,11 +370,17 @@ object ExcelUtils {
                     sampleRow?.getCell(2)
                 )
 
-                // Kolom D = Weight (Kg) / Pcs/Cly tidak diisi dari rata-rata.
-                // Berat 26 koli = 624 KG harus tetap menjadi C=26 dan E=624.
-                // Jangan menaruh angka 24 di kolom tengah.
-                row.getCell(3)?.setBlank()
+                // D = Pcs/Cly. FIX3: selalu kosong.
+                val weightPerClyCell =
+                    row.getCell(3)
+                        ?: row.createCell(3)
+                weightPerClyCell.setBlank()
+                if (sampleRow != null) {
+                    weightPerClyCell.cellStyle =
+                        sampleRow.getCell(3).cellStyle
+                }
 
+                // E = Sub Total KG.
                 setStyledNumericCell(
                     row,
                     4,
@@ -371,24 +403,18 @@ object ExcelUtils {
                 )
             }
 
-            /*
-             * STOWING CHECKLIST
-             */
+            /* =========================
+             * STOWING CHECKLIST H:M
+             * ========================= */
             if (i < groupedStowing.size) {
-
-                val item =
-                    groupedStowing[i]
+                val item = groupedStowing[i]
 
                 val net =
-                    item.subTotal.toDoubleOrNull()
-                        ?: 0.0
+                    item.subTotal.toDoubleOrNull() ?: 0.0
 
-                /*
-                 * Gross sementara mengikuti
-                 * formula project V4.
-                 */
-                val gross =
-                    net + 125.0
+                // Gross tetap mengikuti logika project sebelumnya:
+                // setiap group PAG mendapatkan tambahan 125 KG.
+                val gross = net + 125.0
 
                 totalStowingNet += net
                 totalStowingGross += gross
@@ -438,23 +464,26 @@ object ExcelUtils {
         }
 
         /*
-         * TOTAL MANIFEST.
-         *
-         * Template Manifest menyediakan TOTAL WEIGHT pada baris 45-46
-         * (C45:C46 dan E45:E46 adalah merged cells).
-         * Jangan menaruh total tepat setelah baris data karena itu akan
-         * menggeser total ke C16/E16.
+         * =============================================================
+         * TOTAL MANIFEST
+         * =============================================================
+         * Template asli:
+         * C45:C46 = total PCS/Qty
+         * E45:E46 = total Sub Total KG
+         * Jika overflow, merge tersebut otomatis ikut turun bersama row.
          */
-        val manifestTotalRow = 44 // Excel row 45, zero-based POI
         val manifestTotalRowObj =
-            sheet.getRow(manifestTotalRow)
-                ?: sheet.createRow(manifestTotalRow)
+            sheet.getRow(finalManifestTotalRow)
+                ?: sheet.createRow(finalManifestTotalRow)
 
         setNumericCell(
             manifestTotalRowObj,
             2,
             totalManifestPcs
         )
+
+        // D total sengaja kosong; tidak ada perkalian/angka nyasar.
+        manifestTotalRowObj.getCell(3)?.setBlank()
 
         setNumericCell(
             manifestTotalRowObj,
@@ -463,16 +492,17 @@ object ExcelUtils {
         )
 
         /*
-         * TOTAL STOWING CHECKLIST.
-         *
-         * Template menyediakan TOTAL WEIGHT pada K37:K38 dan M37:M38.
-         * K37/K38 adalah merged cell, sehingga nilai harus ditulis di K37
-         * (index POI 10), bukan pada baris setelah data (mis. K16).
+         * =============================================================
+         * TOTAL STOWING CHECKLIST
+         * =============================================================
+         * Template asli:
+         * K37:K38 = Net
+         * M37:M38 = Gross
+         * Jika data > kapasitas, total ikut turun.
          */
-        val stowingTotalRow = 36 // Excel row 37, zero-based POI
         val stowingTotalRowObj =
-            sheet.getRow(stowingTotalRow)
-                ?: sheet.createRow(stowingTotalRow)
+            sheet.getRow(finalStowingTotalRow)
+                ?: sheet.createRow(finalStowingTotalRow)
 
         setNumericCell(
             stowingTotalRowObj,
@@ -485,6 +515,78 @@ object ExcelUtils {
             11,
             totalStowingGross
         )
+    }
+
+    /**
+     * Sisipkan sejumlah baris sebelum rowIndex tanpa mengubah layout
+     * template secara manual. shiftRows menangani isi/merge di bawahnya.
+     * Baris baru diberi style dari baris contoh agar format Excel tetap
+     * mengikuti template.
+     */
+    private fun insertRowsBefore(
+        sheet: XSSFSheet,
+        rowIndex: Int,
+        count: Int,
+        styleSourceRowIndex: Int
+    ) {
+        if (count <= 0) return
+
+        val lastRow = sheet.lastRowNum
+
+        if (rowIndex <= lastRow) {
+            sheet.shiftRows(
+                rowIndex,
+                lastRow,
+                count,
+                true,
+                false
+            )
+        }
+
+        val sourceRow = sheet.getRow(styleSourceRowIndex)
+
+        for (i in 0 until count) {
+            val newRowIndex = rowIndex + i
+            val newRow =
+                sheet.getRow(newRowIndex)
+                    ?: sheet.createRow(newRowIndex)
+
+            if (sourceRow != null) {
+                newRow.height = sourceRow.height
+                newRow.zeroHeight = sourceRow.zeroHeight
+
+                for (c in 0 until sourceRow.lastCellNum.coerceAtLeast(0)) {
+                    val sourceCell = sourceRow.getCell(c) ?: continue
+                    val newCell =
+                        newRow.getCell(c)
+                            ?: newRow.createCell(c)
+
+                    newCell.cellStyle = sourceCell.cellStyle
+                    newCell.setBlank()
+                }
+            }
+        }
+    }
+
+    /**
+     * Bersihkan hanya area data, bukan TOTAL/signature/template bawah.
+     */
+    private fun clearDataArea(
+        sheet: XSSFSheet,
+        startRow: Int,
+        endRow: Int,
+        startCol: Int,
+        endCol: Int
+    ) {
+        if (endRow < startRow) return
+
+        for (r in startRow..endRow) {
+            val row = sheet.getRow(r) ?: continue
+
+            for (c in startCol..endCol) {
+                row.getCell(c)?.setBlank()
+            }
+        }
     }
 
     /**
