@@ -189,11 +189,14 @@ object BtbExcelWriter {
         val titleStyle = baseStyle(HorizontalAlignment.CENTER, bold = true, size = 14)
         val labelStyle = baseStyle(HorizontalAlignment.LEFT, bold = true)
         val valueStyle = baseStyle(HorizontalAlignment.LEFT)
+        // Positional arguments sengaja dipakai di sini untuk menghindari
+        // compiler Kotlin membaca named argument sebagai assignment pada
+        // property lokal ("Val cannot be reassigned") pada kombinasi toolchain ini.
         val sectionStyle = baseStyle(
             HorizontalAlignment.CENTER,
-            bold = true,
-            fontColor = white,
-            fill = blue
+            true,
+            white,
+            blue
         )
         val headerStyle = baseStyle(HorizontalAlignment.CENTER, bold = true)
         val numericStyle = baseStyle(HorizontalAlignment.CENTER).apply {
