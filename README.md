@@ -16,3 +16,21 @@ Aplikasi Android native sederhana untuk menginput dan merekap data **Cargo Manif
 - **Local Database**: Room Database
 - **Architecture**: MVVM (Model-View-ViewModel) + StateFlow
 - 
+Perubahan FIX3
+✅ UI tidak diubah
+✅ OCR dinamis tetap
+✅ Mapping PAG / Customer / Description tetap
+✅ Perhitungan KG tetap
+✅ Kolom D (Pcs/Cly) Manifest dikosongkan agar tidak ada angka perkalian/angka nyasar
+✅ C = jumlah koli/PCS
+✅ E = total KG/Sub Total
+✅ Stowing Checklist tetap menggunakan PAG + Customer + Description
+✅ TOTAL Stowing otomatis turun jika data mencapai/menabrak K37:K38
+✅ TOTAL Manifest otomatis turun jika data mencapai/menabrak C45:C46 / E45:E46
+✅ Baris baru dibuat sebelum TOTAL, bukan setelah TOTAL
+✅ Tidak lagi menggunakan batas templateCapacity = 24
+✅ Berlaku untuk jumlah data yang jauh lebih banyak
+✅ Format/style template tetap dipertahankan
+✅ Area signature/template bawah tidak lagi ikut dibersihkan sembarangan
+✅ versionCode dinaikkan ke 6
+✅ versionName menjadi 1.13.5.4-FIX3
