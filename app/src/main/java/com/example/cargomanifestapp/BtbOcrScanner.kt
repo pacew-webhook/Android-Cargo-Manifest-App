@@ -3,40 +3,31 @@ package com.example.cargomanifestapp
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
-import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Matrix
-import android.graphics.Rect
 import android.net.Uri
+import android.util.Base64
 import androidx.exifinterface.media.ExifInterface
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.TextRecognizer
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
-import kotlin.math.abs
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
- * V12 - BTB handwriting scanner.
+ * V13 - Gemini Vision BTB scanner.
  *
  * Pipeline:
- * 1) Normalize EXIF rotation so camera/gallery images have the correct orientation.
- * 2) Find the BTB table using OCR anchors first, with a visual fallback.
- * 3) Restrict processing to the JENIS BARANG column.
- * 4) Detect the 10 handwritten rows from table separators / ink bands.
- * 5) For every row, run several preprocessing variants and OCR.
- * 6) If OCR returns merged tokens, segment them conservatively and OCR each token.
- * 7) Apply only safe contextual character normalization; do NOT globally turn 7 into 1.
- * 8) Use a small visual heuristic for the common handwritten 1/7 confusion when
- *    the OCR token ends in 7 and the last digit is visibly very narrow.
- * 9) Return rows + weights for operator verification. No sample BTB values are hard-coded.
+ *   Foto/Galeri -> normalize/crop -> Gemini finds table + rows -> crop each row
+ *   -> Gemini reads one row at a time -> JSON -> deterministic total -> dialog.
+ *
+ * Important: no BTB sample values are hard-coded. Gemini is asked to read the
+ * visible handwriting from the supplied image. The app only validates and sums
+ * the returned numbers.
  */
 object BtbOcrScanner {
 
@@ -49,84 +40,126 @@ object BtbOcrScanner {
         val verificationMessage: String = ""
     )
 
-    private data class Anchor(val rect: Rect, val text: String)
-    private data class TableRegion(val left: Int, val top: Int, val right: Int, val bottom: Int)
-    private data class RowRect(val top: Int, val bottom: Int)
-    private data class TokenBox(val left: Int, val top: Int, val right: Int, val bottom: Int)
-    private data class LineResult(val text: String, val elements: List<Text.Element>)
-    private data class Candidate(val values: List<Int>, val confidence: Int, val source: String)
+    private data class Box(val ymin: Int, val xmin: Int, val ymax: Int, val xmax: Int)
+    private data class RowBox(val row: Int, val box: Box)
+    private data class Layout(val weightColumn: Box?, val rows: List<RowBox>)
 
-    suspend fun scan(context: Context, uri: Uri): Result = withContext(Dispatchers.Default) {
-        val original = loadBitmapCorrectOrientation(context, uri)
-            ?: return@withContext Result(emptyList(), verificationMessage = "Foto tidak dapat dibaca")
-        val bitmap = downscale(original, 2800)
-        if (bitmap !== original) original.recycle()
+    private const val MODEL = "gemini-2.5-flash"
+    private const val ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/$MODEL:generateContent"
 
-        val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private const val LAYOUT_PROMPT = """
+Anda adalah pemeriksa dokumen BTB (Bukti Timbang Barang) Indonesia.
+Analisis FOTO BTB yang diberikan secara visual, bukan sekadar OCR teks mentah.
+
+Tugas:
+1. Temukan tabel BTB dan kolom paling kiri berjudul JENIS BARANG. Kolom inilah yang berisi tulisan tangan angka berat per koli.
+2. Temukan batas x kolom JENIS BARANG dan batas y setiap baris data tulisan tangan.
+3. Abaikan header, kolom JUMLAH KOLI, BERAT, JUMLAH BERAT, TOTAL, tanda tangan, dan tulisan di luar tabel.
+4. Urutkan baris dari atas ke bawah.
+5. Jangan membuat angka contoh. Jangan menebak nilai yang tidak terlihat.
+6. Jika ada 10 baris formulir tetapi hanya 6 yang berisi tulisan, kembalikan hanya baris yang benar-benar memiliki tulisan angka.
+7. Koordinat menggunakan skala 0..1000: [ymin, xmin, ymax, xmax].
+8. Kotak kolom berat harus mencakup area tulisan tangan angka pada kolom JENIS BARANG, tetapi jangan mengambil kolom JUMLAH KOLI di sebelahnya.
+
+Kembalikan JSON sesuai schema. Tidak boleh ada komentar atau markdown.
+"""
+
+    private const val ROW_PROMPT = """
+Baca SATU BARIS tulisan tangan BTB pada gambar yang diberikan.
+
+Aturan sangat penting:
+- Gambar ini hanya mewakili SATU baris tabel. Jangan membaca angka dari baris lain.
+- Baca angka tulisan tangan yang benar-benar terlihat pada baris tersebut, dari kiri ke kanan.
+- Setiap kelompok angka dipisahkan oleh tanda titik, spasi, garis, atau jarak tulisan.
+- Angka seperti 51, 57, 20, 42, 11, 13 adalah contoh FORMAT saja, bukan nilai yang harus dipaksakan.
+- Jangan mengubah 1 menjadi 7 atau 7 menjadi 1 hanya karena konteks. Pilih berdasarkan bentuk tulisan pada gambar.
+- Jangan memasukkan nomor baris, nomor halaman, angka tanggal, header, atau angka dari kolom lain.
+- Jangan menebak angka yang tidak terlihat.
+- Jika hanya sebagian angka yang terlihat jelas, keluarkan hanya angka yang dapat dibaca dengan wajar.
+- Jangan menggabungkan dua angka terpisah menjadi satu angka besar.
+- Hasil harus berupa JSON sesuai schema.
+"""
+
+    private const val FULL_FALLBACK_PROMPT = """
+Analisis foto BTB ini secara visual. Baca tulisan tangan angka berat per koli yang berada di kolom JENIS BARANG, dari baris paling atas ke paling bawah.
+Pisahkan hasil berdasarkan baris. Jangan membaca angka dari header, kolom JUMLAH KOLI, kolom BERAT, kolom JUMLAH BERAT, tanggal, atau TOTAL.
+Jangan menebak angka yang tidak terlihat. Jangan menggunakan contoh angka sebagai jawaban.
+Untuk setiap baris, keluarkan hanya angka yang benar-benar terlihat dan dapat dibaca.
+Kembalikan JSON sesuai schema.
+"""
+
+    suspend fun scan(context: Context, uri: Uri): Result = withContext(Dispatchers.IO) {
+        val apiKey = BuildConfig.GEMINI_API_KEY.trim()
+        if (apiKey.isBlank()) {
+            return@withContext Result(
+                emptyList(),
+                verificationMessage = "Gemini API key belum dikonfigurasi. Tambahkan GEMINI_API_KEY pada Gradle/GitHub Actions."
+            )
+        }
+
+        val source = loadBitmapCorrectOrientation(context, uri)
+            ?: return@withContext Result(emptyList(), verificationMessage = "Foto BTB tidak dapat dibaca")
+
+        val image = downscale(source, 3200)
+        if (image !== source) source.recycle()
+
         try {
-            val fullText = recognize(recognizer, bitmap)
-            val anchors = fullText?.let(::findAnchors).orEmpty()
+            val layoutJson = generateJson(apiKey, LAYOUT_PROMPT, image, layoutSchema())
+            val layout = parseLayout(layoutJson)
 
-            // OCR anchor lebih stabil daripada menebak tabel hanya dari garis foto.
-            val table = locateTableFromAnchors(bitmap, anchors)
-                ?: locateTableByVisualStructure(bitmap)
+            val rows = layout.rows.sortedBy { it.row }
+            val usefulRows = if (rows.size >= 2) rows else emptyList()
 
-            if (table == null) {
-                return@withContext broadNumericFallback(recognizer, bitmap)
+            if (usefulRows.isEmpty()) {
+                val fallback = generateJson(apiKey, FULL_FALLBACK_PROMPT, image, fullRowsSchema())
+                return@withContext resultFromFullJson(fallback, "Gemini fallback: layout baris tidak terdeteksi")
             }
 
-            val rows = detectDataRows(bitmap, table)
-            if (rows.isEmpty()) {
-                return@withContext broadNumericFallback(recognizer, bitmap)
-            }
-
-            val weights = mutableListOf<Double>()
+            val allWeights = mutableListOf<Double>()
             val rowTexts = mutableListOf<String>()
             val raw = StringBuilder()
 
-            for ((index, row) in rows.withIndex()) {
-                val rowBitmap = safeCrop(
-                    bitmap,
-                    table.left,
-                    row.top,
-                    table.right,
-                    row.bottom
-                ) ?: continue
-
-                val result = recognizeRowMultiPass(recognizer, rowBitmap)
-                val values = result.values
-
-                weights += values.map { it.toDouble() }
-                rowTexts += values.joinToString(" ")
-                raw.append("Baris ${index + 1}: ")
-                    .append(values.joinToString(" "))
-                    .append("\n")
-
-                if (result.rawText.isNotBlank()) {
-                    raw.append("OCR: ").append(result.rawText).append("\n")
+            for (row in usefulRows) {
+                val rowCrop = cropRow(image, row.box, layout.weightColumn)
+                if (rowCrop == null) {
+                    rowTexts += ""
+                    raw.append("Baris ${row.row}: (crop gagal)\n")
+                    continue
                 }
-                rowBitmap.recycle()
+
+                try {
+                    val rowJson = generateJson(apiKey, ROW_PROMPT, rowCrop, rowSchema())
+                    val values = parseWeights(rowJson)
+                    allWeights += values.map { it.toDouble() }
+                    rowTexts += values.joinToString(" ")
+                    raw.append("Baris ${row.row}: ")
+                        .append(if (values.isEmpty()) "(tidak terbaca)" else values.joinToString(" "))
+                        .append("\n")
+                } catch (e: Exception) {
+                    rowTexts += ""
+                    raw.append("Baris ${row.row}: (error ${e.message ?: "Gemini"})\n")
+                } finally {
+                    rowCrop.recycle()
+                }
             }
 
-            val total = calculateTotalKg(weights)
-            val count = weights.size
-            val verification = if (count > 0) {
-                "Verifikasi: $count koli, total otomatis = ${formatNumber(total)} KG. Periksa tiap angka sebelum Gunakan Hasil."
+            val total = allWeights.sum()
+            val message = if (allWeights.isNotEmpty()) {
+                "Gemini membaca ${allWeights.size} koli. Total dihitung aplikasi = ${formatKg(total)} KG."
             } else {
-                "Belum ada angka KG yang terbaca."
+                "Gemini belum membaca angka KG. Coba foto lebih dekat, lurus, dan seluruh tabel terlihat."
             }
 
             Result(
-                weights = weights,
+                weights = allWeights,
                 rawText = raw.toString(),
                 rows = rowTexts,
-                expectedRows = rows.size,
+                expectedRows = usefulRows.size,
                 calculatedTotalKg = total,
-                verificationMessage = verification
+                verificationMessage = message
             )
         } finally {
-            recognizer.close()
-            bitmap.recycle()
+            image.recycle()
         }
     }
 
@@ -134,6 +167,223 @@ object BtbOcrScanner {
         scan(context, uri)
     } finally {
         BtbPhotoStorage.deletePhoto(context, uri.toString())
+    }
+
+    private fun generateJson(
+        apiKey: String,
+        prompt: String,
+        bitmap: Bitmap,
+        schema: JSONObject
+    ): String {
+        val imageBytes = compressForApi(bitmap)
+        val encoded = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
+
+        val partImage = JSONObject()
+            .put("inlineData", JSONObject()
+                .put("mimeType", "image/jpeg")
+                .put("data", encoded))
+
+        val partText = JSONObject().put("text", prompt)
+        val contents = JSONArray().put(
+            JSONObject().put("role", "user").put(
+                "parts", JSONArray().put(partText).put(partImage)
+            )
+        )
+
+        val generationConfig = JSONObject()
+            .put("responseMimeType", "application/json")
+            .put("responseJsonSchema", schema)
+            .put("temperature", 0.1)
+
+        val body = JSONObject()
+            .put("contents", contents)
+            .put("generationConfig", generationConfig)
+
+        val connection = (URL(ENDPOINT).openConnection() as HttpURLConnection).apply {
+            requestMethod = "POST"
+            connectTimeout = 45_000
+            readTimeout = 90_000
+            doOutput = true
+            setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("x-goog-api-key", apiKey)
+        }
+
+        try {
+            connection.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
+            val status = connection.responseCode
+            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+            val response = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
+            if (status !in 200..299) {
+                throw IllegalStateException("Gemini API HTTP $status: ${response.take(500)}")
+            }
+
+            val root = JSONObject(response)
+            val candidates = root.optJSONArray("candidates")
+                ?: throw IllegalStateException("Gemini tidak mengembalikan candidates")
+            if (candidates.length() == 0) throw IllegalStateException("Gemini tidak mengembalikan hasil")
+
+            val parts = candidates.getJSONObject(0)
+                .optJSONObject("content")
+                ?.optJSONArray("parts")
+                ?: throw IllegalStateException("Gemini tidak mengembalikan content")
+
+            val text = buildString {
+                for (i in 0 until parts.length()) {
+                    val part = parts.optJSONObject(i) ?: continue
+                    val t = part.optString("text", "")
+                    if (t.isNotBlank()) append(t)
+                }
+            }.trim()
+
+            return cleanJson(text)
+        } finally {
+            connection.disconnect()
+        }
+    }
+
+    private fun layoutSchema(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put("properties", JSONObject()
+            .put("weightColumn", JSONObject()
+                .put("type", "object")
+                .put("properties", boxProperties())
+                .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax"))))
+            .put("rows", JSONObject()
+                .put("type", "array")
+                .put("items", JSONObject()
+                    .put("type", "object")
+                    .put("properties", JSONObject()
+                        .put("row", JSONObject().put("type", "integer"))
+                        .put("box", JSONObject()
+                            .put("type", "object")
+                            .put("properties", boxProperties())
+                            .put("required", JSONArray(listOf("ymin", "xmin", "ymax", "xmax"))))
+                    )
+                    .put("required", JSONArray(listOf("row", "box")))))
+        .put("required", JSONArray(listOf("rows")))
+
+    private fun rowSchema(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put("properties", JSONObject()
+            .put("weights", JSONObject()
+                .put("type", "array")
+                .put("items", JSONObject().put("type", "integer"))))
+        .put("required", JSONArray(listOf("weights")))
+
+    private fun fullRowsSchema(): JSONObject = JSONObject()
+        .put("type", "object")
+        .put("properties", JSONObject()
+            .put("rows", JSONObject()
+                .put("type", "array")
+                .put("items", JSONObject()
+                    .put("type", "array")
+                    .put("items", JSONObject().put("type", "integer")))))
+        .put("required", JSONArray(listOf("rows")))
+
+    private fun boxProperties(): JSONObject = JSONObject()
+        .put("ymin", JSONObject().put("type", "integer"))
+        .put("xmin", JSONObject().put("type", "integer"))
+        .put("ymax", JSONObject().put("type", "integer"))
+        .put("xmax", JSONObject().put("type", "integer"))
+
+    private fun parseLayout(json: String): Layout {
+        val root = JSONObject(json)
+        val column = root.optJSONObject("weightColumn")?.let(::parseBox)
+        val array = root.optJSONArray("rows") ?: JSONArray()
+        val rows = mutableListOf<RowBox>()
+        for (i in 0 until array.length()) {
+            val obj = array.optJSONObject(i) ?: continue
+            val box = obj.optJSONObject("box")?.let(::parseBox) ?: continue
+            val row = obj.optInt("row", i + 1)
+            if (box.ymax > box.ymin && box.xmax > box.xmin) rows += RowBox(row, box.clamp())
+        }
+        return Layout(column?.clamp(), rows.distinctBy { it.row })
+    }
+
+    private fun parseBox(obj: JSONObject): Box = Box(
+        obj.optInt("ymin", 0),
+        obj.optInt("xmin", 0),
+        obj.optInt("ymax", 1000),
+        obj.optInt("xmax", 1000)
+    )
+
+    private fun Box.clamp(): Box = Box(
+        ymin.coerceIn(0, 1000), xmin.coerceIn(0, 1000),
+        ymax.coerceIn(0, 1000), xmax.coerceIn(0, 1000)
+    )
+
+    private fun parseWeights(json: String): List<Int> {
+        val root = JSONObject(json)
+        val array = root.optJSONArray("weights") ?: return emptyList()
+        val out = mutableListOf<Int>()
+        for (i in 0 until array.length()) {
+            val value = array.optInt(i, Int.MIN_VALUE)
+            if (value != Int.MIN_VALUE && value in 1..999) out += value
+        }
+        return out
+    }
+
+    private fun resultFromFullJson(json: String, prefix: String): Result {
+        val root = JSONObject(json)
+        val rowsArray = root.optJSONArray("rows") ?: JSONArray()
+        val rows = mutableListOf<String>()
+        val weights = mutableListOf<Double>()
+        for (i in 0 until rowsArray.length()) {
+            val arr = rowsArray.optJSONArray(i)
+            val values = mutableListOf<Int>()
+            if (arr != null) {
+                for (j in 0 until arr.length()) {
+                    val v = arr.optInt(j, Int.MIN_VALUE)
+                    if (v != Int.MIN_VALUE && v in 1..999) values += v
+                }
+            }
+            rows += values.joinToString(" ")
+            weights += values.map { it.toDouble() }
+        }
+        val total = weights.sum()
+        return Result(
+            weights = weights,
+            rawText = prefix,
+            rows = rows,
+            expectedRows = rows.size,
+            calculatedTotalKg = total,
+            verificationMessage = "Gemini fallback membaca ${weights.size} koli. Total dihitung aplikasi = ${formatKg(total)} KG."
+        )
+    }
+
+    private fun cropRow(bitmap: Bitmap, row: Box, column: Box?): Bitmap? {
+        val x1 = ((column?.xmin ?: 20) / 1000f * bitmap.width).roundToInt()
+        val x2 = ((column?.xmax ?: 650) / 1000f * bitmap.width).roundToInt()
+        val y1 = (row.ymin / 1000f * bitmap.height).roundToInt()
+        val y2 = (row.ymax / 1000f * bitmap.height).roundToInt()
+
+        val padX = max(8, ((x2 - x1) * 0.04f).roundToInt())
+        val padY = max(8, ((y2 - y1) * 0.10f).roundToInt())
+        val left = (x1 - padX).coerceIn(0, bitmap.width - 1)
+        val top = (y1 - padY).coerceIn(0, bitmap.height - 1)
+        val right = (x2 + padX).coerceIn(left + 1, bitmap.width)
+        val bottom = (y2 + padY).coerceIn(top + 1, bitmap.height)
+
+        if (right - left < 20 || bottom - top < 12) return null
+        return Bitmap.createBitmap(bitmap, left, top, right - left, bottom - top)
+    }
+
+    private fun compressForApi(bitmap: Bitmap): ByteArray {
+        val maxSide = 1800
+        val image = if (max(bitmap.width, bitmap.height) > maxSide) {
+            val scale = maxSide.toFloat() / max(bitmap.width, bitmap.height).toFloat()
+            Bitmap.createScaledBitmap(
+                bitmap,
+                max(1, (bitmap.width * scale).roundToInt()),
+                max(1, (bitmap.height * scale).roundToInt()),
+                true
+            )
+        } else bitmap
+
+        val out = ByteArrayOutputStream()
+        image.compress(Bitmap.CompressFormat.JPEG, 94, out)
+        if (image !== bitmap) image.recycle()
+        return out.toByteArray()
     }
 
     private fun loadBitmapCorrectOrientation(context: Context, uri: Uri): Bitmap? {
@@ -165,7 +415,6 @@ object BtbOcrScanner {
                 matrix.preScale(-1f, 1f)
                 matrix.postRotate(90f)
             }
-            else -> Unit
         }
 
         if (matrix.isIdentity) return bitmap
@@ -184,488 +433,24 @@ object BtbOcrScanner {
         return Bitmap.createScaledBitmap(
             source,
             maxWidth,
-            (source.height * scale).roundToInt().coerceAtLeast(1),
+            max(1, (source.height * scale).roundToInt()),
             true
         )
     }
 
-    private fun findAnchors(text: Text): List<Anchor> {
-        return text.textBlocks
-            .flatMap { it.lines }
-            .mapNotNull { line ->
-                val box = line.boundingBox ?: return@mapNotNull null
-                val normalized = line.text.uppercase().replace(Regex("[^A-Z0-9]"), "")
-                if (
-                    normalized.contains("JENISBARANG") ||
-                    normalized.contains("JENIS") ||
-                    normalized.contains("BARANG") ||
-                    normalized.contains("JUMLAHKOLI") ||
-                    normalized == "TOTAL" ||
-                    normalized.contains("TOTALWEIGHT")
-                ) Anchor(box, line.text) else null
-            }
-    }
-
-    private fun locateTableFromAnchors(bitmap: Bitmap, anchors: List<Anchor>): TableRegion? {
-        val header = anchors.firstOrNull {
-            it.text.uppercase().replace(Regex("\\s+"), "").contains("JENIS")
-        } ?: anchors.firstOrNull {
-            it.text.uppercase().replace(Regex("\\s+"), "").contains("BARANG")
-        } ?: return null
-
-        val total = anchors
-            .filter { it.rect.top > header.rect.bottom && it.text.uppercase().contains("TOTAL") }
-            .minByOrNull { it.rect.top }
-
-        val jumlah = anchors
-            .filter {
-                it.rect.top <= header.rect.bottom + bitmap.height * 0.12f &&
-                    it.rect.bottom >= header.rect.top - bitmap.height * 0.08f &&
-                    it.text.uppercase().replace(Regex("\\s+"), "").contains("JUMLAH") &&
-                    it.rect.left > header.rect.left
-            }
-            .minByOrNull { it.rect.left }
-
-        val h = bitmap.height
-        val w = bitmap.width
-
-        // JENIS BARANG adalah kolom tulisan tangan paling kiri. Jika OCR menemukan
-        // JUMLAH KOLI, gunakan posisinya sebagai batas kanan; ini jauh lebih stabil
-        // daripada memakai lebar teks header saja.
-        val left = (header.rect.left - w * 0.025f).roundToInt().coerceAtLeast(0)
-        // Pastikan kedua cabang menghasilkan Int. Sebelumnya fallback menghasilkan
-        // Float, sehingga receiver menjadi common supertype dan coerceAtMost() gagal
-        // dikompilasi pada Kotlin.
-        val rightCandidate: Int = jumlah?.rect?.left
-            ?.minus((w * 0.015f).roundToInt())
-            ?: (header.rect.left + w * 0.48f).roundToInt()
-        val right = rightCandidate
-            .coerceAtMost((w * 0.72f).roundToInt())
-            .coerceAtLeast(left + (w * 0.28f).roundToInt())
-        val top = (header.rect.bottom + h * 0.015f).roundToInt().coerceAtMost(h - 20)
-        val bottom = (total?.rect?.top ?: (h * 0.88f).roundToInt()) - (h * 0.008f).roundToInt()
-
-        if (bottom - top < h * 0.20f || right - left < w * 0.18f) return null
-        return TableRegion(left, top, right, bottom.coerceAtMost(h))
-    }
-
-    /** Visual fallback: cari empat garis pembentuk tabel paling kuat. */
-    private fun locateTableByVisualStructure(bitmap: Bitmap): TableRegion? {
-        val gray = grayscale(bitmap)
-        val w = gray.width
-        val h = gray.height
-        val pixels = IntArray(w * h)
-        gray.getPixels(pixels, 0, w, 0, 0, w, h)
-
-        val xFrom = (w * 0.02f).roundToInt()
-        val xTo = (w * 0.90f).roundToInt()
-        val yFrom = (h * 0.30f).roundToInt()
-        val yTo = (h * 0.95f).roundToInt()
-
-        val vScore = IntArray(w)
-        for (x in xFrom until xTo) {
-            var run = 0
-            var best = 0
-            for (y in yFrom until yTo) {
-                if (Color.red(pixels[y * w + x]) < 150) {
-                    run++
-                    best = max(best, run)
-                } else run = 0
-            }
-            vScore[x] = best
+    private fun cleanJson(text: String): String {
+        var value = text.trim()
+        if (value.startsWith("```")) {
+            value = value.removePrefix("```").trimStart()
+            if (value.startsWith("json", ignoreCase = true)) value = value.substring(4).trimStart()
+            if (value.endsWith("```")) value = value.dropLast(3).trimEnd()
         }
-
-        val peaks = clusterPeaks(vScore, (h * 0.16f).roundToInt(), max(12, (w * 0.018f).roundToInt()))
-        val left = peaks.firstOrNull { it < w * 0.35f } ?: run { gray.recycle(); return null }
-        val right = peaks.firstOrNull { it > left + w * 0.22f } ?: run { gray.recycle(); return null }
-
-        val hScore = IntArray(h)
-        for (y in yFrom until yTo) {
-            var run = 0
-            var best = 0
-            for (x in left until right) {
-                if (Color.red(pixels[y * w + x]) < 150) {
-                    run++
-                    best = max(best, run)
-                } else run = 0
-            }
-            hScore[y] = best
-        }
-
-        val hp = clusterPeaks(hScore, max(80, ((right - left) * 0.45f).roundToInt()), max(8, (h * 0.012f).roundToInt()))
-        val top = hp.firstOrNull() ?: run { gray.recycle(); return null }
-        val bottom = hp.lastOrNull { it > top + h * 0.25f } ?: run { gray.recycle(); return null }
-        gray.recycle()
-
-        return if (bottom - top > h * 0.20f) TableRegion(left, top, right, bottom) else null
+        val first = value.indexOf('{')
+        val last = value.lastIndexOf('}')
+        if (first >= 0 && last > first) return value.substring(first, last + 1)
+        throw IllegalStateException("Respons Gemini bukan JSON")
     }
 
-    private fun clusterPeaks(scores: IntArray, minScore: Int, minDistance: Int): List<Int> {
-        val candidates = scores.indices.filter { scores[it] >= minScore }.sortedByDescending { scores[it] }
-        val selected = mutableListOf<Int>()
-        for (i in candidates) if (selected.none { abs(it - i) < minDistance }) selected += i
-        return selected.sorted()
-    }
-
-    /**
-     * Cari 10 slot data berdasarkan garis horizontal. Jika garis gagal ditemukan,
-     * gunakan 10 slot geometris dari area data. Tidak ada angka KG yang di-hard-code.
-     */
-    private fun detectDataRows(bitmap: Bitmap, table: TableRegion): List<RowRect> {
-        // Format BTB yang dipakai aplikasi memiliki 10 baris tulisan pada kolom
-        // JENIS BARANG. Kita tidak meng-hard-code isi/beratnya; yang dipatok hanya
-        // geometri formulir. Ini mencegah garis tulisan tangan dianggap sebagai
-        // batas baris dan membuat angka dari dua baris tercampur.
-        val count = 10
-        val usableTop = table.top + ((table.bottom - table.top) * 0.01f).roundToInt()
-        val usableBottom = table.bottom - ((table.bottom - table.top) * 0.02f).roundToInt()
-        val slot = (usableBottom - usableTop).toFloat() / count
-        if (slot < 12f) return emptyList()
-
-        return (0 until count).map { i ->
-            RowRect(
-                top = (usableTop + i * slot + 3).roundToInt(),
-                bottom = (usableTop + (i + 1) * slot - 3).roundToInt()
-            )
-        }
-    }
-
-    private fun horizontalLinePositions(source: Bitmap): List<Int> {
-        val gray = grayscale(source)
-        val w = gray.width
-        val h = gray.height
-        val pixels = IntArray(w * h)
-        gray.getPixels(pixels, 0, w, 0, 0, w, h)
-        val score = IntArray(h)
-        for (y in 0 until h) {
-            var dark = 0
-            for (x in 0 until w) if (Color.red(pixels[y * w + x]) < 145) dark++
-            score[y] = dark
-        }
-        gray.recycle()
-        return clusterPeaks(score, max(80, (w * 0.40f).roundToInt()), max(6, (h * 0.012f).roundToInt()))
-    }
-
-    private suspend fun recognizeRowMultiPass(recognizer: TextRecognizer, row: Bitmap): RowScan {
-        val variants = preprocessVariants(row)
-        val candidates = mutableListOf<Candidate>()
-        var raw = ""
-
-        for ((name, variant) in variants) {
-            val line = recognizeLine(recognizer, variant)
-            if (line != null) {
-                raw += if (raw.isBlank()) "[$name] ${line.text}" else " | [$name] ${line.text}"
-                val values = parseLineCandidates(line, variant)
-                if (values.isNotEmpty()) {
-                    candidates += Candidate(values, scoreCandidate(values, line.elements), name)
-                }
-            }
-            if (variant !== row) variant.recycle()
-        }
-
-        val best = candidates.maxByOrNull { it.confidence }
-        val visualFallback = if (best == null || best.values.size <= 1) {
-            segmentAndRecognizeTokens(recognizer, preprocessForTokens(row))
-        } else emptyList()
-
-        val chosen = when {
-            best == null -> visualFallback
-            visualFallback.size > best.values.size + 1 -> visualFallback
-            else -> best.values
-        }
-
-        return RowScan(chosen, raw)
-    }
-
-    private data class RowScan(val values: List<Int>, val rawText: String)
-
-    private fun preprocessVariants(source: Bitmap): List<Pair<String, Bitmap>> {
-        val gray = grayscale(source)
-        val threshold = threshold(gray, 150)
-        val high = threshold(gray, 175)
-        val contrast = contrast(gray, 1.55f)
-        gray.recycle()
-        return listOf("gray" to source.copy(Bitmap.Config.ARGB_8888, false), "thr150" to threshold, "thr175" to high, "contrast" to contrast)
-    }
-
-    private fun preprocessForTokens(source: Bitmap): Bitmap = threshold(grayscale(source), 150)
-
-    private fun parseLineCandidates(line: LineResult, rowBitmap: Bitmap): List<Int> {
-        val values = mutableListOf<Int>()
-        for (element in line.elements) {
-            val corrected = safeNormalize(element.text)
-            val parts = splitTokenIfNeeded(corrected, element.boundingBox, rowBitmap)
-            values += parts.mapNotNull { it.toIntOrNull()?.takeIf { n -> n in 1..999 } }
-        }
-        if (values.isEmpty()) values += extractNumberTokens(line.text).map { it.toInt() }
-        return values
-    }
-
-    private fun scoreCandidate(values: List<Int>, elements: List<Text.Element>): Int {
-        var score = values.size * 100
-        for (v in values) {
-            if (v in 1..99) score += 20
-            if (v >= 100) score -= 8
-        }
-        // Elemen OCR yang terpisah lebih dapat dipercaya daripada satu token raksasa.
-        score += elements.size * 5
-        return score
-    }
-
-    private fun splitTokenIfNeeded(text: String, box: Rect?, row: Bitmap): List<String> {
-        if (text.isBlank()) return emptyList()
-        val digits = text.filter(Char::isDigit)
-        if (digits.isEmpty()) return emptyList()
-        if (digits.length <= 2) {
-            // Visual 1/7 correction is intentionally conservative.
-            if (digits.length == 2 && digits.endsWith('7') && box != null) {
-                val crop = safeCrop(row, box.left - 4, box.top - 4, box.right + 4, box.bottom + 4)
-                if (crop != null) {
-                    val corrected = correctTrailingOneHeuristic(digits, crop)
-                    crop.recycle()
-                    return listOf(corrected)
-                }
-            }
-            return listOf(digits)
-        }
-
-        val width = box?.width() ?: 0
-        val height = box?.height() ?: row.height
-        if (digits.length >= 3 && width > height * 1.75f) {
-            // Wide OCR token: use conservative two-digit splits only when the gap geometry supports it.
-            val parts = splitByVerticalValley(row, box)
-            if (parts.size in 2..6) return parts
-        }
-        return listOf(digits)
-    }
-
-    /**
-     * Common BTB ambiguity: OCR says 57, but the final handwritten character is a
-     * narrow vertical stroke typical of 1. Only change 7 -> 1 when the image supports it.
-     */
-    private fun correctTrailingOneHeuristic(text: String, crop: Bitmap): String {
-        if (!text.endsWith('7') || crop.width < 8 || crop.height < 8) return text
-        val gray = grayscale(crop)
-        val w = gray.width
-        val h = gray.height
-        val pixels = IntArray(w * h)
-        gray.getPixels(pixels, 0, w, 0, 0, w, h)
-        gray.recycle()
-
-        // Inspect right-most half of the token. A handwritten 1 tends to occupy a narrow
-        // central band and has much less horizontal ink than a 7.
-        val x0 = (w * 0.52f).roundToInt().coerceAtMost(w - 1)
-        var dark = 0
-        var minX = w
-        var maxX = -1
-        for (y in 0 until h) {
-            for (x in x0 until w) {
-                if (Color.red(pixels[y * w + x]) < 145) {
-                    dark++
-                    minX = min(minX, x)
-                    maxX = max(maxX, x)
-                }
-            }
-        }
-        if (dark == 0) return text
-        val occupied = maxX - minX + 1
-        val widthRatio = occupied.toFloat() / (w - x0).coerceAtLeast(1)
-        return if (widthRatio < 0.48f && dark < h * 2.2f) text.dropLast(1) + '1' else text
-    }
-
-    private fun splitByVerticalValley(source: Bitmap, box: Rect?): List<String> {
-        if (box == null) return emptyList()
-        val crop = safeCrop(source, box.left, box.top, box.right, box.bottom) ?: return emptyList()
-        val gray = grayscale(crop)
-        val w = gray.width
-        val h = gray.height
-        val pixels = IntArray(w * h)
-        gray.getPixels(pixels, 0, w, 0, 0, w, h)
-        gray.recycle()
-        crop.recycle()
-
-        val projection = IntArray(w)
-        for (x in 0 until w) {
-            var n = 0
-            for (y in 0 until h) if (Color.red(pixels[y * w + x]) < 145) n++
-            projection[x] = n
-        }
-        val valleys = (1 until w - 1).filter { projection[it] <= projection[it - 1] && projection[it] <= projection[it + 1] && projection[it] <= h * 0.08f }
-        if (valleys.isEmpty()) return emptyList()
-        return emptyList() // OCR text remains authoritative; avoid inventing digit values here.
-    }
-
-    private suspend fun segmentAndRecognizeTokens(recognizer: TextRecognizer, source: Bitmap): List<Int> {
-        val tokens = segmentTokens(source)
-        val values = mutableListOf<Int>()
-        for (token in tokens) {
-            val crop = safeCrop(source, token.left, token.top, token.right, token.bottom) ?: continue
-            val value = recognizeToken(recognizer, crop)
-            crop.recycle()
-            if (value != null) values += value
-        }
-        return values
-    }
-
-    private fun segmentTokens(source: Bitmap): List<TokenBox> {
-        val gray = grayscale(source)
-        val w = gray.width
-        val h = gray.height
-        val pixels = IntArray(w * h)
-        gray.getPixels(pixels, 0, w, 0, 0, w, h)
-        gray.recycle()
-
-        // Vertical projection is more tolerant than connected-components for cursive digits.
-        val ink = IntArray(w)
-        for (x in 0 until w) for (y in 0 until h) if (Color.red(pixels[y * w + x]) < 145) ink[x]++
-
-        val spans = mutableListOf<Pair<Int, Int>>()
-        var start = -1
-        val minInk = max(1, (h * 0.025f).roundToInt())
-        for (x in 0 until w) {
-            val active = ink[x] >= minInk
-            if (active && start < 0) start = x
-            if ((!active || x == w - 1) && start >= 0) {
-                val end = if (!active) x - 1 else x
-                if (end - start >= 2) spans += start to end
-                start = -1
-            }
-        }
-
-        val merged = mutableListOf<Pair<Int, Int>>()
-        for (s in spans) {
-            val last = merged.lastOrNull()
-            if (last != null && s.first - last.second <= max(3, h / 18)) merged[merged.lastIndex] = last.first to s.second
-            else merged += s
-        }
-        return merged.map { TokenBox((it.first - 4).coerceAtLeast(0), 0, (it.second + 5).coerceAtMost(w), h) }
-    }
-
-    private suspend fun recognizeToken(recognizer: TextRecognizer, token: Bitmap): Int? {
-        val gray = grayscale(token)
-        val binary = threshold(gray, 150)
-        gray.recycle()
-        val padded = Bitmap.createBitmap(binary.width + 40, binary.height + 40, Bitmap.Config.ARGB_8888)
-        Canvas(padded).apply {
-            drawColor(Color.WHITE)
-            drawBitmap(binary, 20f, 20f, null)
-        }
-        binary.recycle()
-        val scaled = Bitmap.createScaledBitmap(padded, padded.width * 3, padded.height * 3, true)
-        padded.recycle()
-        val text = recognize(recognizer, scaled)?.text.orEmpty()
-        scaled.recycle()
-        return extractNumberTokens(text).firstOrNull()?.toIntOrNull()
-    }
-
-    private suspend fun broadNumericFallback(recognizer: TextRecognizer, bitmap: Bitmap): Result {
-        val crop = safeCrop(bitmap, 0, (bitmap.height * 0.30f).roundToInt(), (bitmap.width * 0.62f).roundToInt(), (bitmap.height * 0.90f).roundToInt())
-            ?: return Result(emptyList(), verificationMessage = "Area BTB tidak ditemukan")
-        val variants = preprocessVariants(crop)
-        val all = mutableListOf<List<Int>>()
-        for ((_, v) in variants) {
-            val text = recognize(recognizer, v)?.text.orEmpty()
-            all += extractNumberTokens(text).map { it.toInt() }
-            if (v !== crop) v.recycle()
-        }
-        crop.recycle()
-        val best = all.maxByOrNull { it.size }.orEmpty()
-        val total = calculateTotalKg(best.map { it.toDouble() })
-        return Result(
-            weights = best.map { it.toDouble() },
-            rawText = best.joinToString(" "),
-            rows = if (best.isEmpty()) emptyList() else listOf(best.joinToString(" ")),
-            expectedRows = 1,
-            calculatedTotalKg = total,
-            verificationMessage = "Fallback OCR: ${best.size} koli, total = ${formatNumber(total)} KG"
-        )
-    }
-
-    private fun safeNormalize(text: String): String = text.uppercase()
-        .replace('O', '0')
-        .replace('I', '1')
-        .replace('L', '1')
-        .replace('|', '1')
-        .replace('S', '5')
-        .replace('B', '8')
-        .replace('Z', '2')
-        .replace(Regex("[^0-9]"), "")
-
-    private fun extractNumberTokens(text: String): List<String> {
-        val normalized = text.uppercase()
-            .replace('O', '0').replace('o', '0')
-            .replace('I', '1').replace('l', '1').replace('|', '1')
-            .replace('S', '5').replace('s', '5')
-            .replace('B', '8').replace('b', '8')
-            .replace('Z', '2').replace('z', '2')
-        return Regex("(?<!\\d)\\d{1,3}(?!\\d)")
-            .findAll(normalized)
-            .map { it.value }
-            .filter { it.toIntOrNull()?.let { n -> n in 1..999 } == true }
-            .toList()
-    }
-
-    private fun calculateTotalKg(values: List<Double>): Double {
-        var total = 0L
-        values.forEach { total += it.roundToInt().toLong() }
-        return total.toDouble()
-    }
-
-    private fun formatNumber(value: Double): String = if (value % 1.0 == 0.0) value.roundToInt().toString() else value.toString()
-
-    private fun grayscale(source: Bitmap): Bitmap {
-        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(source.width * source.height)
-        source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        for (i in pixels.indices) {
-            val c = pixels[i]
-            val g = (Color.red(c) * 0.299 + Color.green(c) * 0.587 + Color.blue(c) * 0.114).roundToInt().coerceIn(0, 255)
-            pixels[i] = Color.rgb(g, g, g)
-        }
-        out.setPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        return out
-    }
-
-    private fun threshold(source: Bitmap, level: Int): Bitmap {
-        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(source.width * source.height)
-        source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        for (i in pixels.indices) pixels[i] = if (Color.red(pixels[i]) < level) Color.BLACK else Color.WHITE
-        out.setPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        return out
-    }
-
-    private fun contrast(source: Bitmap, factor: Float): Bitmap {
-        val out = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val pixels = IntArray(source.width * source.height)
-        source.getPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        for (i in pixels.indices) {
-            val v = ((Color.red(pixels[i]) - 128) * factor + 128).roundToInt().coerceIn(0, 255)
-            pixels[i] = Color.rgb(v, v, v)
-        }
-        out.setPixels(pixels, 0, source.width, 0, 0, source.width, source.height)
-        return out
-    }
-
-    private fun safeCrop(bitmap: Bitmap, left: Int, top: Int, right: Int, bottom: Int): Bitmap? {
-        if (bitmap.width < 2 || bitmap.height < 2) return null
-        val l = left.coerceIn(0, bitmap.width - 1)
-        val t = top.coerceIn(0, bitmap.height - 1)
-        val r = right.coerceIn(l + 1, bitmap.width)
-        val b = bottom.coerceIn(t + 1, bitmap.height)
-        if (r - l < 8 || b - t < 8) return null
-        return Bitmap.createBitmap(bitmap, l, t, r - l, b - t)
-    }
-
-    private suspend fun recognizeLine(recognizer: TextRecognizer, bitmap: Bitmap): LineResult? {
-        val text = recognize(recognizer, bitmap) ?: return null
-        val elements = text.textBlocks.flatMap { it.lines }.flatMap { it.elements }.sortedBy { it.boundingBox?.left ?: Int.MAX_VALUE }
-        return LineResult(text.text, elements)
-    }
-
-    private suspend fun recognize(recognizer: TextRecognizer, bitmap: Bitmap): Text? = suspendCancellableCoroutine { cont ->
-        recognizer.process(InputImage.fromBitmap(bitmap, 0))
-            .addOnSuccessListener { cont.resume(it) }
-            .addOnFailureListener { cont.resume(null) }
-    }
+    private fun formatKg(value: Double): String =
+        if (value % 1.0 == 0.0) value.roundToInt().toString() else "%.1f".format(value)
 }
