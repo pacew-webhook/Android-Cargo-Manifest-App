@@ -3,6 +3,8 @@
 >
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Izin untuk Simpan/Export File Excel -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
@@ -37,6 +39,13 @@
             android:name="com.example.cargomanifestapp.BuktiTimbangActivity"
             android:exported="false"
             android:label="Bukti Timbang Barang"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- OCR langsung display timbangan untuk BTB -->
+        <activity
+            android:name="com.example.cargomanifestapp.ScaleOcrActivity"
+            android:exported="false"
+            android:label="OCR Timbangan"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <!-- Provider untuk Berbagi File Excel -->
