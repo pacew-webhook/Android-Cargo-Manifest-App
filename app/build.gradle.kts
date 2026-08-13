@@ -13,8 +13,8 @@ android {
         applicationId = "com.example.cargomanifestapp"
         minSdk = 26
         targetSdk = 34
-        versionCode = 13
-        versionName = "1.13.5.5-BTB-EXCEL-FIX7"
+        versionCode = 14
+        versionName = "1.13.5.5-BTB-EXCEL-FIX8"
 
         val geminiApiKey = project.findProperty("GEMINI_API_KEY")?.toString() ?: ""
         buildConfigField("String", "GEMINI_API_KEY", "\"${geminiApiKey.replace("\"", "\\\"")}\"")
