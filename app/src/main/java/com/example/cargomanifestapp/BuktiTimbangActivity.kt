@@ -170,7 +170,8 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             customerName = customerName,
                             trademarks = trademarks,
                             jenisBarang = jenisBarang,
-                            daftarTimbangan = daftarTimbangan
+                            daftarTimbangan = daftarTimbangan,
+                        photoUris = photoUris.map { it.toString() }
                         )
 
                         if (daftarTimbangan.isNotEmpty()) {
