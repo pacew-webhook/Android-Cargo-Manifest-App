@@ -233,8 +233,13 @@ object BtbOcrScanner {
         // JUMLAH KOLI, gunakan posisinya sebagai batas kanan; ini jauh lebih stabil
         // daripada memakai lebar teks header saja.
         val left = (header.rect.left - w * 0.025f).roundToInt().coerceAtLeast(0)
-        val right = (jumlah?.rect?.left?.minus((w * 0.015f).roundToInt())
-            ?: (header.rect.left + w * 0.48f))
+        // Pastikan kedua cabang menghasilkan Int. Sebelumnya fallback menghasilkan
+        // Float, sehingga receiver menjadi common supertype dan coerceAtMost() gagal
+        // dikompilasi pada Kotlin.
+        val rightCandidate: Int = jumlah?.rect?.left
+            ?.minus((w * 0.015f).roundToInt())
+            ?: (header.rect.left + w * 0.48f).roundToInt()
+        val right = rightCandidate
             .coerceAtMost((w * 0.72f).roundToInt())
             .coerceAtLeast(left + (w * 0.28f).roundToInt())
         val top = (header.rect.bottom + h * 0.015f).roundToInt().coerceAtMost(h - 20)
