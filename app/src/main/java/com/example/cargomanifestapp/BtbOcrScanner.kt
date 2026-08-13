@@ -72,17 +72,18 @@ Jangan memberikan angka berat. Hanya lokasi kertas BTB.
     private const val EXTRACT_PROMPT = """
 Baca FOTO BTB yang diberikan secara visual. Foto bisa berupa foto penuh dari kamera/galeri
 atau sudah dekat dengan kertas BTB. Temukan tabel BTB langsung dari foto dan fokus hanya pada
-4 baris tulisan tangan berat. Jangan membutuhkan crop terpisah dari aplikasi.
+SEMUA baris tulisan tangan berat yang terlihat. Jangan mengasumsikan jumlah baris.
 
 TUGAS UTAMA:
 1. Fokus hanya pada kolom paling kiri bertuliskan JENIS BARANG. Tulisan tangan di kolom itu
    adalah angka berat per koli.
-2. Form BTB pada foto ini memiliki 4 baris data horizontal di bawah header tabel.
-3. Setiap baris target pada BTB ini berisi 5 angka berat yang dibaca dari kiri ke kanan.
-4. Kembalikan tepat 4 objek baris, row=1 sampai row=4. Usahakan membaca SEMUA 5 angka
-   pada setiap baris. Jika satu angka benar-benar tidak terbaca, jangan mengarang; masukkan
-   angka lain yang terlihat dan biarkan posisi yang tidak terbaca tidak diisi.
-5. Baca maksimal 5 angka dari kiri ke kanan dalam setiap baris dan jangan mengambil angka dari baris lain.
+2. Tentukan sendiri jumlah baris data yang benar-benar terlihat pada tabel. Jangan mengasumsikan
+   tabel selalu 4 baris dan jangan berhenti setelah 20 koli.
+3. Pada setiap baris, baca SEMUA angka berat yang benar-benar tertulis dari kiri ke kanan.
+   Jumlah angka per baris boleh berbeda. Jangan membatasi menjadi 5 angka.
+4. Kembalikan satu objek untuk setiap baris data yang terlihat, berurutan row=1, row=2, dst.
+   Jika satu angka benar-benar tidak terbaca, jangan mengarang; tetap masukkan angka lain yang terlihat.
+5. Jangan berhenti setelah 20 angka. Jika ada 21, 30, 40, atau lebih koli yang terlihat, kembalikan semuanya.
 6. Jangan membaca angka dari header, tanggal, nama customer, kolom JUMLAH KOLI, kolom BERAT,
    kolom JUMLAH BERAT (KG), TOTAL, monitor, atau latar belakang.
 7. Jangan mengarang angka. Hanya masukkan angka yang benar-benar terlihat sebagai tulisan tangan.
@@ -93,6 +94,9 @@ TUGAS UTAMA:
 10. Jangan mengubah angka hanya agar jumlah setiap baris sama. Jumlah angka per baris mengikuti
     yang benar-benar tertulis pada foto.
 11. Angka 0 boleh muncul jika memang tertulis sebagai berat, tetapi nilai di luar 0..999 tidak valid.
+12. Set isComplete=true hanya jika seluruh baris dan seluruh angka tulisan tangan yang terlihat sudah
+    tercakup sampai baris terakhir. Jika ragu masih ada baris/angka yang terlewat, set false.
+13. totalDetected wajib sama dengan jumlah seluruh angka pada semua rows.
 
 Kembalikan JSON saja sesuai schema.
 """
@@ -105,8 +109,8 @@ Di bawah ini ada HASIL PEMBACAAN PERTAMA. Jangan langsung mempercayainya.
 Periksa kembali setiap karakter langsung pada gambar, baris demi baris.
 
 Aturan:
-- Pertahankan pemisahan 4 baris tabel.
-- Setiap baris berisi maksimal 5 angka berat.
+- Pertahankan pemisahan semua baris tabel yang terlihat.
+- Jangan membatasi jumlah baris atau jumlah angka per baris.
 - Fokus hanya kolom JENIS BARANG.
 - Jangan mengambil angka dari kolom lain atau header.
 - Jika kandidat salah karena 1 terbaca 7, 5 terbaca 7, 7 terbaca 1, dan sebagainya,
@@ -115,7 +119,9 @@ Aturan:
 - Jangan menambah angka yang tidak terlihat.
 - Jangan menggabungkan dua angka terpisah.
 - Jika sebuah baris memang kosong/tidak terbaca, gunakan weights=[] .
-- Kembalikan tepat 4 baris.
+- Kembalikan semua baris data yang terlihat, bukan tepat 4 baris.
+- Set isComplete=true hanya jika seluruh tabel yang terlihat sudah tercakup.
+- totalDetected harus sama dengan jumlah angka pada seluruh rows.
 
 HASIL PEMBACAAN PERTAMA:
 """
@@ -142,9 +148,17 @@ HASIL PEMBACAAN PERTAMA:
             // scan normal secara signifikan tanpa mengorbankan fallback untuk foto sulit.
             val firstJson = generateJson(apiKey, EXTRACT_PROMPT, normalized, rowsSchema())
             val firstParsed = parseRows(firstJson)
+            val firstMeta = parseMeta(firstJson)
             val firstCount = firstParsed.sumOf { it.size }
 
-            val parsed = if (firstCount == 20 && firstParsed.all { it.size == 5 }) {
+            // V13.5: jumlah data DINAMIS. Angka 20 bukan batas.
+            // Bila Gemini mengembalikan tepat 20, kita lakukan satu pemeriksaan tambahan
+            // karena 20 adalah pola lama yang sering membuat hasil terpotong.
+            val needsVerification = !firstMeta.isComplete ||
+                firstCount == 20 ||
+                firstParsed.dropLast(1).any { it.isEmpty() }
+
+            val parsed = if (!needsVerification && firstCount > 0) {
                 firstParsed
             } else {
                 val verifiedJson = try {
@@ -158,14 +172,17 @@ HASIL PEMBACAAN PERTAMA:
                     firstJson
                 }
                 val verified = parseRows(verifiedJson)
-                if (verified.sumOf { it.size } >= firstCount) verified else firstParsed
+                val verifiedMeta = parseMeta(verifiedJson)
+
+                when {
+                    verified.isEmpty() -> firstParsed
+                    verifiedMeta.isComplete && verified.sumOf { it.size } >= firstCount -> verified
+                    verified.sumOf { it.size } > firstCount -> verified
+                    else -> firstParsed
+                }
             }
 
-            buildResult(parsed, if (parsed.sumOf { it.size } == 20) {
-                "Gemini cepat: 4 baris lengkap (20 koli)."
-            } else {
-                "Gemini cepat + verifikasi: ${parsed.sumOf { it.size }} koli terbaca."
-            })
+            buildResult(parsed, "Gemini: ${parsed.sumOf { it.size }} koli terbaca.")
         } catch (e: Exception) {
             Result(
                 emptyList(),
@@ -183,8 +200,8 @@ HASIL PEMBACAAN PERTAMA:
     }
 
     private fun buildResult(rows: List<List<Int>>, prefix: String): Result {
-        val normalizedRows = rows.take(4).toMutableList()
-        while (normalizedRows.size < 4) normalizedRows.add(emptyList())
+        // V13.5: jangan truncate hasil Gemini. Semua baris dan semua angka dipertahankan.
+        val normalizedRows = rows.map { it.toList() }
 
         val weights = normalizedRows.flatten().map { it.toDouble() }
         val rowTexts = normalizedRows.map { row -> row.joinToString(" ") }
@@ -197,7 +214,7 @@ HASIL PEMBACAAN PERTAMA:
                 "Baris ${i + 1}: ${if (row.isEmpty()) "(tidak terbaca)" else row.joinToString(" ")}"
             }.joinToString("\n"),
             rows = rowTexts,
-            expectedRows = 4,
+            expectedRows = normalizedRows.size,
             calculatedTotalKg = total,
             verificationMessage = "$prefix Koli terbaca: $count. Total dihitung aplikasi = ${formatKg(total)} KG."
         )
@@ -298,11 +315,18 @@ HASIL PEMBACAAN PERTAMA:
         val rowSchema = JSONObject()
             .put("type", "object")
             .put("properties", JSONObject()
-                .put("row", JSONObject().put("type", "integer"))
+                .put("row", JSONObject()
+                    .put("type", "integer")
+                    .put("minimum", 1)
+                    .put("maximum", 100))
                 .put("weights", JSONObject()
                     .put("type", "array")
-                    .put("items", JSONObject().put("type", "integer"))
-                    .put("maxItems", 5)))
+                    .put("items", JSONObject()
+                        .put("type", "integer")
+                        .put("minimum", 0)
+                        .put("maximum", 999))
+                    .put("minItems", 0)
+                    .put("maxItems", 30)))
             .put("required", JSONArray(listOf("row", "weights")))
 
         return JSONObject()
@@ -311,34 +335,46 @@ HASIL PEMBACAAN PERTAMA:
                 .put("rows", JSONObject()
                     .put("type", "array")
                     .put("items", rowSchema)
-                    .put("minItems", 4)
-                    .put("maxItems", 4)))
-            .put("required", JSONArray(listOf("rows")))
+                    .put("minItems", 1)
+                    .put("maxItems", 100))
+                .put("isComplete", JSONObject().put("type", "boolean"))
+                .put("totalDetected", JSONObject()
+                    .put("type", "integer")
+                    .put("minimum", 0)))
+            .put("required", JSONArray(listOf("rows", "isComplete", "totalDetected")))
     }
 
-    private fun boxProperties(): JSONObject = JSONObject()
-        .put("ymin", JSONObject().put("type", "integer"))
-        .put("xmin", JSONObject().put("type", "integer"))
-        .put("ymax", JSONObject().put("type", "integer"))
-        .put("xmax", JSONObject().put("type", "integer"))
+    private data class ParseMeta(
+        val isComplete: Boolean,
+        val totalDetected: Int
+    )
+
+    private fun parseMeta(json: String): ParseMeta {
+        val root = JSONObject(json)
+        return ParseMeta(
+            isComplete = root.optBoolean("isComplete", false),
+            totalDetected = root.optInt("totalDetected", 0)
+        )
+    }
 
     private fun parseRows(json: String): List<List<Int>> {
         val root = JSONObject(json)
-        val array = root.optJSONArray("rows") ?: return List(4) { emptyList() }
-        val byRow = Array(4) { emptyList<Int>() }
+        val array = root.optJSONArray("rows") ?: return emptyList()
+
+        // Map berdasarkan nomor baris lalu urutkan. Tidak ada batas 4 baris.
+        // Bila model mengirim nomor baris yang sama dua kali, gabungkan agar data tidak hilang.
+        val byRow = sortedMapOf<Int, MutableList<Int>>()
         for (i in 0 until array.length()) {
             val obj = array.optJSONObject(i) ?: continue
-            val rowNo = obj.optInt("row", i + 1)
-            if (rowNo !in 1..4) continue
+            val rowNo = obj.optInt("row", i + 1).coerceIn(1, 100)
             val values = obj.optJSONArray("weights") ?: JSONArray()
-            val parsed = mutableListOf<Int>()
+            val parsed = byRow.getOrPut(rowNo) { mutableListOf() }
             for (j in 0 until values.length()) {
                 val v = values.optInt(j, Int.MIN_VALUE)
                 if (v != Int.MIN_VALUE && v in 0..999) parsed += v
             }
-            byRow[rowNo - 1] = parsed
         }
-        return byRow.toList()
+        return byRow.values.map { it.toList() }
     }
 
     private fun parseBox(obj: JSONObject?): Box? {
