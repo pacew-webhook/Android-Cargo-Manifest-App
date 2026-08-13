@@ -2,87 +2,28 @@ package com.example.cargomanifestapp
 
 import android.content.Context
 import android.net.Uri
-import org.apache.poi.ss.usermodel.BorderStyle
-import org.apache.poi.ss.usermodel.CellStyle
-import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
+import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import java.io.InputStream
-import kotlin.math.floor
-import org.json.JSONArray
-import org.json.JSONObject
 
 /**
- * Satu hasil penimbangan BTB.
- * original = angka yang benar-benar dibaca dari timbangan/manual.
- * rounded  = pembulatan ke KG terdekat: .00-.49 turun, .50-.99 naik.
- * final    = nilai yang dipakai admin untuk dokumen.
+ * Model data utama untuk Bukti Timbang Barang.
  */
-data class BtbWeight(
-    val original: Double,
-    val rounded: Double = roundBtbWeight(original),
-    val final: Double = rounded
-)
-
-fun roundBtbWeight(value: Double): Double {
-    if (!value.isFinite()) return 0.0
-    return floor(value + 0.5)
-}
-
-
-fun btbWeightsToJson(weights: List<BtbWeight>): String {
-    val array = JSONArray()
-    weights.forEach { weight ->
-        array.put(JSONObject().apply {
-            put("original", weight.original)
-            put("rounded", weight.rounded)
-            put("final", weight.final)
-        })
-    }
-    return array.toString()
-}
-
-fun btbWeightsFromJson(json: String): List<BtbWeight> {
-    return try {
-        val array = JSONArray(json)
-        buildList {
-            for (i in 0 until array.length()) {
-                val item = array.opt(i)
-                if (item is JSONObject) {
-                    val original = item.optDouble("original", Double.NaN)
-                    if (original.isFinite() && original > 0) {
-                        val rounded = item.optDouble("rounded", roundBtbWeight(original))
-                        val finalValue = item.optDouble("final", rounded)
-                        add(BtbWeight(original, rounded, finalValue))
-                    }
-                } else if (item is Number) {
-                    val original = item.toDouble()
-                    if (original.isFinite() && original > 0) add(BtbWeight(original))
-                }
-            }
-        }
-    } catch (_: Exception) {
-        emptyList()
-    }
-}
-
-/** Model data utama untuk Bukti Timbang Barang. */
 data class BtbFormData(
     val id: String = System.currentTimeMillis().toString(),
     val hariTanggal: String = "",
     val customerName: String = "",
     val trademarks: String = "",
     val jenisBarang: String = "",
-    val daftarTimbangan: List<BtbWeight> = emptyList(),
-    val photoUris: List<String> = emptyList()
+    val daftarTimbangan: List<Double> = emptyList()
 ) {
-    val totalBeratAsli: Double get() = daftarTimbangan.sumOf { it.original }
-    val totalBeratPembulatan: Double get() = daftarTimbangan.sumOf { it.rounded }
-    val totalBeratFinal: Double get() = daftarTimbangan.sumOf { it.final }
+    val totalBerat: Double get() = daftarTimbangan.sum()
     val jumlahKoli: Int get() = daftarTimbangan.size
 }
 
-/** Helper ekspor data ke template Excel BTB. */
+/**
+ * Helper ekspor data ke template Excel (.xlsx).
+ */
 object BtbExcelWriter {
 
     fun fillBtbTemplate(
@@ -90,152 +31,86 @@ object BtbExcelWriter {
         templateInputStream: InputStream,
         outputUri: Uri,
         data: BtbFormData
-    ) = fillBtbTemplateMulti(context, templateInputStream, outputUri, listOf(data))
-
-    /**
-     * Menulis seluruh hasil timbang sebagai baris dinamis.
-     * Template asli tetap menjadi sumber style/layout; baris data akan digeser
-     * bila jumlah timbang melebihi ruang awal sebelum TOTAL.
-     */
-    fun fillBtbTemplateMulti(
-        context: Context,
-        templateInputStream: InputStream,
-        outputUri: Uri,
-        listData: List<BtbFormData>
     ) {
-        if (listData.isEmpty()) return
-
         val workbook = XSSFWorkbook(templateInputStream)
         val sheet = workbook.getSheetAt(0)
 
-        val allWeights = listData.flatMap { data ->
-            data.daftarTimbangan.map { weight ->
-                Triple(data.trademarks.ifBlank { data.customerName }, data.jenisBarang, weight)
-            }
-        }
-
-        val dataStartRow = 9 // Excel row 10
-        val originalTotalRow = 23 // Excel row 24
-        val requiredRows = allWeights.size.coerceAtLeast(1)
-        val templateDataRows = originalTotalRow - dataStartRow
-        val extraRows = (requiredRows - templateDataRows).coerceAtLeast(0)
-
-        if (extraRows > 0) {
-            sheet.shiftRows(originalTotalRow, sheet.lastRowNum, extraRows, true, false)
-            copyRowStyle(sheet, originalTotalRow - 1, originalTotalRow + extraRows - 1, workbook)
-        }
-
-        val totalRow = originalTotalRow + extraRows
-        val totalOriginalRow = totalRow + 1
-        val totalRoundedRow = totalRow + 2
-
-        // Header transaksi.
-        val first = listData.first()
-        setString(sheet, 2, 3, first.hariTanggal)
-        setString(sheet, 3, 3, first.customerName)
-        val combinedTrademarks = listData.map { it.trademarks }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .joinToString(", ")
-        setString(sheet, 4, 3, combinedTrademarks)
-        setString(sheet, 7, 0, "JENIS BARANG : ${first.jenisBarang}")
-
-        // Row 9 pada template sebelumnya merupakan area kosong/merged.
-        // Kita pecah menjadi header tabel agar tiga jenis berat terlihat jelas.
-        unmergeIfMerged(sheet, "A9:E9")
-        val headerStyle = cloneStyle(workbook, sheet.getRow(9)?.getCell(0)?.cellStyle)
-        val headers = listOf("NO", "PENERIMA", "BERAT ASLI (KG)", "PEMBULATAN (KG)", "BERAT FINAL (KG)")
-        headers.forEachIndexed { col, text ->
-            val cell = getCell(sheet, 9, col)
-            cell.setCellValue(text)
-            if (headerStyle != null) cell.cellStyle = headerStyle
-        }
-
-        val dataStyle = cloneStyle(workbook, sheet.getRow(dataStartRow)?.getCell(1)?.cellStyle)
-        val numericStyle = cloneStyle(workbook, sheet.getRow(dataStartRow)?.getCell(2)?.cellStyle)
-
-        allWeights.forEachIndexed { index, (recipient, _, weight) ->
-            val rowIndex = dataStartRow + index
+        // Helper untuk menulis Teks (String) ke sel secara aman
+        fun setCellValue(rowIndex: Int, colIndex: Int, value: String) {
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-            for (c in 0..4) {
-                if (dataStyle != null && c < 2) row.getCell(c).cellStyle = dataStyle
-                if (numericStyle != null && c >= 2) row.getCell(c).cellStyle = numericStyle
+            val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
+            cell.setCellValue(value)
+        }
+
+        // Helper untuk menulis Angka (Numeric/Double) ke sel dengan format General
+        fun setCellNumericValue(rowIndex: Int, colIndex: Int, value: Double) {
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+            val cell = row.getCell(colIndex) ?: row.createCell(colIndex)
+            cell.setCellValue(value)
+
+            // Format sel menjadi 'General' agar angka bulat tidak menampilkan .00
+            val style = workbook.createCellStyle()
+            val sourceStyle = cell.cellStyle
+            if (sourceStyle is XSSFCellStyle && style is XSSFCellStyle) {
+                style.cloneStyleFrom(sourceStyle)
             }
-            row.getCell(0).setCellValue((index + 1).toDouble())
-            row.getCell(1).setCellValue(recipient)
-            row.getCell(2).setCellValue(weight.original)
-            row.getCell(3).setCellValue(weight.rounded)
-            row.getCell(4).setCellValue(weight.final)
+            style.dataFormat = workbook.createDataFormat().getFormat("General")
+            cell.cellStyle = style
         }
 
-        // Bersihkan sisa baris data template bila jumlah data lebih sedikit.
-        for (r in dataStartRow + requiredRows until totalRow) {
-            val row = sheet.getRow(r) ?: continue
-            for (c in 0..4) row.getCell(c)?.setBlank()
+        // =============================================================
+        // 1. HEADER TRANSAKSI (Sel D3, D4, D5)
+        // =============================================================
+        setCellValue(2, 3, data.hariTanggal)  // Sel D3 (Row 2, Col 3)
+        setCellValue(3, 3, data.customerName) // Sel D4 (Row 3, Col 3)
+        setCellValue(4, 3, data.trademarks)   // Sel D5 (Row 4, Col 3)
+
+        // =============================================================
+        // 2. JENIS BARANG (Di Bawah Label -> Sel A9 / Index Row 8, Col 0)
+        // =============================================================
+        setCellValue(8, 0, data.jenisBarang)  // Row 8 (Baris 9 di Excel), Col 0 (Kolom A)
+
+        // =============================================================
+        // 3. DATA TIMBANGAN (Grid A10:E23 - Maksimal 70 item)
+        // =============================================================
+        val startRow = 9   // Baris 10 di Excel (Index 9)
+        val maxRows = 14   // Baris 10 s/d 23
+        val maxCols = 5    // Kolom A s/d E (Index 0..4)
+
+        var itemIndex = 0
+        val totalData = data.daftarTimbangan.size
+
+        for (r in 0 until maxRows) {
+            val currentRowIndex = startRow + r
+            for (c in 0 until maxCols) {
+                if (itemIndex < totalData) {
+                    setCellNumericValue(currentRowIndex, c, data.daftarTimbangan[itemIndex])
+                    itemIndex++
+                } else {
+                    break
+                }
+            }
+            if (itemIndex >= totalData) break
         }
 
-        // TOTAL final tetap di kolom E pada baris total.
-        setString(sheet, totalRow, 0, "TOTAL :")
-        setNumeric(sheet, totalRow, 4, allWeights.sumOf { it.third.final })
+        // =============================================================
+        // 4. UPDATE FORMULA TOTAL (Sel E24)
+        // =============================================================
+        val rowTotal = sheet.getRow(23) ?: sheet.createRow(23)        // Baris 24 (Row index 23)
+        val cellTotal = rowTotal.getCell(4) ?: rowTotal.createCell(4) // Kolom E (Col index 4)
+        cellTotal.cellFormula = "SUM(A10:E23)"
 
-        // Dua total audit agar admin dapat membandingkan sumber dan pembulatan.
-        ensureRow(sheet, totalOriginalRow)
-        ensureRow(sheet, totalRoundedRow)
-        setString(sheet, totalOriginalRow, 0, "TOTAL BERAT ASLI :")
-        setNumeric(sheet, totalOriginalRow, 4, allWeights.sumOf { it.third.original })
-        setString(sheet, totalRoundedRow, 0, "TOTAL PEMBULATAN :")
-        setNumeric(sheet, totalRoundedRow, 4, allWeights.sumOf { it.third.rounded })
-
+        // Memaksa Excel melakukan perhitungan ulang saat file dibuka
         workbook.setForceFormulaRecalculation(true)
-        try {
-            val outputStream = context.contentResolver.openOutputStream(outputUri)
-                ?: throw java.io.IOException("Tidak bisa membuka output stream untuk URI tujuan")
-            outputStream.use { workbook.write(it) }
-        } finally {
-            templateInputStream.close()
-            workbook.close()
+
+        // =============================================================
+        // 5. SIMPAN KE OUTPUT STREAM
+        // =============================================================
+        context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
+            workbook.write(outputStream)
         }
-    }
 
-    private fun ensureRow(sheet: org.apache.poi.ss.usermodel.Sheet, rowIndex: Int): Row =
-        sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-
-    private fun getCell(sheet: org.apache.poi.ss.usermodel.Sheet, rowIndex: Int, colIndex: Int) =
-        ensureRow(sheet, rowIndex).getCell(colIndex) ?: ensureRow(sheet, rowIndex).createCell(colIndex)
-
-    private fun setString(sheet: org.apache.poi.ss.usermodel.Sheet, rowIndex: Int, colIndex: Int, value: String) {
-        getCell(sheet, rowIndex, colIndex).setCellValue(value)
-    }
-
-    private fun setNumeric(sheet: org.apache.poi.ss.usermodel.Sheet, rowIndex: Int, colIndex: Int, value: Double) {
-        val cell = getCell(sheet, rowIndex, colIndex)
-        cell.setCellValue(value)
-    }
-
-    private fun unmergeIfMerged(sheet: org.apache.poi.ss.usermodel.Sheet, range: String) {
-        sheet.mergedRegions.firstOrNull { it.formatAsString() == range }?.let { sheet.removeMergedRegion(sheet.mergedRegions.indexOf(it)) }
-    }
-
-    private fun cloneStyle(workbook: Workbook, source: CellStyle?): CellStyle? {
-        if (source == null) return null
-        val style = workbook.createCellStyle()
-        style.cloneStyleFrom(source)
-        return style
-    }
-
-    private fun copyRowStyle(
-        sheet: org.apache.poi.ss.usermodel.Sheet,
-        sourceRowIndex: Int,
-        targetRowIndex: Int,
-        workbook: Workbook
-    ) {
-        val source = sheet.getRow(sourceRowIndex) ?: return
-        val target = sheet.getRow(targetRowIndex) ?: sheet.createRow(targetRowIndex)
-        target.height = source.height
-        for (c in 0 until source.lastCellNum.coerceAtLeast(0)) {
-            val src = source.getCell(c) ?: continue
-            val dst = target.getCell(c) ?: target.createCell(c)
-            dst.cellStyle = cloneStyle(workbook, src.cellStyle) ?: dst.cellStyle
-        }
+        templateInputStream.close()
+        workbook.close()
     }
 }
