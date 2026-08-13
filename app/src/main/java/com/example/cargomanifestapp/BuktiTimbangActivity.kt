@@ -84,6 +84,14 @@ fun BtbScreen(onBackClick: () -> Unit) {
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
     var editingId by remember { mutableStateOf<String?>(null) }
+
+    // Deklarasikan FocusRequester sebelum launcher karena callback launcher dapat
+    // merujuknya saat hasil OCR dikembalikan.
+    val customerFocus = remember { FocusRequester() }
+    val trademarkFocus = remember { FocusRequester() }
+    val barangFocus = remember { FocusRequester() }
+    val beratFocus = remember { FocusRequester() }
+
     val scaleOcrLauncher = rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -95,11 +103,6 @@ fun BtbScreen(onBackClick: () -> Unit) {
             }
         }
     }
-
-    val customerFocus = remember { FocusRequester() }
-    val trademarkFocus = remember { FocusRequester() }
-    val barangFocus = remember { FocusRequester() }
-    val beratFocus = remember { FocusRequester() }
 
     fun resetForm() {
         customerName = ""
