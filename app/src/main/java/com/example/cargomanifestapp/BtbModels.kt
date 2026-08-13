@@ -162,8 +162,15 @@ object BtbExcelWriter {
         val lastDataRowIndex = firstDataRowIndex + dataCount - 1
 
         // Header BTB.
-        setHeaderText(workbook, sheet, headerRowIndex, 0, "HASIL SCAN")
-        setHeaderText(workbook, sheet, headerRowIndex, 1, "PEMBULATAN")
+        // FIX5: jangan bergantung pada isi/style cell B dari template.
+        // Buat ulang cell header B secara eksplisit dan pastikan kolomnya
+        // terlihat. Ini menghilangkan kemungkinan header/value B hilang
+        // karena cache/struktur template saat dibuka Google Sheets.
+        ensureBtbHeader(workbook, sheet, headerRowIndex)
+        sheet.setColumnHidden(1, false)
+        if (sheet.getColumnWidth(1) < 10 * 256) {
+            sheet.setColumnWidth(1, 12 * 256)
+        }
         clearCell(sheet, headerRowIndex, 2)
         clearCell(sheet, headerRowIndex, 3)
         clearCell(sheet, headerRowIndex, 4)
@@ -214,18 +221,14 @@ object BtbExcelWriter {
                 format = "0.00"
             )
 
-            // Gunakan style kolom A sebagai basis agar nilai PEMBULATAN
-            // tidak mewarisi format/warna cell B template yang pada beberapa
-            // viewer terlihat kosong. Nilainya tetap NUMERIC agar bisa dihitung.
-            replaceWithNumericCell(
+            // FIX5: tulis PEMBULATAN langsung ke cell B yang baru dibuat.
+            // Jangan memakai formula dan jangan memakai setCellType setelah
+            // setCellValue. Cell harus benar-benar NUMERIC.
+            writeBtbRoundedCell(
                 workbook = workbook,
                 sheet = sheet,
                 rowIndex = rowIndex,
-                colIndex = 1,
-                value = rounded,
-                format = "0.00",
-                styleSourceColIndex = 1,
-                horizontalAlignment = HorizontalAlignment.CENTER
+                value = rounded
             )
         }
 
@@ -246,11 +249,10 @@ object BtbExcelWriter {
             format = "0.00"
         )
 
-        // FIX2: jangan pernah membaca cellFormula setelah cell TOTAL
-        // diganti menjadi NUMERIC. Mengakses cellFormula pada cell NUMERIC
-        // menyebabkan: "Cannot get a FORMULA value from a NUMERIC cell".
-        // replaceWithNumericCell() di atas sudah menghapus cell lama
-        // beserta formula/cached value-nya.
+        // FIX5: validasi sebelum workbook ditulis. Kalau kolom PEMBULATAN
+        // tidak benar-benar berisi nilai NUMERIC, export dihentikan sehingga
+        // aplikasi tidak menghasilkan file yang tampak berhasil tetapi salah.
+        validateBtbExport(sheet, firstDataRowIndex, totalRowIndex, data)
     }
 
     /**
@@ -258,19 +260,61 @@ object BtbExcelWriter {
      * Ini mencegah header PEMBULATAN hilang ketika template memiliki cache
      * atau struktur cell yang berbeda pada versi Google Sheets/POI tertentu.
      */
-    private fun setHeaderText(
+    private fun ensureBtbHeader(
+        workbook: Workbook,
+        sheet: Sheet,
+        rowIndex: Int
+    ) {
+        val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+
+        val sourceStyle = row.getCell(0)?.cellStyle
+        val oldB = row.getCell(1)
+        if (oldB != null) row.removeCell(oldB)
+
+        val header = row.createCell(1, CellType.STRING)
+        if (sourceStyle != null) {
+            header.cellStyle = cloneWithAlignment(workbook, sourceStyle, HorizontalAlignment.CENTER)
+        } else {
+            val style = workbook.createCellStyle()
+            style.alignment = HorizontalAlignment.CENTER
+            style.borderBottom = BorderStyle.THIN
+            style.borderTop = BorderStyle.THIN
+            style.borderLeft = BorderStyle.THIN
+            style.borderRight = BorderStyle.THIN
+            header.cellStyle = style
+        }
+        header.setCellValue("PEMBULATAN")
+    }
+
+    private fun writeBtbRoundedCell(
         workbook: Workbook,
         sheet: Sheet,
         rowIndex: Int,
-        colIndex: Int,
-        value: String
+        value: Double
     ) {
         val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-        val oldCell = row.getCell(colIndex)
-        val oldStyle = oldCell?.cellStyle
+        val oldCell = row.getCell(1)
+        val sourceStyle = oldCell?.cellStyle ?: row.getCell(0)?.cellStyle
         if (oldCell != null) row.removeCell(oldCell)
-        val cell = row.createCell(colIndex, CellType.STRING)
-        if (oldStyle != null) cell.cellStyle = oldStyle
+
+        val cell = row.createCell(1, CellType.NUMERIC)
+        if (sourceStyle != null) {
+            cell.cellStyle = cloneWithFormat(
+                workbook,
+                sourceStyle,
+                "0.00"
+            )
+            cell.cellStyle = cloneWithAlignment(
+                workbook,
+                cell.cellStyle,
+                HorizontalAlignment.CENTER
+            )
+        } else {
+            val style = workbook.createCellStyle()
+            style.dataFormat = workbook.createDataFormat().getFormat("0.00")
+            style.alignment = HorizontalAlignment.CENTER
+            cell.cellStyle = style
+        }
         cell.setCellValue(value)
     }
 
@@ -359,6 +403,40 @@ object BtbExcelWriter {
         cell.setBlank()
     }
 
+
+    private fun validateBtbExport(
+        sheet: Sheet,
+        firstDataRowIndex: Int,
+        totalRowIndex: Int,
+        data: BtbFormData
+    ) {
+        val header = sheet.getRow(9)?.getCell(1)
+            ?: error("Kolom PEMBULATAN tidak terbentuk")
+        require(header.cellType == CellType.STRING && header.stringCellValue.trim() == "PEMBULATAN") {
+            "Header PEMBULATAN tidak terbentuk dengan benar"
+        }
+
+        data.daftarTimbangan.forEachIndexed { index, original ->
+            val cell = sheet.getRow(firstDataRowIndex + index)?.getCell(1)
+                ?: error("Cell PEMBULATAN pada baris ${firstDataRowIndex + index + 1} tidak terbentuk")
+            require(cell.cellType == CellType.NUMERIC) {
+                "Cell PEMBULATAN pada baris ${firstDataRowIndex + index + 1} bukan NUMERIC"
+            }
+            val expected = roundWeight(original)
+            require(kotlin.math.abs(cell.numericCellValue - expected) < 0.000001) {
+                "Nilai PEMBULATAN salah pada baris ${firstDataRowIndex + index + 1}"
+            }
+        }
+
+        val totalCell = sheet.getRow(totalRowIndex)?.getCell(4)
+            ?: error("Cell TOTAL tidak terbentuk")
+        require(totalCell.cellType == CellType.NUMERIC) {
+            "Cell TOTAL bukan NUMERIC"
+        }
+        require(kotlin.math.abs(totalCell.numericCellValue - data.totalBeratPembulatan) < 0.000001) {
+            "TOTAL pembulatan tidak sesuai"
+        }
+    }
 
     private fun cloneWithAlignment(
         workbook: Workbook,
