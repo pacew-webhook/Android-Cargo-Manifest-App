@@ -126,11 +126,8 @@ object BtbLabelPdfWriter {
             canvas.drawText("JENIS BARANG", 55f, 290f, smallPaint)
             canvas.drawText(label.jenisBarang.ifBlank { "-" }, 190f, 290f, bodyPaint)
 
-            canvas.drawText("BERAT ASLI", 55f, 350f, smallPaint)
-            canvas.drawText(String.format(Locale.US, "%.2f KG", label.beratAsli), 190f, 350f, headerPaint)
-
-            canvas.drawText("PEMBULATAN", 55f, 390f, smallPaint)
-            canvas.drawText(String.format(Locale.US, "%.2f KG", label.beratPembulatan), 190f, 390f, headerPaint)
+            canvas.drawText("TOTAL", 55f, 370f, smallPaint)
+            canvas.drawText(String.format(Locale.US, "%.0f KG", label.beratPembulatan), 190f, 370f, headerPaint)
 
             canvas.drawText("Label ${label.labelNumber} dari ${labels.size}", 55f, 450f, bodyPaint)
             canvas.drawText("ID: ${label.labelId}", 55f, 485f, smallPaint)

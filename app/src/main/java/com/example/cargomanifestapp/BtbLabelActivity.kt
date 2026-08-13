@@ -7,8 +7,6 @@ import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -85,8 +83,6 @@ private fun BtbLabelScreen(
                 modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92))
             ) {
-                Icon(Icons.Default.Print, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
                 Text("TERBITKAN & BAGIKAN LABEL")
             }
         }
@@ -110,10 +106,10 @@ private fun BtbLabelScreen(
                         Text(
                             String.format(
                                 Locale.US,
-                                "Berat asli: %.2f KG  →  Pembulatan: %.2f KG",
-                                label.beratAsli,
+                                "Total: %.0f KG",
                                 label.beratPembulatan
-                            )
+                            ),
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
                         )
                     }
                 }
