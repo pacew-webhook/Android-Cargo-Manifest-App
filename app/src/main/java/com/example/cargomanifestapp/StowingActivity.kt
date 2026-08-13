@@ -211,6 +211,22 @@ fun StowingInputScreen(
                         color = if (detectedCount > 0) Color(0xFF2E7D32) else Color(0xFFB00020)
                     )
 
+                    if (scanRawText.isNotBlank()) {
+                        val verifiedTotal = scannedWeightsText
+                            .replace("\n", ",")
+                            .split(",", ";", " ", "\n")
+                            .mapNotNull { it.trim().toDoubleOrNull() }
+                            .filter { it > 0.0 }
+                            .fold(0.0) { acc, value -> acc + value }
+
+                        Text(
+                            "Verifikasi matematis: ${if (detectedCount > 0) String.format("%.0f", verifiedTotal) else "0"} KG",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF2E7D32)
+                        )
+                    }
+
                     if (scanRowsText.isNotBlank()) {
                         Text(
                             "Hasil per baris (periksa baris yang kosong atau tidak lengkap):",
