@@ -209,12 +209,11 @@ object ExcelUtils {
                     pti = ptis.firstOrNull() ?: "",
                     pcsQty = formatNumber(pcs),
                     subTotal = formatNumber(totalWeight),
-                    weight =
-                        if (pcs > 0) {
-                            formatNumber(totalWeight / pcs)
-                        } else {
-                            ""
-                        }
+                    // Kolom D (Weight Pcs/Cly) sengaja dikosongkan.
+                    // Berat pada aplikasi adalah berat TOTAL seluruh koli (Sub Total).
+                    // Contoh 26 koli dengan total 624 KG harus diekspor sebagai:
+                    // C = 26, D = kosong, E = 624.
+                    weight = ""
                 )
             }
 
@@ -345,12 +344,10 @@ object ExcelUtils {
                     sampleRow?.getCell(2)
                 )
 
-                setStyledNumericCell(
-                    row,
-                    3,
-                    item.weight.toDoubleOrNull() ?: 0.0,
-                    sampleRow?.getCell(3)
-                )
+                // Kolom D = Weight (Kg) / Pcs/Cly tidak diisi dari rata-rata.
+                // Berat 26 koli = 624 KG harus tetap menjadi C=26 dan E=624.
+                // Jangan menaruh angka 24 di kolom tengah.
+                row.getCell(3)?.setBlank()
 
                 setStyledNumericCell(
                     row,
@@ -441,35 +438,50 @@ object ExcelUtils {
         }
 
         /*
-         * TOTAL.
+         * TOTAL MANIFEST.
+         *
+         * Template Manifest menyediakan TOTAL WEIGHT pada baris 45-46
+         * (C45:C46 dan E45:E46 adalah merged cells).
+         * Jangan menaruh total tepat setelah baris data karena itu akan
+         * menggeser total ke C16/E16.
          */
-        val totalRowIndex =
-            startRow + maxRows
-
-        val totalRow =
-            sheet.getRow(totalRowIndex)
-                ?: sheet.createRow(totalRowIndex)
+        val manifestTotalRow = 44 // Excel row 45, zero-based POI
+        val manifestTotalRowObj =
+            sheet.getRow(manifestTotalRow)
+                ?: sheet.createRow(manifestTotalRow)
 
         setNumericCell(
-            totalRow,
+            manifestTotalRowObj,
             2,
             totalManifestPcs
         )
 
         setNumericCell(
-            totalRow,
+            manifestTotalRowObj,
             4,
             totalManifestWeight
         )
 
+        /*
+         * TOTAL STOWING CHECKLIST.
+         *
+         * Template menyediakan TOTAL WEIGHT pada K37:K38 dan M37:M38.
+         * K37/K38 adalah merged cell, sehingga nilai harus ditulis di K37
+         * (index POI 10), bukan pada baris setelah data (mis. K16).
+         */
+        val stowingTotalRow = 36 // Excel row 37, zero-based POI
+        val stowingTotalRowObj =
+            sheet.getRow(stowingTotalRow)
+                ?: sheet.createRow(stowingTotalRow)
+
         setNumericCell(
-            totalRow,
+            stowingTotalRowObj,
             10,
             totalStowingNet
         )
 
         setNumericCell(
-            totalRow,
+            stowingTotalRowObj,
             11,
             totalStowingGross
         )
