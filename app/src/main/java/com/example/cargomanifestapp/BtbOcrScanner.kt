@@ -98,7 +98,10 @@ TUGAS UTAMA:
     tercakup sampai baris terakhir. Jika ragu masih ada baris/angka yang terlewat, set false.
 13. totalDetected wajib sama dengan jumlah seluruh angka pada semua rows.
 
-Kembalikan JSON saja sesuai schema.
+Kembalikan JSON SAJA, tanpa markdown dan tanpa teks tambahan, dengan format PERSIS:
+{"rows":[{"row":1,"weights":[57,57,20]}],"isComplete":true,"totalDetected":3}
+
+rows harus berisi SEMUA baris yang terlihat sampai baris terakhir. Jangan membatasi jumlah rows atau jumlah weights. totalDetected harus sama dengan jumlah semua angka pada seluruh rows.
 """
 
     private const val VERIFY_PROMPT = """
@@ -122,6 +125,7 @@ Aturan:
 - Kembalikan semua baris data yang terlihat, bukan tepat 4 baris.
 - Set isComplete=true hanya jika seluruh tabel yang terlihat sudah tercakup.
 - totalDetected harus sama dengan jumlah angka pada seluruh rows.
+- Kembalikan JSON SAJA dengan format: {"rows":[{"row":1,"weights":[57,57]}],"isComplete":true,"totalDetected":2}
 
 HASIL PEMBACAAN PERTAMA:
 """
@@ -146,7 +150,7 @@ HASIL PEMBACAAN PERTAMA:
             // Satu request langsung membaca seluruh foto. Jika hasil tidak lengkap,
             // barulah jalankan satu request verifikasi tambahan. Ini memangkas waktu
             // scan normal secara signifikan tanpa mengorbankan fallback untuk foto sulit.
-            val firstJson = generateJson(apiKey, EXTRACT_PROMPT, normalized, rowsSchema())
+            val firstJson = generateJson(apiKey, EXTRACT_PROMPT, normalized)
             val firstParsed = parseRows(firstJson)
             val firstMeta = parseMeta(firstJson)
             val firstCount = firstParsed.sumOf { it.size }
@@ -165,8 +169,7 @@ HASIL PEMBACAAN PERTAMA:
                     generateJson(
                         apiKey,
                         VERIFY_PROMPT + firstJson,
-                        normalized,
-                        rowsSchema()
+                        normalized
                     )
                 } catch (_: Exception) {
                     firstJson
@@ -223,8 +226,7 @@ HASIL PEMBACAAN PERTAMA:
     private fun generateJson(
         apiKey: String,
         prompt: String,
-        bitmap: Bitmap,
-        schema: JSONObject
+        bitmap: Bitmap
     ): String {
         val imageBytes = compressForApi(bitmap)
         val encoded = Base64.encodeToString(imageBytes, Base64.NO_WRAP)
@@ -243,9 +245,11 @@ HASIL PEMBACAAN PERTAMA:
                 .put("parts", JSONArray().put(partText).put(partImage))
         )
 
+        // V13.5.2: gunakan JSON mode tanpa responseJsonSchema.
+        // Ini menghindari HTTP 400 dari schema kompleks pada sebagian konfigurasi Gemini,
+        // sementara prompt tetap memaksa bentuk JSON yang bisa diparse aplikasi.
         val generationConfig = JSONObject()
             .put("responseMimeType", "application/json")
-            .put("responseJsonSchema", schema)
             .put("thinkingConfig", JSONObject().put("thinkingLevel", "low"))
 
         val body = JSONObject()
@@ -315,6 +319,7 @@ HASIL PEMBACAAN PERTAMA:
         ))
         .put("required", JSONArray(listOf("btbBox")))
 
+    /* Legacy schema builder retained for reference; V13.5.2 uses JSON mode instead.
     private fun rowsSchema(): JSONObject {
         val rowSchema = JSONObject()
             .put("type", "object")
@@ -347,6 +352,9 @@ HASIL PEMBACAAN PERTAMA:
                     .put("minimum", 0)))
             .put("required", JSONArray(listOf("rows", "isComplete", "totalDetected")))
     }
+
+    }
+    */
 
     private data class ParseMeta(
         val isComplete: Boolean,
