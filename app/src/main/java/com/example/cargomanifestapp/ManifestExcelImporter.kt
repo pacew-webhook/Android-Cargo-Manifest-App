@@ -23,7 +23,7 @@ class ManifestExcelImporter(private val context: Context) {
         var rows = 0
         val errors = mutableListOf<String>()
 
-        suspend fun walk(dir: DocumentFile) {
+        fun walk(dir: DocumentFile) {
             dir.listFiles().forEach { file ->
                 if (file.isDirectory) {
                     walk(file)
