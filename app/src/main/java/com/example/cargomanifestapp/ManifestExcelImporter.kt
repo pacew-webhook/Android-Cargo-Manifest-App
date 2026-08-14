@@ -14,17 +14,21 @@ import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import java.util.Locale
+import java.util.zip.ZipInputStream
 
 /**
- * Imports only the real Manifest sheet from every Excel file in the selected tree.
+ * Safe, sequential Manifest indexer.
  *
- * Important design rules:
- * 1. File name is NOT trusted. AWB files may live beside Manifest files.
- * 2. A workbook is a Manifest source only when a valid Manifest sheet/header is found.
- * 3. Files already indexed with the same lastModified + size are skipped.
- * 4. Each file is committed atomically, so a bad file cannot corrupt previous data.
- * 5. Work is sequential on Dispatchers.IO to keep memory usage predictable.
+ * Design goals:
+ * - AWB/unrelated Excel files can stay in the selected folder.
+ * - For XLSX/XLSM, workbook.xml is inspected first so Apache POI is NOT opened
+ *   for an unrelated workbook.
+ * - A real Manifest workbook is opened only once, parsed, committed, then closed.
+ * - One bad file does not stop the whole synchronization.
+ * - Existing Room data stays searchable while synchronization is running.
  */
 class ManifestExcelImporter(private val context: Context) {
     private val dao = ManifestDatabase.getDatabase(context).manifestDao()
@@ -37,19 +41,21 @@ class ManifestExcelImporter(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: error("Folder Manifest tidak dapat dibuka")
 
-        val excelFiles = collectExcelFiles(root)
+        val excelFiles = collectManifestCandidates(root)
         val filesTotal = excelFiles.size
+
         var filesDone = 0
         var filesImported = 0
         var filesSkipped = 0
         var filesNotManifest = 0
         var rowsImported = 0
         val errors = mutableListOf<String>()
-        val seenManifestKeys = HashSet<String>()
+        val seenManifestKeys = HashSet<String>(filesTotal)
 
         onProgress?.invoke(0, filesTotal, 0)
 
         for (file in excelFiles) {
+            coroutineContext.ensureActive()
 
             try {
                 val result = importFile(file)
@@ -75,12 +81,12 @@ class ManifestExcelImporter(private val context: Context) {
             onProgress?.invoke(filesDone, filesTotal, rowsImported)
         }
 
-        // Remove records for Manifest files that no longer exist in the selected tree.
-        // Do this only when the tree walk itself completed without read errors.
+        // Only clean removed Manifest sources after a completely successful scan.
+        // If one or more files failed, keep the old database entries intact.
         if (errors.isEmpty()) {
             val storedKeys = dao.getAllSourceKeys()
             for (key in storedKeys) {
-
+                coroutineContext.ensureActive()
                 if (!seenManifestKeys.contains(key)) {
                     dao.deleteItemsForSource(key)
                     dao.deleteFile(key)
@@ -98,34 +104,91 @@ class ManifestExcelImporter(private val context: Context) {
         )
     }
 
-    private suspend fun collectExcelFiles(root: DocumentFile): List<DocumentFile> {
+    /**
+     * Returns only likely Manifest workbooks.
+     *
+     * For xlsx/xlsm we can inspect xl/workbook.xml without creating an Apache POI
+     * Workbook. This is much cheaper than opening every AWB workbook.
+     * For old .xls we cannot do the lightweight ZIP check, so the filename is used
+     * as a conservative candidate filter.
+     */
+    private suspend fun collectManifestCandidates(root: DocumentFile): List<DocumentFile> {
         val result = ArrayList<DocumentFile>()
         val pending = ArrayDeque<DocumentFile>()
         pending.add(root)
 
         while (pending.isNotEmpty()) {
+            coroutineContext.ensureActive()
 
             val dir = pending.removeLast()
-            val children = dir.listFiles()
+            val children = try {
+                dir.listFiles()
+            } catch (_: Exception) {
+                emptyArray()
+            }
+
             for (file in children) {
+                coroutineContext.ensureActive()
 
                 when {
                     file.isDirectory -> pending.add(file)
-                    file.isFile && isExcel(file.name) -> result.add(file)
+                    file.isFile && isExcel(file.name) -> {
+                        if (isManifestCandidate(file)) result += file
+                    }
                 }
             }
         }
+
         return result.sortedBy { it.name?.lowercase(Locale.US).orEmpty() }
     }
 
+    private suspend fun isManifestCandidate(file: DocumentFile): Boolean {
+        val name = file.name.orEmpty()
+        val lower = name.lowercase(Locale.US)
+
+        // Normal operational files already use MANIFEST/MANIFES in their names.
+        // This also avoids opening common AWB files such as "AWB KAL.xlsx".
+        if (lower.contains("manifest") || lower.contains("manifes")) return true
+
+        // XLS cannot be inspected as a ZIP. Keep unknown XLS files as candidates.
+        if (lower.endsWith(".xls")) return true
+
+        // XLSX/XLSM: inspect workbook.xml only. No POI Workbook is created here.
+        return try {
+            context.contentResolver.openInputStream(file.uri)?.use { input ->
+                ZipInputStream(input.buffered()).use { zip ->
+                    while (true) {
+                        coroutineContext.ensureActive()
+                        val entry = zip.nextEntry ?: break
+                        if (entry.name == "xl/workbook.xml") {
+                            val text = BufferedReader(
+                                InputStreamReader(zip, Charsets.UTF_8)
+                            ).use { it.readText() }
+                            return text.lowercase(Locale.US).contains("manifest")
+                        }
+                    }
+                    false
+                }
+            } ?: false
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // If the lightweight inspection fails, do not risk opening an unknown
+            // workbook with POI. The next sync can retry it if the file changes.
+            false
+        }
+    }
+
     private suspend fun importFile(file: DocumentFile): FileResult {
+        coroutineContext.ensureActive()
+
         val sourceKey = file.uri.toString()
         val modified = file.lastModified()
         val fileSize = file.length()
         val old = dao.getFile(sourceKey)
 
-        // A provider can report 0 for metadata. Never treat 0/0 as proof that a file
-        // is unchanged; otherwise a changed cloud/document-provider file could remain stale.
+        // Some Storage Access Framework providers report unreliable metadata.
+        // Never treat 0/0 as proof that the file is unchanged.
         val metadataReliable = modified > 0L || fileSize > 0L
         if (
             old != null &&
@@ -139,7 +202,10 @@ class ManifestExcelImporter(private val context: Context) {
         }
 
         val parsed = context.contentResolver.openInputStream(file.uri)?.use { stream ->
+            coroutineContext.ensureActive()
             WorkbookFactory.create(stream).use { workbook ->
+                coroutineContext.ensureActive()
+
                 val sheet = workbook.getSheet("Manifest")
                     ?: findManifestSheet(workbook)
                     ?: return@use null
@@ -155,9 +221,9 @@ class ManifestExcelImporter(private val context: Context) {
             }
         } ?: error("Tidak dapat membuka file")
 
+        coroutineContext.ensureActive()
+
         if (parsed == null) {
-            // An AWB or other Excel file can remain in the folder. It simply does not
-            // become part of the Manifest database.
             if (old != null) {
                 dao.deleteItemsForSource(sourceKey)
                 dao.deleteFile(sourceKey)
@@ -165,6 +231,8 @@ class ManifestExcelImporter(private val context: Context) {
             return FileResult(skipped = false, rows = 0, notManifest = true)
         }
 
+        // The transaction deletes old rows and inserts the new snapshot for this file.
+        // No other workbook is kept in memory while this happens.
         dao.replaceFileData(
             sourceKey = sourceKey,
             file = ManifestFileEntity(
@@ -211,7 +279,6 @@ class ManifestExcelImporter(private val context: Context) {
         if (header.rowIndex + 1 > sheet.lastRowNum) return result
 
         for (r in (header.rowIndex + 1)..sheet.lastRowNum) {
-
             val row = sheet.getRow(r) ?: continue
             if (!isCargoDataRow(row, header, evaluator)) continue
 

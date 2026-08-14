@@ -83,11 +83,10 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                         _progress.value = done
                         _message.value = "Membaca Excel: $done/$total | Data baru: $rows"
 
-                        // Keep stats reasonably fresh without querying Room after every row.
-                        if (done == total || done % 10 == 0) {
-                            refreshStats()
-                            if (_query.value.isNotBlank()) searchNow(_query.value)
-                        }
+                        // Do not query Room or run a search for every progress update.
+                        // Those extra queries compete with the importer and can cause
+                        // ANR/force-close on large folders. Existing database rows remain
+                        // searchable because query changes are handled independently.
                     }
 
                     refreshStats()
