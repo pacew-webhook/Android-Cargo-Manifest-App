@@ -204,8 +204,8 @@ class ManifestExcelImporter(private val context: Context) {
         val flight = findMetadata(sheet, "flight no").ifBlank { findMetadata(sheet, "flight") }
         val from = findMetadata(sheet, "from")
         val destination = findMetadata(sheet, "to")
-        val year = Regex("(20\d{2})").find(date)?.groupValues?.get(1)?.toIntOrNull()
-            ?: Regex("(20\d{2})").find(fileName)?.groupValues?.get(1)?.toIntOrNull()
+        val year = Regex("""(20\d{2})""").find(date)?.groupValues?.get(1)?.toIntOrNull()
+            ?: Regex("""(20\d{2})""").find(fileName)?.groupValues?.get(1)?.toIntOrNull()
             ?: 0
 
         val result = ArrayList<ManifestEntity>()
@@ -327,7 +327,7 @@ class ManifestExcelImporter(private val context: Context) {
 
     private fun normalizeDate(value: String): String {
         val v = value.trim()
-        val match = Regex("^(\d{1,2})[./-](\d{1,2})[./-](20\d{2})$").find(v)
+        val match = Regex("""^(\d{1,2})[./-](\d{1,2})[./-](20\d{2})$""").find(v)
             ?: return v
         val day = match.groupValues[1].padStart(2, '0')
         val month = match.groupValues[2].padStart(2, '0')
@@ -337,8 +337,8 @@ class ManifestExcelImporter(private val context: Context) {
 
     private fun normalize(value: String): String = value.trim()
         .lowercase(Locale.US)
-        .replace("\s+".toRegex(), " ")
-        .replace("\s*/\s*".toRegex(), "/")
+        .replace(Regex("""\s+"""), " ")
+        .replace(Regex("""\s*/\s*"""), "/")
 
     private fun isExcel(name: String?): Boolean {
         val n = name?.lowercase(Locale.US) ?: return false
