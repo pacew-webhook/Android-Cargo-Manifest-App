@@ -3,10 +3,13 @@ package com.example.cargomanifestapp
 import android.content.Context
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import org.apache.poi.ss.usermodel.CellType
 import org.apache.poi.ss.usermodel.DataFormatter
+import org.apache.poi.ss.usermodel.FormulaEvaluator
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.WorkbookFactory
@@ -56,6 +59,11 @@ class ManifestExcelImporter(private val context: Context) {
                         filesImported++
                         rowsImported += result.rows
                     }
+                } catch (e: CancellationException) {
+                    // Never swallow coroutine cancellation. Swallowing it here can
+                    // leave a background sync running after the screen is closed and
+                    // can contribute to force-close / stuck-sync behaviour.
+                    throw e
                 } catch (e: Exception) {
                     errors += "${file.name ?: file.uri}: ${e.message ?: "gagal dibaca"}"
                 }
@@ -76,7 +84,7 @@ class ManifestExcelImporter(private val context: Context) {
         // Reuse the already imported file when the provider reports the same
         // modification timestamp. Some Android document providers report 0,
         // which is still useful as a stable value for the same URI.
-        if (old != null && old.lastModified == modified && old.rowCount >= 0) {
+        if (old != null && old.lastModified == modified && old.rowCount >= 0 && !dao.hasFormulaSubTotal(sourceKey)) {
             return FileResult(skipped = true, rows = old.rowCount)
         }
 
@@ -85,7 +93,7 @@ class ManifestExcelImporter(private val context: Context) {
                 val sheet = workbook.getSheet("Manifest")
                     ?: findManifestSheet(workbook)
                     ?: error("Sheet Manifest tidak ditemukan")
-                parseSheet(sheet, file.name.orEmpty(), sourceKey, modified)
+                parseSheet(sheet, file.name.orEmpty(), sourceKey, modified, workbook.creationHelper.createFormulaEvaluator())
             }
         } ?: error("Tidak dapat membuka file")
 
@@ -119,7 +127,8 @@ class ManifestExcelImporter(private val context: Context) {
         sheet: Sheet,
         fileName: String,
         sourceKey: String,
-        modified: Long
+        modified: Long,
+        evaluator: FormulaEvaluator
     ): List<ManifestEntity> {
         val header = findHeader(sheet)
             ?: error("Header Sheet Manifest tidak dikenali")
@@ -149,13 +158,13 @@ class ManifestExcelImporter(private val context: Context) {
                 sourceLastModified = modified,
                 sheetName = sheet.sheetName,
                 rowNumber = r + 1,
-                no = cell(row, header.noCol),
-                pti = cell(row, header.ptiCol),
-                pcs = cell(row, header.pcsCol),
-                weightPerPiece = cell(row, header.weightCol),
-                subTotal = cell(row, header.subtotalCol),
-                description = cell(row, header.descriptionCol),
-                customer = cell(row, header.customerCol),
+                no = cell(row, header.noCol, evaluator),
+                pti = cell(row, header.ptiCol, evaluator),
+                pcs = cell(row, header.pcsCol, evaluator),
+                weightPerPiece = cell(row, header.weightCol, evaluator),
+                subTotal = cell(row, header.subtotalCol, evaluator),
+                description = cell(row, header.descriptionCol, evaluator),
+                customer = cell(row, header.customerCol, evaluator),
                 manifestDate = date,
                 flightNo = flight,
                 fromStation = from,
@@ -252,8 +261,30 @@ class ManifestExcelImporter(private val context: Context) {
         return ""
     }
 
-    private fun cell(row: Row?, col: Int): String =
-        if (row == null || col < 0) "" else formatter.formatCellValue(row.getCell(col)).trim()
+    /**
+     * Returns the displayed/calculated value of a cell.
+     *
+     * Important for Manifest files: the Sub Total column can contain formulas such as
+     * =C17*D17. The search database must store the calculated number (for example 102),
+     * not the formula text, so users can see and search the actual weight.
+     */
+    private fun cell(row: Row?, col: Int, evaluator: FormulaEvaluator? = null): String {
+        if (row == null || col < 0) return ""
+        val value = row.getCell(col) ?: return ""
+
+        return try {
+            if (value.cellType == CellType.FORMULA && evaluator != null) {
+                formatter.formatCellValue(value, evaluator).trim()
+            } else {
+                formatter.formatCellValue(value).trim()
+            }
+        } catch (_: Exception) {
+            // Keep the import robust if an Excel formula uses a function that POI cannot
+            // evaluate. In that case use the cached/display value instead of exposing the
+            // formula itself whenever possible.
+            runCatching { formatter.formatCellValue(value).trim() }.getOrDefault("")
+        }
+    }
 
     private fun normalize(value: String): String =
         value.trim()

@@ -26,7 +26,7 @@ interface ManifestDao {
             "destination LIKE '%' || :query || '%' COLLATE NOCASE OR " +
             "fromStation LIKE '%' || :query || '%' COLLATE NOCASE OR " +
             "manifestDate LIKE '%' || :query || '%' COLLATE NOCASE " +
-            "ORDER BY year DESC, id DESC LIMIT 100"
+            "ORDER BY year DESC, manifestDate DESC, id DESC LIMIT 50"
     )
     suspend fun search(query: String): List<ManifestEntity>
 
@@ -38,6 +38,16 @@ interface ManifestDao {
 
     @Query("SELECT * FROM manifest_files WHERE sourceKey = :sourceKey LIMIT 1")
     suspend fun getFile(sourceKey: String): ManifestFileEntity?
+
+    /**
+     * True when an older import still contains an Excel formula/expression in Sub Total.
+     * The second condition also catches older databases that stored `C17*D17` without `=`.
+     */
+    @Query(
+        "SELECT EXISTS(SELECT 1 FROM manifest_items WHERE sourceKey = :sourceKey " +
+            "AND (subTotal LIKE '=%%' OR subTotal LIKE '%*%'))"
+    )
+    suspend fun hasFormulaSubTotal(sourceKey: String): Boolean
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertFile(file: ManifestFileEntity)

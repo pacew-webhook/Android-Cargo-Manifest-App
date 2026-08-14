@@ -14,8 +14,6 @@ import androidx.compose.ui.platform.LocalContext
 
 class MainActivity : ComponentActivity() {
 
-    private enum class MainScreen { MAIN_MENU, MANIFEST_CARGO, STOWING_PALLET, BUKTI_TIMBANG, MANIFEST_SEARCH }
-
     private val viewModel: CargoViewModel by viewModels {
         CargoViewModelFactory(application)
     }
@@ -24,7 +22,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             val context = LocalContext.current
-            var currentScreen by remember { mutableStateOf(MainScreen.MAIN_MENU) }
+            var currentScreen by remember { mutableStateOf<Screen>(Screen.MAIN_MENU) }
 
             MaterialTheme {
                 Surface(
@@ -32,10 +30,10 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     when (currentScreen) {
-                        MainScreen.MAIN_MENU -> {
+                        Screen.MAIN_MENU -> {
                             MainMenuScreen(
                                 onNavigateToManifest = {
-                                    currentScreen = MainScreen.MANIFEST_CARGO
+                                    currentScreen = Screen.MANIFEST_CARGO
                                 },
                                 onNavigateToStowing = {
                                     val intent = Intent(context, StowingActivity::class.java)
@@ -46,25 +44,25 @@ class MainActivity : ComponentActivity() {
                                     context.startActivity(intent)
                                 },
                                 onNavigateToManifestSearch = {
-                                    currentScreen = MainScreen.MANIFEST_SEARCH
+                                    currentScreen = Screen.MANIFEST_SEARCH
                                 }
                             )
                         }
-                        MainScreen.MANIFEST_CARGO -> {
+                        Screen.MANIFEST_CARGO -> {
                             CargoAppScreen(
                                 viewModel = viewModel,
-                                onBackToMenu = { currentScreen = MainScreen.MAIN_MENU }
+                                onBackToMenu = { currentScreen = Screen.MAIN_MENU }
                             )
                         }
-                        MainScreen.MANIFEST_SEARCH -> {
-                            ManifestSearchScreen(onBack = { currentScreen = MainScreen.MAIN_MENU })
+                        Screen.MANIFEST_SEARCH -> {
+                            ManifestSearchScreen(onBack = { currentScreen = Screen.MAIN_MENU })
                         }
                         // STOWING_PALLET dan BUKTI_TIMBANG tidak pernah di-set sebagai currentScreen
                         // (navigasinya lewat Intent/Activity terpisah, bukan state ini), jadi
                         // cabang ini murni fallback pengaman dan tidak seharusnya pernah terpakai.
-                        MainScreen.STOWING_PALLET, MainScreen.BUKTI_TIMBANG -> {
+                        Screen.STOWING_PALLET, Screen.BUKTI_TIMBANG -> {
                             MainMenuScreen(
-                                onNavigateToManifest = { currentScreen = MainScreen.MANIFEST_CARGO },
+                                onNavigateToManifest = { currentScreen = Screen.MANIFEST_CARGO },
                                 onNavigateToStowing = {
                                     val intent = Intent(context, StowingActivity::class.java)
                                     context.startActivity(intent)
@@ -74,7 +72,7 @@ class MainActivity : ComponentActivity() {
                                     context.startActivity(intent)
                                 },
                                 onNavigateToManifestSearch = {
-                                    currentScreen = MainScreen.MANIFEST_SEARCH
+                                    currentScreen = Screen.MANIFEST_SEARCH
                                 }
                             )
                         }

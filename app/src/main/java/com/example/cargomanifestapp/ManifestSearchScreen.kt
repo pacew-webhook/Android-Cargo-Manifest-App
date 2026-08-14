@@ -62,10 +62,16 @@ fun ManifestSearchScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { folderLauncher.launch(null) }) {
+                    IconButton(
+                        onClick = { folderLauncher.launch(null) },
+                        enabled = !busy
+                    ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = "Pilih Folder")
                     }
-                    IconButton(onClick = { viewModel.clearDatabase() }) {
+                    IconButton(
+                        onClick = { viewModel.clearDatabase() },
+                        enabled = !busy
+                    ) {
                         Icon(Icons.Default.Delete, contentDescription = "Hapus Database")
                     }
                 }
@@ -110,6 +116,11 @@ fun ManifestSearchScreen(
             if (busy) {
                 Spacer(Modifier.height(8.dp))
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Data yang sudah masuk database tetap bisa dicari selama sinkronisasi.",
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
 
             if (message.isNotBlank()) {

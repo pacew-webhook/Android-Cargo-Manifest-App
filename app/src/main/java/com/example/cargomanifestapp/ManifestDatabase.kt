@@ -23,6 +23,7 @@ abstract class ManifestDatabase : RoomDatabase() {
                     ManifestDatabase::class.java,
                     "manifest_search_database"
                 )
+                    .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

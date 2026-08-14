@@ -5,6 +5,8 @@ import android.content.Context
 import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +20,10 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
     private val dao = ManifestDatabase.getDatabase(application).manifestDao()
     private val importer = ManifestExcelImporter(application)
     private val scanMutex = Mutex()
+
+    // Prevent a second automatic scan from being queued when the screen is
+    // recreated while the previous synchronization is still running.
+    private var syncJob: Job? = null
 
     private val _query = MutableStateFlow("")
     val query: StateFlow<String> = _query.asStateFlow()
@@ -41,8 +47,8 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
     val message: StateFlow<String> = _message.asStateFlow()
 
     init {
-        // One search job at a time. Fast typing cancels the previous query instead of
-        // creating dozens of concurrent Room queries that compete with the importer.
+        // Search is independent from synchronization. It only reads the Room database,
+        // so already-indexed data can be searched while new Excel files are still being read.
         viewModelScope.launch {
             _query
                 .debounce(250)
@@ -53,7 +59,8 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun setQuery(value: String) {
-        _query.value = value
+        // Avoid pathological queries that could make SQLite/UI work unnecessarily hard.
+        _query.value = value.take(120)
     }
 
     fun load() {
@@ -64,7 +71,10 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun scanFolder(uri: Uri) {
-        viewModelScope.launch {
+        // Ignore duplicate requests while a scan is already active.
+        if (syncJob?.isActive == true) return
+
+        syncJob = viewModelScope.launch {
             scanMutex.withLock {
                 _busy.value = true
                 _progress.value = 0
@@ -80,6 +90,13 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                     val result = importer.scanFolderTree(uri) { done, _, rows ->
                         _progress.value = done
                         _message.value = "Membaca file Excel: $done | Data baru: $rows"
+
+                        // Refresh the counters periodically without rebuilding the result list.
+                        // Search remains available throughout the import.
+                        if (done % 10 == 0) {
+                            refreshStats()
+                            if (_query.value.isNotBlank()) searchNow(_query.value)
+                        }
                     }
 
                     refreshStats()
@@ -92,6 +109,10 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                         }
                     }
                     if (_query.value.isNotBlank()) searchNow(_query.value)
+                } catch (e: CancellationException) {
+                    // Cancellation is normal when ViewModel is destroyed. Do not turn it
+                    // into an error and, importantly, do not swallow it.
+                    throw e
                 } catch (e: Exception) {
                     _message.value = "Gagal: ${e.message ?: "folder tidak dapat dibaca"}"
                 } finally {
@@ -102,10 +123,13 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
     }
 
     fun scanSavedFolder() {
+        if (syncJob?.isActive == true) return
+
         val value = getApplication<Application>()
             .getSharedPreferences("manifest_settings", Context.MODE_PRIVATE)
             .getString("manifest_tree_uri", null)
             ?: return
+
         scanFolder(Uri.parse(value))
     }
 
@@ -116,18 +140,26 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
 
     private suspend fun searchNow(value: String) {
         val q = value.trim()
-
-        // Do not load the first 100 database records while the user is not searching.
-        // This keeps the UI light during a large background import.
         if (q.isBlank()) {
             _results.value = emptyList()
             return
         }
 
-        _results.value = dao.search(q)
+        // LIMIT is enforced in DAO so the UI never tries to compose thousands of cards.
+        // The query can safely run while the importer is inserting more rows.
+        try {
+            _results.value = dao.search(q)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            // A transient database read error during synchronization should not crash the app.
+            // Keep the last valid result set instead.
+        }
     }
 
     fun clearDatabase() {
+        if (syncJob?.isActive == true) return
+
         viewModelScope.launch {
             scanMutex.withLock {
                 dao.clearItems()
@@ -138,5 +170,12 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                 _message.value = "Database Manifest dikosongkan."
             }
         }
+    }
+
+    override fun onCleared() {
+        // viewModelScope will cancel the job. Explicitly clear the reference so a
+        // recreated screen cannot treat an old completed job as active.
+        syncJob = null
+        super.onCleared()
     }
 }

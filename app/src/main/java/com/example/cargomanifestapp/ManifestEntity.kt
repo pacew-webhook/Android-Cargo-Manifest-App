@@ -10,6 +10,8 @@ import androidx.room.PrimaryKey
         Index(value = ["pti"]),
         Index(value = ["customer"]),
         Index(value = ["description"]),
+        Index(value = ["manifestDate"]),
+        Index(value = ["year"]),
         Index(value = ["sourceKey", "rowNumber"], unique = true)
     ]
 )
