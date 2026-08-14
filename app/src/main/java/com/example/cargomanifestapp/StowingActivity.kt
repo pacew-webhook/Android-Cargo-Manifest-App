@@ -507,26 +507,18 @@ fun StowingInputScreen(
                     }
 
                     ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedCustomer && viewModel.customerSuggestions.isNotEmpty(),
-                        onExpandedChange = {
-                            viewModel.updateExpandedCustomer(!viewModel.expandedCustomer)
-                        },
+                        expanded = viewModel.expandedCustomer,
+                        onExpandedChange = { viewModel.updateExpandedCustomer(!viewModel.expandedCustomer) },
                         modifier = Modifier.weight(1f)
                     ) {
                         OutlinedTextField(
                             value = viewModel.customer,
-                            onValueChange = {
-                                viewModel.updateCustomer(it)
-                                viewModel.updateExpandedCustomer(true)
-                            },
+                            onValueChange = { viewModel.updateCustomer(it) },
                             label = { Text("Customer") },
                             placeholder = { Text("ULIN") },
                             singleLine = true,
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(
-                                    expanded = viewModel.expandedCustomer
-                                )
-                            },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedCustomer) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
@@ -534,15 +526,17 @@ fun StowingInputScreen(
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
-                            expanded = viewModel.expandedCustomer && viewModel.customerSuggestions.isNotEmpty(),
+                            expanded = viewModel.expandedCustomer && viewModel.existingCustomers.isNotEmpty(),
                             onDismissRequest = { viewModel.updateExpandedCustomer(false) }
                         ) {
-                            viewModel.customerSuggestions.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(item) },
-                                    onClick = { viewModel.selectCustomer(item) }
-                                )
-                            }
+                            viewModel.existingCustomers
+                                .filter { it.contains(viewModel.customer.trim(), ignoreCase = true) }
+                                .forEach { existingCustomer ->
+                                    DropdownMenuItem(
+                                        text = { Text(existingCustomer) },
+                                        onClick = { viewModel.selectCustomer(existingCustomer) }
+                                    )
+                                }
                         }
                     }
                 }
@@ -554,28 +548,18 @@ fun StowingInputScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedDescription && viewModel.customerDescriptionSuggestions.isNotEmpty(),
-                        onExpandedChange = {
-                            if (viewModel.customerDescriptionSuggestions.isNotEmpty()) {
-                                viewModel.updateExpandedDescription(!viewModel.expandedDescription)
-                            }
-                        },
+                        expanded = viewModel.expandedDescription,
+                        onExpandedChange = { viewModel.updateExpandedDescription(!viewModel.expandedDescription) },
                         modifier = Modifier.weight(1f)
                     ) {
                         OutlinedTextField(
                             value = viewModel.description,
-                            onValueChange = {
-                                viewModel.updateDescription(it)
-                                viewModel.updateExpandedDescription(true)
-                            },
+                            onValueChange = { viewModel.updateDescription(it) },
                             label = { Text("Description") },
                             placeholder = { Text("PINANG") },
                             singleLine = true,
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(
-                                    expanded = viewModel.expandedDescription
-                                )
-                            },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedDescription) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
@@ -583,41 +567,37 @@ fun StowingInputScreen(
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
-                            expanded = viewModel.expandedDescription && viewModel.customerDescriptionSuggestions.isNotEmpty(),
+                            expanded = viewModel.expandedDescription && viewModel.customerDescriptions.isNotEmpty(),
                             onDismissRequest = { viewModel.updateExpandedDescription(false) }
                         ) {
-                            viewModel.customerDescriptionSuggestions.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(item) },
-                                    onClick = { viewModel.selectDescription(item) }
-                                )
-                            }
+                            viewModel.customerDescriptions
+                                .filter { it.contains(viewModel.description.trim(), ignoreCase = true) }
+                                .forEach { existingDescription ->
+                                    DropdownMenuItem(
+                                        text = { Text(existingDescription) },
+                                        onClick = { viewModel.selectDescription(existingDescription) }
+                                    )
+                                }
                         }
                     }
-
                     ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedPti && viewModel.customerPtiSuggestions.isNotEmpty(),
-                        onExpandedChange = {
-                            if (viewModel.customerPtiSuggestions.isNotEmpty()) {
-                                viewModel.updateExpandedPti(!viewModel.expandedPti)
-                            }
-                        },
+                        expanded = viewModel.expandedPti,
+                        onExpandedChange = { viewModel.updateExpandedPti(!viewModel.expandedPti) },
                         modifier = Modifier.weight(1f)
                     ) {
                         OutlinedTextField(
                             value = viewModel.pti,
-                            onValueChange = {
-                                viewModel.updatePti(it)
-                                viewModel.updateExpandedPti(true)
-                            },
+                            onValueChange = { viewModel.updatePti(it) },
                             label = { Text("PTI (opsional)") },
                             placeholder = { Text("KAL004391") },
                             singleLine = true,
-                            trailingIcon = {
-                                ExposedDropdownMenuDefaults.TrailingIcon(
-                                    expanded = viewModel.expandedPti
-                                )
+                            isError = viewModel.pti.isNotBlank() && !viewModel.isPtiAvailableForCurrentCustomer(viewModel.pti),
+                            supportingText = {
+                                val owner = viewModel.customerUsingPti(viewModel.pti)
+                                if (owner != null) Text("PTI ini sudah digunakan oleh customer $owner")
                             },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPti) },
+                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
@@ -625,15 +605,17 @@ fun StowingInputScreen(
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
-                            expanded = viewModel.expandedPti && viewModel.customerPtiSuggestions.isNotEmpty(),
+                            expanded = viewModel.expandedPti && viewModel.customerPtis.isNotEmpty(),
                             onDismissRequest = { viewModel.updateExpandedPti(false) }
                         ) {
-                            viewModel.customerPtiSuggestions.forEach { item ->
-                                DropdownMenuItem(
-                                    text = { Text(item) },
-                                    onClick = { viewModel.selectPti(item) }
-                                )
-                            }
+                            viewModel.customerPtis
+                                .filter { it.contains(viewModel.pti.trim(), ignoreCase = true) }
+                                .forEach { existingPti ->
+                                    DropdownMenuItem(
+                                        text = { Text(existingPti) },
+                                        onClick = { viewModel.selectPti(existingPti) }
+                                    )
+                                }
                         }
                     }
                 }
