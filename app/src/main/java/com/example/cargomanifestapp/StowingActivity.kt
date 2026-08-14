@@ -506,18 +506,45 @@ fun StowingInputScreen(
                         )
                     }
 
-                    OutlinedTextField(
-                        value = viewModel.customer,
-                        onValueChange = { viewModel.updateCustomer(it) },
-                        label = { Text("Customer") },
-                        placeholder = { Text("ULIN") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Next
-                        ),
+                    ExposedDropdownMenuBox(
+                        expanded = viewModel.expandedCustomer && viewModel.customerSuggestions.isNotEmpty(),
+                        onExpandedChange = {
+                            viewModel.updateExpandedCustomer(!viewModel.expandedCustomer)
+                        },
                         modifier = Modifier.weight(1f)
-                    )
+                    ) {
+                        OutlinedTextField(
+                            value = viewModel.customer,
+                            onValueChange = {
+                                viewModel.updateCustomer(it)
+                                viewModel.updateExpandedCustomer(true)
+                            },
+                            label = { Text("Customer") },
+                            placeholder = { Text("ULIN") },
+                            singleLine = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = viewModel.expandedCustomer
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = viewModel.expandedCustomer && viewModel.customerSuggestions.isNotEmpty(),
+                            onDismissRequest = { viewModel.updateExpandedCustomer(false) }
+                        ) {
+                            viewModel.customerSuggestions.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item) },
+                                    onClick = { viewModel.selectCustomer(item) }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -526,30 +553,89 @@ fun StowingInputScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedTextField(
-                        value = viewModel.description,
-                        onValueChange = { viewModel.updateDescription(it) },
-                        label = { Text("Description") },
-                        placeholder = { Text("PINANG") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Next
-                        ),
+                    ExposedDropdownMenuBox(
+                        expanded = viewModel.expandedDescription && viewModel.customerDescriptionSuggestions.isNotEmpty(),
+                        onExpandedChange = {
+                            if (viewModel.customerDescriptionSuggestions.isNotEmpty()) {
+                                viewModel.updateExpandedDescription(!viewModel.expandedDescription)
+                            }
+                        },
                         modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = viewModel.pti,
-                        onValueChange = { viewModel.updatePti(it) },
-                        label = { Text("PTI (opsional)") },
-                        placeholder = { Text("KAL004391") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            capitalization = KeyboardCapitalization.Characters,
-                            imeAction = ImeAction.Next
-                        ),
+                    ) {
+                        OutlinedTextField(
+                            value = viewModel.description,
+                            onValueChange = {
+                                viewModel.updateDescription(it)
+                                viewModel.updateExpandedDescription(true)
+                            },
+                            label = { Text("Description") },
+                            placeholder = { Text("PINANG") },
+                            singleLine = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = viewModel.expandedDescription
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = viewModel.expandedDescription && viewModel.customerDescriptionSuggestions.isNotEmpty(),
+                            onDismissRequest = { viewModel.updateExpandedDescription(false) }
+                        ) {
+                            viewModel.customerDescriptionSuggestions.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item) },
+                                    onClick = { viewModel.selectDescription(item) }
+                                )
+                            }
+                        }
+                    }
+
+                    ExposedDropdownMenuBox(
+                        expanded = viewModel.expandedPti && viewModel.customerPtiSuggestions.isNotEmpty(),
+                        onExpandedChange = {
+                            if (viewModel.customerPtiSuggestions.isNotEmpty()) {
+                                viewModel.updateExpandedPti(!viewModel.expandedPti)
+                            }
+                        },
                         modifier = Modifier.weight(1f)
-                    )
+                    ) {
+                        OutlinedTextField(
+                            value = viewModel.pti,
+                            onValueChange = {
+                                viewModel.updatePti(it)
+                                viewModel.updateExpandedPti(true)
+                            },
+                            label = { Text("PTI (opsional)") },
+                            placeholder = { Text("KAL004391") },
+                            singleLine = true,
+                            trailingIcon = {
+                                ExposedDropdownMenuDefaults.TrailingIcon(
+                                    expanded = viewModel.expandedPti
+                                )
+                            },
+                            keyboardOptions = KeyboardOptions(
+                                capitalization = KeyboardCapitalization.Characters,
+                                imeAction = ImeAction.Next
+                            ),
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = viewModel.expandedPti && viewModel.customerPtiSuggestions.isNotEmpty(),
+                            onDismissRequest = { viewModel.updateExpandedPti(false) }
+                        ) {
+                            viewModel.customerPtiSuggestions.forEach { item ->
+                                DropdownMenuItem(
+                                    text = { Text(item) },
+                                    onClick = { viewModel.selectPti(item) }
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
