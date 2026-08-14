@@ -71,12 +71,12 @@ class ManifestExcelImporter(private val context: Context) {
     private suspend fun importFile(file: DocumentFile): FileResult {
         val sourceKey = file.uri.toString()
         val modified = file.lastModified()
-        val size = file.length()
         val old = dao.getFile(sourceKey)
 
-        // A file is considered unchanged only when both timestamp and size match.
-        // This also handles providers that return 0 for lastModified().
-        if (old != null && old.lastModified == modified && old.fileSize == size && old.rowCount >= 0) {
+        // Reuse the already imported file when the provider reports the same
+        // modification timestamp. Some Android document providers report 0,
+        // which is still useful as a stable value for the same URI.
+        if (old != null && old.lastModified == modified && old.rowCount >= 0) {
             return FileResult(skipped = true, rows = old.rowCount)
         }
 
@@ -97,7 +97,6 @@ class ManifestExcelImporter(private val context: Context) {
                 sourceKey = sourceKey,
                 sourceName = file.name.orEmpty(),
                 lastModified = modified,
-                fileSize = size,
                 rowCount = items.size,
                 importedAt = System.currentTimeMillis()
             ),
