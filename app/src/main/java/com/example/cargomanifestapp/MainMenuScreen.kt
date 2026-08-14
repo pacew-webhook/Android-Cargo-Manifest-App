@@ -25,7 +25,8 @@ import androidx.compose.ui.unit.sp
 fun MainMenuScreen(
     onNavigateToManifest: () -> Unit,
     onNavigateToStowing: () -> Unit,
-    onNavigateToBuktiTimbang: () -> Unit // 1. Tambahkan parameter navigasi baru
+    onNavigateToBuktiTimbang: () -> Unit,
+    onNavigateToManifestSearch: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -87,6 +88,17 @@ fun MainMenuScreen(
                 iconBackgroundColor = Color(0xFFD0BCFF),
                 iconTintColor = Color(0xFF381E72),
                 onClick = onNavigateToStowing
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            MenuCard(
+                title = "Pencarian Database Manifest",
+                subtitle = "Baca semua Excel dalam folder dan cari data barang",
+                icon = Icons.Default.List,
+                iconBackgroundColor = Color(0xFFE8DEF8),
+                iconTintColor = Color(0xFF673AB7),
+                onClick = onNavigateToManifestSearch
             )
 
             Spacer(modifier = Modifier.height(16.dp))

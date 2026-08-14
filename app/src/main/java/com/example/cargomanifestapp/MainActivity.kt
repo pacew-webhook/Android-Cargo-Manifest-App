@@ -42,6 +42,9 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToBuktiTimbang = {
                                     val intent = Intent(context, BuktiTimbangActivity::class.java)
                                     context.startActivity(intent)
+                                },
+                                onNavigateToManifestSearch = {
+                                    currentScreen = Screen.MANIFEST_SEARCH
                                 }
                             )
                         }
@@ -50,6 +53,9 @@ class MainActivity : ComponentActivity() {
                                 viewModel = viewModel,
                                 onBackToMenu = { currentScreen = Screen.MAIN_MENU }
                             )
+                        }
+                        Screen.MANIFEST_SEARCH -> {
+                            ManifestSearchScreen(onBack = { currentScreen = Screen.MAIN_MENU })
                         }
                         // STOWING_PALLET dan BUKTI_TIMBANG tidak pernah di-set sebagai currentScreen
                         // (navigasinya lewat Intent/Activity terpisah, bukan state ini), jadi
@@ -64,6 +70,9 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToBuktiTimbang = {
                                     val intent = Intent(context, BuktiTimbangActivity::class.java)
                                     context.startActivity(intent)
+                                },
+                                onNavigateToManifestSearch = {
+                                    currentScreen = Screen.MANIFEST_SEARCH
                                 }
                             )
                         }
