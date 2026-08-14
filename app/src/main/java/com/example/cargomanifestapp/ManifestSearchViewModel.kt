@@ -87,15 +87,13 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                         .putString("manifest_tree_uri", uri.toString())
                         .apply()
 
-                    val result = importer.scanFolderTree(uri) { done, _, rows ->
+                    val result = importer.scanFolderTree(uri) { done, total, rows ->
                         _progress.value = done
                         _message.value = "Membaca file Excel: $done/$total | Data baru: $rows"
 
                         // Refresh the counters periodically without rebuilding the result list.
                         // Search remains available throughout the import.
-                        // Refresh counters/results in small batches. The Room DB remains
-                        // searchable while synchronization is running.
-                        if (done % 10 == 0 || done == total) {
+                        if (done % 10 == 0) {
                             refreshStats()
                             if (_query.value.isNotBlank()) searchNow(_query.value)
                         }
@@ -105,7 +103,7 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                     _message.value = buildString {
                         append("Selesai: ${result.filesImported} file baru/diperbarui, ")
                         append("${result.filesSkipped} file sudah tersimpan, ")
-                        append("${result.rowsImported} baris baru, ${result.filesIgnored} file non-Manifest dilewati.")
+                        append("${result.rowsImported} baris baru.")
                         if (result.errors.isNotEmpty()) {
                             append(" Gagal: ${result.errors.size} file.")
                         }

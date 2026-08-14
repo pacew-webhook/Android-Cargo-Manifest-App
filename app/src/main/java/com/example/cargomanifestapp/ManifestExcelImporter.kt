@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
@@ -14,18 +15,7 @@ import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.WorkbookFactory
 import java.util.Locale
-import java.util.zip.ZipInputStream
 
-/**
- * Synchronizes Manifest sheets from a user-selected folder into the local Room DB.
- *
- * Important design rules:
- * - The folder may contain hundreds of unrelated Excel files (for example AWB files).
- * - Unrelated Excel files must be skipped before loading a full POI workbook whenever possible.
- * - One bad Excel file must never stop the complete synchronization.
- * - A workbook is opened, parsed, committed, and closed one file at a time.
- * - Already imported, unchanged files are skipped.
- */
 class ManifestExcelImporter(private val context: Context) {
     private val dao = ManifestDatabase.getDatabase(context).manifestDao()
     private val formatter = DataFormatter(Locale.US)
@@ -37,36 +27,58 @@ class ManifestExcelImporter(private val context: Context) {
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: error("Folder Manifest tidak dapat dibuka")
 
-        val excelFiles = ArrayList<DocumentFile>()
-        val errors = mutableListOf<String>()
-        collectExcelFiles(root, excelFiles, errors)
-
-        val filesTotal = excelFiles.size
         var filesImported = 0
         var filesSkipped = 0
-        var filesIgnored = 0
         var rowsImported = 0
-        var filesDone = 0
+        val errors = mutableListOf<String>()
 
+        // First collect only Excel files. We do NOT open workbooks during this pass.
+        // This gives the UI a real total (for example 83/584) and avoids recursively
+        // keeping workbook objects in memory.
+        val excelFiles = ArrayList<DocumentFile>()
+        val pending = ArrayDeque<DocumentFile>()
+        pending.add(root)
+
+        while (pending.isNotEmpty()) {
+            currentCoroutineContext().ensureActive()
+            val dir = pending.removeLast()
+            val children = runCatching { dir.listFiles().toList() }.getOrElse {
+                errors += "${dir.name ?: dir.uri}: ${it.message ?: "folder tidak dapat dibaca"}"
+                emptyList()
+            }
+
+            for (file in children) {
+                currentCoroutineContext().ensureActive()
+                when {
+                    file.isDirectory -> pending.add(file)
+                    // Only manifest-looking Excel files are opened. Other Excel files
+                    // (for example AWB KAL.xlsx) stay in the folder but are never
+                    // opened by Apache POI. The workbook is still validated by checking
+                    // the Manifest sheet inside importFile().
+                    file.isFile && isExcel(file.name) && isLikelyManifestFile(file.name) ->
+                        excelFiles.add(file)
+                }
+            }
+        }
+
+        val filesTotal = excelFiles.size
+        var filesDone = 0
         onProgress?.invoke(0, filesTotal, 0)
 
         for (file in excelFiles) {
-            coroutineContext.ensureActive()
-
+            currentCoroutineContext().ensureActive()
             try {
                 val result = importFile(file)
-                when {
-                    result.skipped -> filesSkipped++
-                    result.ignored -> filesIgnored++
-                    else -> {
-                        filesImported++
-                        rowsImported += result.rows
-                    }
+                if (result.skipped) {
+                    filesSkipped++
+                } else {
+                    filesImported++
+                    rowsImported += result.rows
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // A single malformed/protected/unreadable workbook must not crash the app.
+                // One malformed/non-Manifest workbook must never stop the entire scan.
                 errors += "${file.name ?: file.uri}: ${e.message ?: "gagal dibaca"}"
             }
 
@@ -74,38 +86,7 @@ class ManifestExcelImporter(private val context: Context) {
             onProgress?.invoke(filesDone, filesTotal, rowsImported)
         }
 
-        ScanResult(
-            filesFound = filesTotal,
-            filesImported = filesImported,
-            filesSkipped = filesSkipped,
-            filesIgnored = filesIgnored,
-            rowsImported = rowsImported,
-            errors = errors
-        )
-    }
-
-    private suspend fun collectExcelFiles(
-        dir: DocumentFile,
-        output: MutableList<DocumentFile>,
-        errors: MutableList<String>
-    ) {
-        coroutineContext.ensureActive()
-
-        val children = try {
-            dir.listFiles().toList()
-        } catch (e: Exception) {
-            errors += "${dir.name ?: dir.uri}: ${e.message ?: "folder tidak dapat dibaca"}"
-            return
-        }
-
-        for (file in children) {
-            coroutineContext.ensureActive()
-            if (file.isDirectory) {
-                collectExcelFiles(file, output, errors)
-            } else if (file.isFile && isExcel(file.name)) {
-                output += file
-            }
-        }
+        ScanResult(filesTotal, filesImported, filesSkipped, rowsImported, errors)
     }
 
     private suspend fun importFile(file: DocumentFile): FileResult {
@@ -113,39 +94,24 @@ class ManifestExcelImporter(private val context: Context) {
         val modified = file.lastModified()
         val old = dao.getFile(sourceKey)
 
+        // Reuse the already imported file when the provider reports the same
+        // modification timestamp. Some Android document providers report 0,
+        // which is still useful as a stable value for the same URI.
         if (old != null && old.lastModified == modified && old.rowCount >= 0 && !dao.hasFormulaSubTotal(sourceKey)) {
-            return FileResult(skipped = true, ignored = false, rows = old.rowCount)
-        }
-
-        // Most unrelated files in the user's DATA MANIFEST folder are AWB workbooks.
-        // For OOXML files we can inspect xl/workbook.xml without creating a full POI
-        // workbook. This avoids a large memory allocation for files that will be skipped.
-        if (isOoxml(file.name) && !hasManifestSheetLightweight(file.uri)) {
-            return FileResult(skipped = false, ignored = true, rows = 0)
+            return FileResult(skipped = true, rows = old.rowCount)
         }
 
         val items = context.contentResolver.openInputStream(file.uri)?.use { stream ->
             WorkbookFactory.create(stream).use { workbook ->
                 val sheet = workbook.getSheet("Manifest")
                     ?: findManifestSheet(workbook)
-                    ?: return@use emptyList()
-
-                parseSheet(
-                    sheet = sheet,
-                    fileName = file.name.orEmpty(),
-                    sourceKey = sourceKey,
-                    modified = modified,
-                    evaluator = workbook.creationHelper.createFormulaEvaluator()
-                )
+                    ?: error("Sheet Manifest tidak ditemukan")
+                parseSheet(sheet, file.name.orEmpty(), sourceKey, modified, workbook.creationHelper.createFormulaEvaluator())
             }
         } ?: error("Tidak dapat membuka file")
 
-        // A workbook can have the wrong format/headers even when a sheet happens to be
-        // named Manifest. Treat it as unrelated instead of storing an empty database entry.
-        if (items.isEmpty()) {
-            return FileResult(skipped = false, ignored = true, rows = 0)
-        }
-
+        // Commit the complete file replacement atomically. If parsing fails, the old
+        // data remains untouched instead of leaving a half-imported file.
         dao.replaceFileData(
             sourceKey = sourceKey,
             file = ManifestFileEntity(
@@ -158,39 +124,7 @@ class ManifestExcelImporter(private val context: Context) {
             items = items
         )
 
-        return FileResult(skipped = false, ignored = false, rows = items.size)
-    }
-
-    /**
-     * Reads only xl/workbook.xml from an XLSX/XLSM ZIP container.
-     * Sheet names are stored directly in workbook.xml, so there is no need to load POI.
-     */
-    private suspend fun hasManifestSheetLightweight(uri: Uri): Boolean = withContext(Dispatchers.IO) {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input).use { zip ->
-                val buffer = ByteArray(8192)
-                while (true) {
-                    coroutineContext.ensureActive()
-                    val entry = zip.nextEntry ?: break
-                    if (entry.name == "xl/workbook.xml") {
-                        val text = buildString {
-                            while (true) {
-                                coroutineContext.ensureActive()
-                                val read = zip.read(buffer)
-                                if (read <= 0) break
-                                append(String(buffer, 0, read, Charsets.UTF_8))
-                            }
-                        }
-                        val names = Regex("<sheet\\b[^>]*\\bname=[\\\"']([^\\\"']+)[\\\"']", RegexOption.IGNORE_CASE)
-                            .findAll(text)
-                            .map { normalize(it.groupValues[1]) }
-                            .toList()
-                        return@withContext names.any { it == "manifest" || it.contains("manifest cargo") }
-                    }
-                    zip.closeEntry()
-                }
-            }
-        } ?: false
+        return FileResult(skipped = false, rows = items.size)
     }
 
     private fun findManifestSheet(workbook: org.apache.poi.ss.usermodel.Workbook): Sheet? {
@@ -209,13 +143,14 @@ class ManifestExcelImporter(private val context: Context) {
         modified: Long,
         evaluator: FormulaEvaluator
     ): List<ManifestEntity> {
-        val header = findHeader(sheet) ?: return emptyList()
+        val header = findHeader(sheet)
+            ?: error("Header Sheet Manifest tidak dikenali")
 
-        val date = findMetadata(sheet, "date")
-        val flight = findMetadata(sheet, "flight no")
+        val date: String = findMetadata(sheet, "date")
+        val flight: String = findMetadata(sheet, "flight no")
             .ifBlank { findMetadata(sheet, "flight") }
-        val from = findMetadata(sheet, "from")
-        val destination = findMetadata(sheet, "to")
+        val from: String = findMetadata(sheet, "from")
+        val destination: String = findMetadata(sheet, "to")
         val year = Regex("(20\\d{2})").find(date)?.groupValues?.get(1)?.toIntOrNull()
             ?: Regex("(20\\d{2})").find(fileName)?.groupValues?.get(1)?.toIntOrNull()
             ?: 0
@@ -223,6 +158,11 @@ class ManifestExcelImporter(private val context: Context) {
         val result = ArrayList<ManifestEntity>()
         for (r in header.rowIndex + 1..sheet.lastRowNum) {
             val row = sheet.getRow(r) ?: continue
+
+            // Only accept rows belonging to the left Manifest Cargo table.
+            // The workbook often contains a second table (stowing checklist) on the
+            // right side; requiring a numeric No + PTI prevents those cells from being
+            // imported as cargo records.
             if (!isCargoDataRow(row, header)) continue
 
             result += ManifestEntity(
@@ -255,6 +195,8 @@ class ManifestExcelImporter(private val context: Context) {
             val cells = mutableMapOf<String, Int>()
             val last = row.lastCellNum.toInt().coerceAtLeast(0)
 
+            // Only inspect the first 12 columns. The left table in the sample Manifest
+            // workbook occupies A:G; H onward belongs to the stowing/checklist table.
             for (c in 0 until minOf(12, last)) {
                 val v = normalize(formatter.formatCellValue(row.getCell(c)))
                 if (v.isNotBlank()) cells.putIfAbsent(v, c)
@@ -266,9 +208,12 @@ class ManifestExcelImporter(private val context: Context) {
             val weightCol = cells.entries.firstOrNull { it.key in WEIGHT_HEADERS }?.value ?: continue
             val descriptionCol = cells.entries.firstOrNull { it.key in DESCRIPTION_HEADERS }?.value ?: continue
             val customerCol = cells.entries.firstOrNull { it.key in CUSTOMER_HEADERS }?.value ?: continue
+
             val subtotalCol = cells.entries.firstOrNull { it.key in SUBTOTAL_HEADERS }?.value
                 ?: (weightCol + 1).takeIf { it < 12 }
 
+            // The canonical template has A:G as the cargo table. Reject a candidate
+            // that crosses into the second table.
             if (noCol > 1 || ptiCol > 2 || descriptionCol > 6 || customerCol > 7) continue
 
             return HeaderInfo(
@@ -289,8 +234,12 @@ class ManifestExcelImporter(private val context: Context) {
         val no = cell(row, header.noCol)
         val pti = cell(row, header.ptiCol)
 
+        // No must be a row number such as 1, 2, 3 or 1.0.
         val noIsNumeric = no.replace(",", ".").toDoubleOrNull() != null
         if (!noIsNumeric) return false
+
+        // PTI is the primary cargo identifier in this manifest format.
+        // Rows without PTI are not imported to avoid picking up unrelated checklist rows.
         if (pti.isBlank()) return false
         if (normalize(pti) == "pti") return false
 
@@ -325,6 +274,13 @@ class ManifestExcelImporter(private val context: Context) {
         return ""
     }
 
+    /**
+     * Returns the displayed/calculated value of a cell.
+     *
+     * Important for Manifest files: the Sub Total column can contain formulas such as
+     * =C17*D17. The search database must store the calculated number (for example 102),
+     * not the formula text, so users can see and search the actual weight.
+     */
     private fun cell(row: Row?, col: Int, evaluator: FormulaEvaluator? = null): String {
         if (row == null || col < 0) return ""
         val value = row.getCell(col) ?: return ""
@@ -336,6 +292,9 @@ class ManifestExcelImporter(private val context: Context) {
                 formatter.formatCellValue(value).trim()
             }
         } catch (_: Exception) {
+            // Keep the import robust if an Excel formula uses a function that POI cannot
+            // evaluate. In that case use the cached/display value instead of exposing the
+            // formula itself whenever possible.
             runCatching { formatter.formatCellValue(value).trim() }.getOrDefault("")
         }
     }
@@ -351,9 +310,9 @@ class ManifestExcelImporter(private val context: Context) {
         return n.endsWith(".xlsx") || n.endsWith(".xls") || n.endsWith(".xlsm")
     }
 
-    private fun isOoxml(name: String?): Boolean {
+    private fun isLikelyManifestFile(name: String?): Boolean {
         val n = name?.lowercase(Locale.US) ?: return false
-        return n.endsWith(".xlsx") || n.endsWith(".xlsm")
+        return n.contains("manifest") || n.contains("manifes")
     }
 
     private data class HeaderInfo(
@@ -367,23 +326,18 @@ class ManifestExcelImporter(private val context: Context) {
         val customerCol: Int
     )
 
-    private data class FileResult(
-        val skipped: Boolean,
-        val ignored: Boolean,
-        val rows: Int
-    )
+    private data class FileResult(val skipped: Boolean, val rows: Int)
 
     data class ScanResult(
         val filesFound: Int,
         val filesImported: Int,
         val filesSkipped: Int,
-        val filesIgnored: Int,
         val rowsImported: Int,
         val errors: List<String>
     )
 
     companion object {
-        private val PCS_HEADERS = setOf("pcs/cly", "pcs/qty", "pcs qty")
+        private val PCS_HEADERS = setOf("pcs/cly", "pcs/qty", "pcs qty", "pcs/qty", "pcs/cly")
         private val WEIGHT_HEADERS = setOf("weight (kg)", "weight kg", "weight", "berat")
         private val SUBTOTAL_HEADERS = setOf("sub total", "subtotal", "sub total (kg)")
         private val DESCRIPTION_HEADERS = setOf("description", "descriptions")
