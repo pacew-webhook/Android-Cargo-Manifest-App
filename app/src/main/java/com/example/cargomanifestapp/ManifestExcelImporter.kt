@@ -5,7 +5,6 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
@@ -51,7 +50,7 @@ class ManifestExcelImporter(private val context: Context) {
         onProgress?.invoke(0, filesTotal, 0)
 
         for (file in excelFiles) {
-            currentCoroutineContext().ensureActive()
+
             try {
                 val result = importFile(file)
                 when {
@@ -81,7 +80,7 @@ class ManifestExcelImporter(private val context: Context) {
         if (errors.isEmpty()) {
             val storedKeys = dao.getAllSourceKeys()
             for (key in storedKeys) {
-                currentCoroutineContext().ensureActive()
+
                 if (!seenManifestKeys.contains(key)) {
                     dao.deleteItemsForSource(key)
                     dao.deleteFile(key)
@@ -105,11 +104,11 @@ class ManifestExcelImporter(private val context: Context) {
         pending.add(root)
 
         while (pending.isNotEmpty()) {
-            currentCoroutineContext().ensureActive()
+
             val dir = pending.removeLast()
             val children = dir.listFiles()
             for (file in children) {
-                currentCoroutineContext().ensureActive()
+
                 when {
                     file.isDirectory -> pending.add(file)
                     file.isFile && isExcel(file.name) -> result.add(file)
@@ -212,7 +211,7 @@ class ManifestExcelImporter(private val context: Context) {
         if (header.rowIndex + 1 > sheet.lastRowNum) return result
 
         for (r in (header.rowIndex + 1)..sheet.lastRowNum) {
-            currentCoroutineContext().ensureActive()
+
             val row = sheet.getRow(r) ?: continue
             if (!isCargoDataRow(row, header, evaluator)) continue
 
