@@ -66,7 +66,7 @@ fun StowingInputScreen(
     val context = LocalContext.current
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
-    val kgFocusRequester = remember { FocusRequester() }
+    val weightFocusRequester = remember { FocusRequester() }
 
     var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
     var showScanResultDialog by remember { mutableStateOf(false) }
@@ -529,9 +529,7 @@ fun StowingInputScreen(
                                 ),
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPag) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                modifier = Modifier
-                                    .menuAnchor()
-                                    .fillMaxWidth()
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
                             )
                             ExposedDropdownMenu(
                                 expanded = viewModel.expandedPag,
@@ -554,7 +552,6 @@ fun StowingInputScreen(
                             onValueChange = { viewModel.updateNoPag(it) },
                             label = { Text("NO PAG") },
                             placeholder = { Text("001 MYI") },
-                            prefix = { Text("PAG") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
@@ -566,8 +563,7 @@ fun StowingInputScreen(
                                     customerFocusRequester.requestFocus()
                                 }
                             ),
-                            modifier = Modifier
-                                .weight(1f)
+                            modifier = Modifier.weight(1f)
                         )
                     }
 
@@ -665,8 +661,7 @@ fun StowingInputScreen(
                             keyboardActions = KeyboardActions(
                                 onNext = {
                                     viewModel.commitPti()
-                                    viewModel.updateExpandedPti(false)
-                                    kgFocusRequester.requestFocus()
+                                    weightFocusRequester.requestFocus()
                                 }
                             ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPti) },
@@ -713,7 +708,7 @@ fun StowingInputScreen(
                         }),
                         modifier = Modifier
                             .weight(1f)
-                            .focusRequester(kgFocusRequester)
+                            .focusRequester(weightFocusRequester)
                     )
 
                     Button(

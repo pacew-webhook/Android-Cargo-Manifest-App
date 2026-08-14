@@ -57,11 +57,11 @@ class StowingViewModel : ViewModel() {
     // Kode disimpan dengan format standar, tetapi saat mengetik prefix tidak
     // ditambahkan ke state pada setiap karakter. Prefix ditampilkan oleh UI.
     private fun stripPagPrefix(value: String): String {
-        var result = value.trim()
-        while (result.startsWith("PAG", ignoreCase = true)) {
-            result = result.substring(3).trim()
-        }
-        return result
+        // Hanya buang prefix "PAG" jika memang ada di awal.
+        // Jangan trim seluruh nilai karena spasi adalah bagian dari input PAG,
+        // misalnya: "001 MYI". Dengan trim() di setiap ketikan, spasi setelah
+        // "001" akan langsung hilang dan keyboard akan menghasilkan "001MYI".
+        return value.replaceFirst(Regex("^\\s*PAG\\s+", RegexOption.IGNORE_CASE), "")
     }
 
     private fun normalizePag(value: String): String {
