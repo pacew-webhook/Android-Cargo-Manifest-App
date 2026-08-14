@@ -56,41 +56,51 @@ class StowingViewModel : ViewModel() {
 
     // --- DERIVED STATES ---
     val existingPags: List<String>
-        get() = cargoList.map { it.noPag }.filter { it.isNotBlank() }.distinct()
-
-    val existingCustomers: List<String>
-        get() = cargoList.map { it.customer.trim() }
+        get() = cargoList.asSequence()
+            .map { it.noPag.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .sorted()
+            .toList()
 
-    val customerDescriptions: List<String>
+    val existingCustomers: List<String>
         get() = cargoList.asSequence()
-            .filter { it.customer.equals(customer.trim(), ignoreCase = true) }
+            .map { it.customer.trim() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .toList()
+
+    fun descriptionsForCustomer(customerValue: String = customer): List<String> {
+        val key = customerValue.trim().uppercase()
+        if (key.isBlank()) return emptyList()
+        return cargoList.asSequence()
+            .filter { it.customer.trim().equals(key, ignoreCase = true) }
             .map { it.description.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .sorted()
+            .toList()
+    }
 
-    /**
-     * PTI yang pernah digunakan oleh customer yang sedang dipilih.
-     */
-    val customerPtis: List<String>
-        get() = cargoList.asSequence()
-            .filter { it.customer.equals(customer.trim(), ignoreCase = true) }
+    fun ptisForCustomer(customerValue: String = customer): List<String> {
+        val key = customerValue.trim().uppercase()
+        if (key.isBlank()) return emptyList()
+        return cargoList.asSequence()
+            .filter { it.customer.trim().equals(key, ignoreCase = true) }
             .map { it.pti.trim() }
             .filter { it.isNotBlank() }
             .distinct()
-            .sorted()
+            .toList()
+    }
 
-    /**
-     * PTI yang sudah dimiliki customer lain. PTI bersifat unik antar customer.
-     */
-    val ptisUsedByOtherCustomers: Map<String, String>
-        get() = cargoList.asSequence()
-            .filter { it.pti.isNotBlank() && it.customer.isNotBlank() }
-            .filter { !it.customer.equals(customer.trim(), ignoreCase = true) }
-            .associate { it.pti.trim().uppercase() to it.customer.trim() }
+    fun availablePtisForCustomer(customerValue: String = customer): List<String> {
+        val key = customerValue.trim().uppercase()
+        return cargoList.asSequence()
+            .map { it.pti.trim() to it.customer.trim() }
+            .filter { it.first.isNotBlank() }
+            .filter { it.second.isBlank() || it.second.equals(key, ignoreCase = true) }
+            .map { it.first }
+            .distinct()
+            .toList()
+    }
 
     val currentActiveEntries: List<Double>
         get() = currentKgEntries.filterNotNull()
@@ -102,53 +112,20 @@ class StowingViewModel : ViewModel() {
     fun updateNoPag(value: String) { noPag = value.uppercase() }
     fun updateCustomer(value: String) {
         customer = value.uppercase()
-        val exactCustomer = existingCustomers.firstOrNull { it.equals(customer.trim(), ignoreCase = true) }
-        if (exactCustomer != null) {
-            val descriptions = customerDescriptions
-            val ptis = customerPtis
-            if (descriptions.size == 1) description = descriptions.first()
-            if (ptis.size == 1) pti = ptis.first()
-        }
+        expandedCustomer = true
+
+        val descriptions = descriptionsForCustomer(customer)
+        val customerPtis = ptisForCustomer(customer)
+        if (descriptions.size == 1) description = descriptions.first()
+        if (customerPtis.size == 1) pti = customerPtis.first()
     }
     fun updateDescription(value: String) { description = value.uppercase() }
     fun updatePti(value: String) { pti = value.uppercase() }
-    fun updateInputKg(value: String) { inputKg = value }
-    fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
     fun updateExpandedCustomer(expanded: Boolean) { expandedCustomer = expanded }
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
-
-    fun selectCustomer(value: String) {
-        customer = value.trim().uppercase()
-        // Saat customer dipilih, isi otomatis data historisnya jika hanya ada satu pilihan.
-        val descriptions = customerDescriptions
-        val ptis = customerPtis
-        if (descriptions.size == 1) description = descriptions.first()
-        if (ptis.size == 1) pti = ptis.first()
-        expandedCustomer = false
-        expandedDescription = false
-        expandedPti = false
-    }
-
-    fun selectDescription(value: String) {
-        description = value.trim().uppercase()
-        expandedDescription = false
-    }
-
-    fun selectPti(value: String) {
-        pti = value.trim().uppercase()
-        expandedPti = false
-    }
-
-    fun isPtiAvailableForCurrentCustomer(value: String): Boolean {
-        val normalized = value.trim().uppercase()
-        if (normalized.isBlank()) return true
-        return ptisUsedByOtherCustomers.keys.none { it == normalized }
-    }
-
-    fun customerUsingPti(value: String): String? {
-        return ptisUsedByOtherCustomers[value.trim().uppercase()]
-    }
+    fun updateInputKg(value: String) { inputKg = value }
+    fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
 
     // --- LOCAL STORAGE ---
     fun saveCargoListToPrefs(context: Context) {
@@ -240,12 +217,17 @@ class StowingViewModel : ViewModel() {
             return
         }
 
-        // PTI bersifat unik antar customer. Customer yang berbeda tidak boleh
-        // menggunakan PTI yang sudah pernah terikat pada customer lain.
-        if (pti.isNotBlank()) {
-            val owner = customerUsingPti(pti)
-            if (owner != null) {
-                onError("PTI ${pti.trim().uppercase()} sudah digunakan oleh customer $owner")
+        val normalizedCustomer = customer.trim()
+        val normalizedPti = pti.trim()
+        if (normalizedPti.isNotBlank()) {
+            val conflict = cargoList.withIndex().any { (idx, item) ->
+                idx != editingIndex &&
+                    item.pti.trim().isNotBlank() &&
+                    item.pti.trim().equals(normalizedPti, ignoreCase = true) &&
+                    !item.customer.trim().equals(normalizedCustomer, ignoreCase = true)
+            }
+            if (conflict) {
+                onError("PTI $normalizedPti sudah digunakan Customer lain")
                 return
             }
         }
@@ -299,11 +281,11 @@ class StowingViewModel : ViewModel() {
         description = ""
         pti = ""
         inputKg = ""
+        currentKgEntries.clear()
+        editingIndex = null
         expandedCustomer = false
         expandedDescription = false
         expandedPti = false
-        currentKgEntries.clear()
-        editingIndex = null
     }
 
     /**
