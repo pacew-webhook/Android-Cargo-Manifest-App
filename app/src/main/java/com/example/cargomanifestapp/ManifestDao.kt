@@ -4,16 +4,30 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ManifestDao {
-    @Query("SELECT * FROM manifest_items ORDER BY id DESC")
+    @Query("SELECT * FROM manifest_items ORDER BY year DESC, id DESC LIMIT 300")
     fun observeAll(): Flow<List<ManifestEntity>>
 
-    @Query("SELECT * FROM manifest_items WHERE " +
-            "(:query = '' OR pti LIKE '%' || :query || '%' OR customer LIKE '%' || :query || '%' OR description LIKE '%' || :query || '%' OR no LIKE '%' || :query || '%' OR flightNo LIKE '%' || :query || '%' OR destination LIKE '%' || :query || '%' OR fromStation LIKE '%' || :query || '%') " +
-            "ORDER BY year DESC, id DESC LIMIT 300")
+    /**
+     * Search is intentionally limited and only runs when the user has entered text.
+     * Leading-wildcard LIKE is used for flexible searches across PTI/customer/item/no.
+     */
+    @Query(
+        "SELECT * FROM manifest_items WHERE " +
+            "pti LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "customer LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "description LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "no LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "flightNo LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "destination LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "fromStation LIKE '%' || :query || '%' COLLATE NOCASE OR " +
+            "manifestDate LIKE '%' || :query || '%' COLLATE NOCASE " +
+            "ORDER BY year DESC, id DESC LIMIT 100"
+    )
     suspend fun search(query: String): List<ManifestEntity>
 
     @Query("SELECT COUNT(*) FROM manifest_items")
@@ -36,6 +50,13 @@ interface ManifestDao {
 
     @Query("DELETE FROM manifest_files WHERE sourceKey = :sourceKey")
     suspend fun deleteFile(sourceKey: String)
+
+    @Transaction
+    suspend fun replaceFileData(sourceKey: String, file: ManifestFileEntity, items: List<ManifestEntity>) {
+        deleteItemsForSource(sourceKey)
+        if (items.isNotEmpty()) insertAll(items)
+        upsertFile(file)
+    }
 
     @Query("DELETE FROM manifest_items")
     suspend fun clearItems()

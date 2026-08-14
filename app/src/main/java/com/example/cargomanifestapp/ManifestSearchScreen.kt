@@ -29,6 +29,7 @@ fun ManifestSearchScreen(
     val totalRows by viewModel.totalRows.collectAsState()
     val fileCount by viewModel.fileCount.collectAsState()
     val busy by viewModel.busy.collectAsState()
+    val progress by viewModel.progress.collectAsState()
     val message by viewModel.message.collectAsState()
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -81,7 +82,7 @@ fun ManifestSearchScreen(
             ) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (busy) "Sedang membaca..." else "Pilih Folder Manifest")
+                Text(if (busy) "Sedang membaca... ($progress file)" else "Pilih Folder Manifest")
             }
 
             Spacer(Modifier.height(8.dp))
@@ -106,6 +107,11 @@ fun ManifestSearchScreen(
                 placeholder = { Text("Contoh: KAL004392 atau IKAN SEGAR") }
             )
 
+            if (busy) {
+                Spacer(Modifier.height(8.dp))
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+
             if (message.isNotBlank()) {
                 Spacer(Modifier.height(8.dp))
                 Text(message, style = MaterialTheme.typography.bodySmall)
@@ -113,7 +119,9 @@ fun ManifestSearchScreen(
 
             Spacer(Modifier.height(10.dp))
 
-            if (results.isEmpty()) {
+            if (query.isBlank()) {
+                Text("Masukkan PTI, customer, barang, atau nomor untuk mencari.", modifier = Modifier.padding(8.dp))
+            } else if (results.isEmpty()) {
                 Text("Tidak ada data ditemukan.", modifier = Modifier.padding(8.dp))
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
