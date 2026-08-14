@@ -182,7 +182,15 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
             }
 
             val sql = "SELECT * FROM manifest_items WHERE ${whereParts.joinToString(" AND ")} " +
-                "ORDER BY year DESC, manifestDate DESC, id DESC LIMIT 50"
+                "ORDER BY
+                CASE
+                    WHEN length(manifestDate) >= 10
+                    THEN substr(manifestDate, 7, 4) || substr(manifestDate, 4, 2) || substr(manifestDate, 1, 2)
+                    ELSE ''
+                END DESC,
+                year DESC,
+                id DESC
+                LIMIT 50"
 
             _results.value = dao.searchDynamic(SimpleSQLiteQuery(sql, args.toTypedArray()))
         } catch (e: CancellationException) {
