@@ -181,16 +181,20 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
                 columns.forEach { args += "%$token%" }
             }
 
-            val sql = "SELECT * FROM manifest_items WHERE ${whereParts.joinToString(" AND ")} " +
-                "ORDER BY
-                CASE
-                    WHEN length(manifestDate) >= 10
-                    THEN substr(manifestDate, 7, 4) || substr(manifestDate, 4, 2) || substr(manifestDate, 1, 2)
-                    ELSE ''
-                END DESC,
-                year DESC,
-                id DESC
-                LIMIT 50"
+            val sql = """
+                SELECT *
+                FROM manifest_items
+                WHERE ${whereParts.joinToString(" AND ")}
+                ORDER BY
+                    CASE
+                        WHEN length(manifestDate) >= 10
+                        THEN substr(manifestDate, 7, 4) || substr(manifestDate, 4, 2) || substr(manifestDate, 1, 2)
+                        ELSE ''
+                    END DESC,
+                    year DESC,
+                    id DESC
+                LIMIT 50
+            """.trimIndent()
 
             _results.value = dao.searchDynamic(SimpleSQLiteQuery(sql, args.toTypedArray()))
         } catch (e: CancellationException) {

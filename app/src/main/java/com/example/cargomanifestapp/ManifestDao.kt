@@ -11,15 +11,20 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface ManifestDao {
-    @Query("SELECT * FROM manifest_items ORDER BY
-        CASE
-            WHEN length(manifestDate) >= 10
-            THEN substr(manifestDate, 7, 4) || substr(manifestDate, 4, 2) || substr(manifestDate, 1, 2)
-            ELSE ''
-        END DESC,
-        year DESC,
-        id DESC
-        LIMIT 300")
+    @Query(
+        """
+        SELECT * FROM manifest_items
+        ORDER BY
+            CASE
+                WHEN length(manifestDate) >= 10
+                THEN substr(manifestDate, 7, 4) || substr(manifestDate, 4, 2) || substr(manifestDate, 1, 2)
+                ELSE ''
+            END DESC,
+            year DESC,
+            id DESC
+        LIMIT 300
+        """
+    )
     fun observeAll(): Flow<List<ManifestEntity>>
 
     /**
