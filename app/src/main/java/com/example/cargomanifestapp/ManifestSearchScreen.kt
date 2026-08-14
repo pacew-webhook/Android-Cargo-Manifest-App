@@ -90,7 +90,7 @@ fun ManifestSearchScreen(
             ) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (busy) "Sinkronisasi... ($progress file)" else "Pilih Folder Manifest")
+                Text(if (busy) "Sedang membaca... ($progress file)" else "Pilih Folder Manifest")
             }
 
             Spacer(Modifier.height(8.dp))

@@ -8,7 +8,6 @@ data class ManifestFileEntity(
     @PrimaryKey val sourceKey: String,
     val sourceName: String,
     val lastModified: Long,
-    val fileSize: Long,
     val rowCount: Int,
     val importedAt: Long
 )

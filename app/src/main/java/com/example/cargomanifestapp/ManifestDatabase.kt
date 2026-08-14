@@ -4,12 +4,10 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
-import androidx.room.migration.Migration
-import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [ManifestEntity::class, ManifestFileEntity::class],
-    version = 2,
+    version = 1,
     exportSchema = false
 )
 abstract class ManifestDatabase : RoomDatabase() {
@@ -17,14 +15,6 @@ abstract class ManifestDatabase : RoomDatabase() {
 
     companion object {
         @Volatile private var INSTANCE: ManifestDatabase? = null
-
-        private val MIGRATION_1_2 = object : Migration(1, 2) {
-            override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL(
-                    "ALTER TABLE manifest_files ADD COLUMN fileSize INTEGER NOT NULL DEFAULT 0"
-                )
-            }
-        }
 
         fun getDatabase(context: Context): ManifestDatabase =
             INSTANCE ?: synchronized(this) {
@@ -34,7 +24,6 @@ abstract class ManifestDatabase : RoomDatabase() {
                     "manifest_search_database"
                 )
                     .setJournalMode(RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-                    .addMigrations(MIGRATION_1_2)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
