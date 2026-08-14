@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -72,6 +73,7 @@ fun StowingInputScreen(
     var scanRawText by remember { mutableStateOf("") }
     var scanRowsText by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
+    var stowingSearchQuery by remember { mutableStateOf("") }
 
     suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
         try {
@@ -181,6 +183,29 @@ fun StowingInputScreen(
         viewModel.cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
         }.groupBy { it.second.noPag }
+    }
+
+    // Pencarian khusus daftar Stowing Group. Hanya memfilter tampilan.
+    val filteredGroupedCargo = remember(groupedCargo, stowingSearchQuery) {
+        val query = stowingSearchQuery.trim()
+        if (query.isBlank()) {
+            groupedCargo
+        } else {
+            groupedCargo.mapNotNull { (pag, entries) ->
+                val filteredEntries = entries.filter { (_, item) ->
+                    item.noPag.contains(query, ignoreCase = true) ||
+                        item.customer.contains(query, ignoreCase = true) ||
+                        item.description.contains(query, ignoreCase = true) ||
+                        item.pti.contains(query, ignoreCase = true) ||
+                        item.weight.contains(query, ignoreCase = true)
+                }
+                when {
+                    pag.contains(query, ignoreCase = true) -> pag to entries
+                    filteredEntries.isNotEmpty() -> pag to filteredEntries
+                    else -> null
+                }
+            }.toMap()
+        }
     }
 
     val customerSuggestions = remember(viewModel.cargoList.toList(), viewModel.customer) {
@@ -815,12 +840,21 @@ fun StowingInputScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = Color(0xFF381E72)
-            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = Color(0xFF381E72)
+                )
+                if (stowingSearchQuery.isNotBlank()) {
+                    Text(
+                        text = "Ditemukan ${filteredGroupedCargo.size} PAG",
+                        fontSize = 11.sp,
+                        color = Color.Gray
+                    )
+                }
+            }
 
             if (viewModel.cargoList.isNotEmpty()) {
                 Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
@@ -835,13 +869,34 @@ fun StowingInputScreen(
             }
         }
 
+        OutlinedTextField(
+            value = stowingSearchQuery,
+            onValueChange = { stowingSearchQuery = it },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Cari Stowing") },
+            label = { Text("Cari data Stowing") },
+            placeholder = { Text("PAG / Customer / Description / PTI") },
+            trailingIcon = {
+                if (stowingSearchQuery.isNotBlank()) {
+                    TextButton(onClick = { stowingSearchQuery = "" }) {
+                        Text("Hapus")
+                    }
+                }
+            },
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedBorderColor = Color(0xFF381E72),
+                unfocusedBorderColor = Color.LightGray
+            )
+        )
+
         Spacer(modifier = Modifier.height(6.dp))
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(groupedCargo.entries.toList()) { group ->
+            items(filteredGroupedCargo.entries.toList()) { group ->
                 val pagKey = group.key
                 val itemsInGroup = group.value
 
@@ -888,6 +943,14 @@ fun StowingInputScreen(
                                         color = Color(0xFF381E72)
                                     )
                                     Text(text = "KG: ${item.weight}", fontSize = 11.sp, color = Color.DarkGray)
+                                    if (item.pti.isNotBlank()) {
+                                        Text(
+                                            text = "PTI: ${item.pti}",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF5E35B1),
+                                            fontWeight = FontWeight.SemiBold
+                                        )
+                                    }
                                 }
 
                                 Row {
