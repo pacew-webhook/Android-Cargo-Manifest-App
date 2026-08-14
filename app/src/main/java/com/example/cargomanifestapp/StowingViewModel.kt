@@ -54,10 +54,34 @@ class StowingViewModel : ViewModel() {
     var kgIndexToDelete by mutableStateOf<Int?>(null)
         private set
 
+    // Normalisasi kode agar input selalu memakai awalan standar.
+    // PAG: 001 MYI -> PAG 001 MYI
+    // PTI: 001 -> KAL001
+    private fun normalizePag(value: String): String {
+        val raw = value.trim()
+        if (raw.isBlank()) return ""
+        return if (raw.startsWith("PAG", ignoreCase = true)) {
+            val rest = raw.substring(3).trim()
+            if (rest.isBlank()) "PAG" else "PAG $rest"
+        } else {
+            "PAG $raw"
+        }
+    }
+
+    private fun normalizePti(value: String): String {
+        val raw = value.trim()
+        if (raw.isBlank()) return ""
+        return if (raw.startsWith("KAL", ignoreCase = true)) {
+            "KAL${raw.substring(3).trim()}"
+        } else {
+            "KAL$raw"
+        }
+    }
+
     // --- DERIVED STATES ---
     val existingPags: List<String>
         get() = cargoList.asSequence()
-            .map { it.noPag.trim() }
+            .map { normalizePag(it.noPag) }
             .filter { it.isNotBlank() }
             .distinct()
             .toList()
@@ -85,7 +109,7 @@ class StowingViewModel : ViewModel() {
         if (key.isBlank()) return emptyList()
         return cargoList.asSequence()
             .filter { it.customer.trim().equals(key, ignoreCase = true) }
-            .map { it.pti.trim() }
+            .map { normalizePti(it.pti) }
             .filter { it.isNotBlank() }
             .distinct()
             .toList()
@@ -94,7 +118,7 @@ class StowingViewModel : ViewModel() {
     fun availablePtisForCustomer(customerValue: String = customer): List<String> {
         val key = customerValue.trim().uppercase()
         return cargoList.asSequence()
-            .map { it.pti.trim() to it.customer.trim() }
+            .map { normalizePti(it.pti) to it.customer.trim() }
             .filter { it.first.isNotBlank() }
             .filter { it.second.isBlank() || it.second.equals(key, ignoreCase = true) }
             .map { it.first }
@@ -109,7 +133,7 @@ class StowingViewModel : ViewModel() {
         get() = currentActiveEntries.sum()
 
     // --- SETTER UNTUK INPUT UI ---
-    fun updateNoPag(value: String) { noPag = value.uppercase() }
+    fun updateNoPag(value: String) { noPag = normalizePag(value) }
     fun updateCustomer(value: String) {
         customer = value.uppercase()
         expandedCustomer = true
@@ -120,7 +144,7 @@ class StowingViewModel : ViewModel() {
         if (customerPtis.size == 1) pti = customerPtis.first()
     }
     fun updateDescription(value: String) { description = value.uppercase() }
-    fun updatePti(value: String) { pti = value.uppercase() }
+    fun updatePti(value: String) { pti = normalizePti(value) }
     fun updateExpandedCustomer(expanded: Boolean) { expandedCustomer = expanded }
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
@@ -156,10 +180,10 @@ class StowingViewModel : ViewModel() {
                 val obj = jsonArray.getJSONObject(i)
                 list.add(
                     CargoItem(
-                        noPag = obj.optString("noPag"),
+                        noPag = normalizePag(obj.optString("noPag")),
                         customer = obj.optString("customer"),
                         description = obj.optString("description"),
-                        pti = obj.optString("pti"),
+                        pti = normalizePti(obj.optString("pti")),
                         pcsQty = obj.optString("pcsQty"),
                         weight = obj.optString("weight"),
                         subTotal = obj.optString("subTotal")
@@ -218,12 +242,12 @@ class StowingViewModel : ViewModel() {
         }
 
         val normalizedCustomer = customer.trim()
-        val normalizedPti = pti.trim()
+        val normalizedPti = normalizePti(pti)
         if (normalizedPti.isNotBlank()) {
             val conflict = cargoList.withIndex().any { (idx, item) ->
                 idx != editingIndex &&
-                    item.pti.trim().isNotBlank() &&
-                    item.pti.trim().equals(normalizedPti, ignoreCase = true) &&
+                    normalizePti(item.pti).isNotBlank() &&
+                    normalizePti(item.pti).equals(normalizedPti, ignoreCase = true) &&
                     !item.customer.trim().equals(normalizedCustomer, ignoreCase = true)
             }
             if (conflict) {
@@ -238,10 +262,10 @@ class StowingViewModel : ViewModel() {
         val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) currentTotalKg.toInt().toString() else currentTotalKg.toString()
 
         val newItem = CargoItem(
-            noPag = noPag.trim(),
+            noPag = normalizePag(noPag),
             customer = customer.trim(),
             description = description.trim(),
-            pti = pti.trim(),
+            pti = normalizePti(pti),
             pcsQty = currentActiveEntries.size.toString(),
             weight = formattedWeightList,
             subTotal = formattedTotalKg
@@ -261,10 +285,10 @@ class StowingViewModel : ViewModel() {
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
         editingIndex = indexInOriginalList
-        noPag = item.noPag
+        noPag = normalizePag(item.noPag)
         customer = item.customer
         description = item.description
-        pti = item.pti
+        pti = normalizePti(item.pti)
         inputKg = ""
         currentKgEntries.clear()
         currentKgEntries.addAll(item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() })

@@ -511,7 +511,7 @@ fun StowingInputScreen(
                                 value = viewModel.noPag,
                                 onValueChange = { viewModel.updateNoPag(it) },
                                 label = { Text("NO PAG") },
-                                placeholder = { Text("Pilih / Ketik PAG") },
+                                placeholder = { Text("PAG 001 MYI") },
                                 singleLine = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPag) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
@@ -631,7 +631,7 @@ fun StowingInputScreen(
                             value = viewModel.pti,
                             onValueChange = { viewModel.updatePti(it) },
                             label = { Text("PTI (opsional)") },
-                            placeholder = { Text("KAL004391") },
+                            placeholder = { Text("KAL001") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
