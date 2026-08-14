@@ -64,6 +64,13 @@ class StowingViewModel : ViewModel() {
         return result
     }
 
+    // NO PAG adalah input bebas. Prefix PAG hanya boleh dibersihkan jika
+    // memang ikut masuk ke field, tetapi jangan trim() seluruh isi saat user
+    // masih mengetik karena Space adalah bagian dari input yang valid.
+    private fun stripPagPrefixWhileTyping(value: String): String {
+        return value.replaceFirst(Regex("^\\s*PAG(?:\\s+)?", RegexOption.IGNORE_CASE), "")
+    }
+
     private fun normalizePag(value: String): String {
         val raw = stripPagPrefix(value)
         return if (raw.isBlank()) "" else "PAG $raw"
@@ -85,7 +92,9 @@ class StowingViewModel : ViewModel() {
     // --- DERIVED STATES ---
     val existingPags: List<String>
         get() = cargoList.asSequence()
-            .map { normalizePag(it.noPag) }
+            // Dropdown juga harus menampilkan nilai yang bisa langsung diedit,
+            // bukan nilai penyimpanan yang memiliki prefix "PAG ".
+            .map { stripPagPrefix(it.noPag) }
             .filter { it.isNotBlank() }
             .distinct()
             .toList()
@@ -137,7 +146,15 @@ class StowingViewModel : ViewModel() {
         get() = currentActiveEntries.sum()
 
     // --- SETTER UNTUK INPUT UI ---
-    fun updateNoPag(value: String) { noPag = stripPagPrefix(value).uppercase() }
+    // Saat mengetik, pertahankan spasi yang diketik user (mis. "001 MYI").
+    // Prefix PAG hanya dibersihkan jika memang diketik/dipilih, dan trimming
+    // dilakukan saat commit, bukan setiap karakter.
+    fun updateNoPag(value: String) {
+        // Jangan trim() di sini. Contoh: "001" -> Space -> "001 MYI"
+        // harus tetap mempertahankan Space yang baru diketik.
+        val result = stripPagPrefixWhileTyping(value)
+        noPag = result.uppercase()
+    }
     fun commitNoPag() { noPag = stripPagPrefix(noPag).uppercase() }
     fun updateCustomer(value: String) {
         customer = value.uppercase()

@@ -525,7 +525,6 @@ fun StowingInputScreen(
                                 onValueChange = { viewModel.updateNoPag(it) },
                                 label = { Text("NO PAG") },
                                 placeholder = { Text("001 MYI") },
-                                prefix = { Text("PAG") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.Characters,
@@ -563,7 +562,6 @@ fun StowingInputScreen(
                             onValueChange = { viewModel.updateNoPag(it) },
                             label = { Text("NO PAG") },
                             placeholder = { Text("001 MYI") },
-                            prefix = { Text("PAG") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
