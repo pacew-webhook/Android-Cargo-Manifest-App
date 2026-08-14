@@ -208,22 +208,45 @@ object ExcelUtils {
             }
 
         /*
-         * Stowing Checklist: satu baris untuk setiap kombinasi
-         * PAG + Customer + Description.
+         * Stowing Checklist:
+         * SATU BARIS untuk setiap NO PAG.
+         *
+         * CUSTOMER dan DESCRIPTION BUKAN lagi kunci grouping. Jadi semua
+         * input yang memiliki NO PAG sama akan digabung ke satu baris,
+         * walaupun customer dan/atau description berbeda.
+         *
+         * Contoh:
+         * PAG 003 MYI | ULIN | PINANG   | 750 KG
+         * PAG 003 MYI | YYN  | SAYURAN  | 250 KG
+         * PAG 003 MYI | ULIN | PINANG   | 450 KG
+         *
+         * menjadi SATU baris:
+         * PAG 003 MYI | PINANG / SAYURAN | 1450 KG | ULIN / YYN
+         *
+         * PTI juga tidak ikut menjadi kunci grouping. Semua berat untuk
+         * NO PAG tersebut dijumlahkan menjadi NET satu baris.
          */
         val groupedStowing = cargoList
             .filter { it.noPag.isNotBlank() }
-            .groupBy {
-                "${normalize(it.noPag)}|" +
-                    "${normalize(it.customer)}|" +
-                    normalize(it.description)
-            }
+            .groupBy { normalize(it.noPag) }
             .map { (_, items) ->
                 val totalNet = items.sumOf {
                     it.subTotal.toDoubleOrNull() ?: 0.0
                 }
 
+                val customers = items
+                    .map { it.customer.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+
+                val descriptions = items
+                    .map { it.description.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+
                 items.first().copy(
+                    customer = customers.joinToString(" / "),
+                    description = descriptions.joinToString(" / "),
                     subTotal = formatNumber(totalNet)
                 )
             }
