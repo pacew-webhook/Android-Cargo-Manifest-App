@@ -15,10 +15,7 @@ import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.ss.usermodel.WorkbookFactory
-import java.io.BufferedReader
-import java.io.InputStreamReader
 import java.util.Locale
-import java.util.zip.ZipInputStream
 
 /**
  * Safe, sequential Manifest indexer.
@@ -108,12 +105,16 @@ class ManifestExcelImporter(private val context: Context) {
     }
 
     /**
-     * Returns only likely Manifest workbooks.
+     * Collect Excel files without opening every workbook first.
      *
-     * For xlsx/xlsm we can inspect xl/workbook.xml without creating an Apache POI
-     * Workbook. This is much cheaper than opening every AWB workbook.
-     * For old .xls we cannot do the lightweight ZIP check, so the filename is used
-     * as a conservative candidate filter.
+     * The previous implementation opened xl/workbook.xml for every XLSX/XLSM
+     * during the discovery phase. On large Android folders this caused a long
+     * Binder/Storage Access Framework I/O burst while the UI still showed
+     * "0 file", and was a major source of instability.
+     *
+     * We now use filename filtering only for obvious non-Manifest workbooks
+     * (AWB). A remaining unknown Excel file is safely opened once by importFile()
+     * and rejected if it has no Manifest sheet/header.
      */
     private suspend fun collectManifestCandidates(root: DocumentFile): List<DocumentFile> {
         val coroutineContext = currentCoroutineContext()
@@ -136,8 +137,8 @@ class ManifestExcelImporter(private val context: Context) {
 
                 when {
                     file.isDirectory -> pending.add(file)
-                    file.isFile && isExcel(file.name) -> {
-                        if (isManifestCandidate(file)) result += file
+                    file.isFile && isExcel(file.name) && isLikelyManifestFile(file.name) -> {
+                        result += file
                     }
                 }
             }
@@ -146,42 +147,28 @@ class ManifestExcelImporter(private val context: Context) {
         return result.sortedBy { it.name?.lowercase(Locale.US).orEmpty() }
     }
 
-    private suspend fun isManifestCandidate(file: DocumentFile): Boolean {
-        val coroutineContext = currentCoroutineContext()
-        val name = file.name.orEmpty()
-        val lower = name.lowercase(Locale.US)
+    private fun isLikelyManifestFile(name: String?): Boolean {
+        val lower = name?.lowercase(Locale.US).orEmpty()
+        if (lower.isBlank()) return false
 
-        // Normal operational files already use MANIFEST/MANIFES in their names.
-        // This also avoids opening common AWB files such as "AWB KAL.xlsx".
+        // Explicitly ignore common AWB-only workbooks.
+        if (lower.startsWith("awb ") || lower.startsWith("awb-") || lower.startsWith("awb_")) {
+            return false
+        }
+        if (lower == "awb.xlsx" || lower == "awb.xls" || lower == "awb.xlsm") {
+            return false
+        }
+
+        // Normal Manifest naming.
         if (lower.contains("manifest") || lower.contains("manifes")) return true
 
-        // XLS cannot be inspected as a ZIP. Keep unknown XLS files as candidates.
-        if (lower.endsWith(".xls")) return true
+        // Keep legacy operational files that contain LES in their filename.
+        // They are still validated by importFile() before being inserted.
+        if (Regex("\\bles\\b").containsMatchIn(lower)) return true
 
-        // XLSX/XLSM: inspect workbook.xml only. No POI Workbook is created here.
-        return try {
-            context.contentResolver.openInputStream(file.uri)?.use { input ->
-                ZipInputStream(input.buffered()).use { zip ->
-                    while (true) {
-                        coroutineContext.ensureActive()
-                        val entry = zip.nextEntry ?: break
-                        if (entry.name == "xl/workbook.xml") {
-                            val text = BufferedReader(
-                                InputStreamReader(zip, Charsets.UTF_8)
-                            ).use { it.readText() }
-                            return text.lowercase(Locale.US).contains("manifest")
-                        }
-                    }
-                    false
-                }
-            } ?: false
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            // If the lightweight inspection fails, do not risk opening an unknown
-            // workbook with POI. The next sync can retry it if the file changes.
-            false
-        }
+        // Unknown Excel files are allowed through so the workbook/header parser
+        // can decide. This avoids silently losing valid manifests with unusual names.
+        return true
     }
 
     private suspend fun importFile(file: DocumentFile): FileResult {
