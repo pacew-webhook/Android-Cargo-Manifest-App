@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.CellType
@@ -38,6 +39,8 @@ class ManifestExcelImporter(private val context: Context) {
         treeUri: Uri,
         onProgress: (suspend (filesDone: Int, filesTotal: Int, rowsImported: Int) -> Unit)? = null
     ): ScanResult = withContext(Dispatchers.IO) {
+        val coroutineContext = currentCoroutineContext()
+
         val root = DocumentFile.fromTreeUri(context, treeUri)
             ?: error("Folder Manifest tidak dapat dibuka")
 
@@ -113,6 +116,7 @@ class ManifestExcelImporter(private val context: Context) {
      * as a conservative candidate filter.
      */
     private suspend fun collectManifestCandidates(root: DocumentFile): List<DocumentFile> {
+        val coroutineContext = currentCoroutineContext()
         val result = ArrayList<DocumentFile>()
         val pending = ArrayDeque<DocumentFile>()
         pending.add(root)
@@ -143,6 +147,7 @@ class ManifestExcelImporter(private val context: Context) {
     }
 
     private suspend fun isManifestCandidate(file: DocumentFile): Boolean {
+        val coroutineContext = currentCoroutineContext()
         val name = file.name.orEmpty()
         val lower = name.lowercase(Locale.US)
 
@@ -180,6 +185,7 @@ class ManifestExcelImporter(private val context: Context) {
     }
 
     private suspend fun importFile(file: DocumentFile): FileResult {
+        val coroutineContext = currentCoroutineContext()
         coroutineContext.ensureActive()
 
         val sourceKey = file.uri.toString()
@@ -204,8 +210,6 @@ class ManifestExcelImporter(private val context: Context) {
         val parsed = context.contentResolver.openInputStream(file.uri)?.use { stream ->
             coroutineContext.ensureActive()
             WorkbookFactory.create(stream).use { workbook ->
-                coroutineContext.ensureActive()
-
                 val sheet = workbook.getSheet("Manifest")
                     ?: findManifestSheet(workbook)
                     ?: return@use null
