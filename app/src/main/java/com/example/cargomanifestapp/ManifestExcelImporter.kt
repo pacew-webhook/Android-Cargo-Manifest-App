@@ -23,15 +23,17 @@ class ManifestExcelImporter(private val context: Context) {
         var rows = 0
         val errors = mutableListOf<String>()
 
-        fun walk(dir: DocumentFile) {
-            dir.listFiles().forEach { file ->
+        suspend fun walk(dir: DocumentFile) {
+            for (file in dir.listFiles()) {
                 if (file.isDirectory) {
                     walk(file)
                 } else if (file.isFile && isExcel(file.name)) {
                     files++
                     try {
                         val result = importFile(file)
-                        if (result.skipped) skipped++ else {
+                        if (result.skipped) {
+                            skipped++
+                        } else {
                             imported++
                             rows += result.rows
                         }
