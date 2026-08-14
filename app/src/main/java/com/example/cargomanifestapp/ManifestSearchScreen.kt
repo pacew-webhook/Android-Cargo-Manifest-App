@@ -48,8 +48,10 @@ fun ManifestSearchScreen(
     }
 
     LaunchedEffect(Unit) {
+        // Opening the screen must be instant. Existing Room data is loaded here,
+        // but the whole folder is NOT scanned again automatically. This prevents
+        // a 500+ Excel folder from being reopened every time the screen is shown.
         viewModel.load()
-        viewModel.scanSavedFolder()
     }
 
     Scaffold(
@@ -88,7 +90,7 @@ fun ManifestSearchScreen(
             ) {
                 Icon(Icons.Default.FolderOpen, contentDescription = null)
                 Spacer(Modifier.width(8.dp))
-                Text(if (busy) "Sedang membaca... ($progress file)" else "Pilih Folder Manifest")
+                Text(if (busy) "Sedang membaca... ($progress file)" else "Pilih / Sinkronkan Folder Manifest")
             }
 
             Spacer(Modifier.height(8.dp))
@@ -118,7 +120,7 @@ fun ManifestSearchScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Data yang sudah masuk database tetap bisa dicari selama sinkronisasi.",
+                    "Data yang sudah masuk database tetap bisa dicari selama sinkronisasi. File AWB/non-Manifest akan dilewati.",
                     style = MaterialTheme.typography.bodySmall
                 )
             }
