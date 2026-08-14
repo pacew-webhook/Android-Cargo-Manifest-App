@@ -66,7 +66,16 @@ fun StowingInputScreen(
     val context = LocalContext.current
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
-    val weightFocusRequester = remember { FocusRequester() }
+    val descriptionFocusRequester = remember { FocusRequester() }
+    val ptiFocusRequester = remember { FocusRequester() }
+    val kgFocusRequester = remember { FocusRequester() }
+
+    fun closeAllDropdowns() {
+        viewModel.updateExpandedPag(false)
+        viewModel.updateExpandedCustomer(false)
+        viewModel.updateExpandedDescription(false)
+        viewModel.updateExpandedPti(false)
+    }
 
     var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
     var showScanResultDialog by remember { mutableStateOf(false) }
@@ -516,6 +525,7 @@ fun StowingInputScreen(
                                 onValueChange = { viewModel.updateNoPag(it) },
                                 label = { Text("NO PAG") },
                                 placeholder = { Text("001 MYI") },
+                                prefix = { Text("PAG") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(
                                     capitalization = KeyboardCapitalization.Characters,
@@ -524,6 +534,7 @@ fun StowingInputScreen(
                                 keyboardActions = KeyboardActions(
                                     onNext = {
                                         viewModel.commitNoPag()
+                                        closeAllDropdowns()
                                         customerFocusRequester.requestFocus()
                                     }
                                 ),
@@ -552,6 +563,7 @@ fun StowingInputScreen(
                             onValueChange = { viewModel.updateNoPag(it) },
                             label = { Text("NO PAG") },
                             placeholder = { Text("001 MYI") },
+                            prefix = { Text("PAG") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
@@ -560,6 +572,7 @@ fun StowingInputScreen(
                             keyboardActions = KeyboardActions(
                                 onNext = {
                                     viewModel.commitNoPag()
+                                    closeAllDropdowns()
                                     customerFocusRequester.requestFocus()
                                 }
                             ),
@@ -581,6 +594,12 @@ fun StowingInputScreen(
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = {
+                                    closeAllDropdowns()
+                                    descriptionFocusRequester.requestFocus()
+                                }
                             ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedCustomer) },
                             modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(customerFocusRequester)
@@ -623,8 +642,14 @@ fun StowingInputScreen(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
                             ),
+                            keyboardActions = KeyboardActions(
+                                onNext = {
+                                    closeAllDropdowns()
+                                    ptiFocusRequester.requestFocus()
+                                }
+                            ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedDescription) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(descriptionFocusRequester)
                         )
                         ExposedDropdownMenu(
                             expanded = viewModel.expandedDescription && descriptionSuggestions.isNotEmpty(),
@@ -661,11 +686,12 @@ fun StowingInputScreen(
                             keyboardActions = KeyboardActions(
                                 onNext = {
                                     viewModel.commitPti()
-                                    weightFocusRequester.requestFocus()
+                                    closeAllDropdowns()
+                                    kgFocusRequester.requestFocus()
                                 }
                             ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPti) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(ptiFocusRequester)
                         )
                         ExposedDropdownMenu(
                             expanded = viewModel.expandedPti && ptiSuggestions.isNotEmpty(),
@@ -706,9 +732,7 @@ fun StowingInputScreen(
                                 Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
                             }
                         }),
-                        modifier = Modifier
-                            .weight(1f)
-                            .focusRequester(weightFocusRequester)
+                        modifier = Modifier.weight(1f).focusRequester(kgFocusRequester)
                     )
 
                     Button(
