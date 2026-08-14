@@ -84,6 +84,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
     var editingId by remember { mutableStateOf<String?>(null) }
+    var showExportMenu by remember { mutableStateOf(false) }
 
     // Deklarasikan FocusRequester sebelum launcher karena callback launcher dapat
     // merujuknya saat hasil OCR dikembalikan.
@@ -155,6 +156,59 @@ fun BtbScreen(onBackClick: () -> Unit) {
         }
     }
 
+    if (showExportMenu) {
+        AlertDialog(
+            onDismissRequest = { showExportMenu = false },
+            title = { Text("BTB - Export / Terbitkan", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Pilih dokumen yang ingin dibuat dari BTB tersimpan.")
+
+                    Button(
+                        onClick = {
+                            showExportMenu = false
+                            if (savedBtbList.isNotEmpty()) {
+                                exportAndShareAll(savedBtbList.toList())
+                            } else {
+                                Toast.makeText(context, "Belum ada BTB tersimpan untuk diekspor.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Export Excel BTB")
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            showExportMenu = false
+                            val btb = savedBtbList.lastOrNull()
+                            if (btb != null) {
+                                context.startActivity(
+                                    Intent(context, BtbLabelActivity::class.java).apply {
+                                        putExtra(
+                                            BtbLabelActivity.EXTRA_BTB_JSON,
+                                            BtbLabelUtils.encode(btb)
+                                        )
+                                    }
+                                )
+                            } else {
+                                Toast.makeText(context, "Belum ada BTB tersimpan untuk diterbitkan.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Terbitkan / Cetak Label BTB")
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showExportMenu = false }) {
+                    Text("Batal")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -168,33 +222,8 @@ fun BtbScreen(onBackClick: () -> Unit) {
                     IconButton(onClick = { resetForm() }) {
                         Icon(Icons.Default.Delete, contentDescription = "Reset Form", tint = Color.Red)
                     }
-                    IconButton(onClick = {
-                        val activeData = BtbFormData(
-                            id = editingId ?: "ACTIVE_UNSAVED",
-                            hariTanggal = currentDateStr,
-                            customerName = customerName,
-                            trademarks = trademarks,
-                            jenisBarang = jenisBarang,
-                            daftarTimbangan = daftarTimbangan,
-                            photoUris = photoUris.map { it.toString() }
-                        )
-
-                        val exportList = if (daftarTimbangan.isNotEmpty() && customerName.isNotBlank()) {
-                            val merged = savedBtbList.toMutableList()
-                            val existingIndex = merged.indexOfFirst { it.id == activeData.id }
-                            if (existingIndex >= 0) merged[existingIndex] = activeData else merged.add(activeData)
-                            merged
-                        } else {
-                            savedBtbList.toList()
-                        }
-
-                        if (exportList.isNotEmpty()) {
-                            exportAndShareAll(exportList)
-                        } else {
-                            Toast.makeText(context, "Isi form dan tambahkan berat timbangan dulu!", Toast.LENGTH_SHORT).show()
-                        }
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "Share", tint = Color(0xFF2E7D32))
+                    IconButton(onClick = { showExportMenu = true }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export / Terbitkan", tint = Color(0xFF2E7D32))
                     }
                 }
             )
