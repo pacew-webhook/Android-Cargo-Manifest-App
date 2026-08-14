@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import androidx.sqlite.db.SimpleSQLiteQuery
 
 class ManifestSearchViewModel(application: Application) : AndroidViewModel(application) {
     private val dao = ManifestDatabase.getDatabase(application).manifestDao()
@@ -145,10 +146,45 @@ class ManifestSearchViewModel(application: Application) : AndroidViewModel(appli
             return
         }
 
-        // LIMIT is enforced in DAO so the UI never tries to compose thousands of cards.
-        // The query can safely run while the importer is inserting more rows.
+        // Search by individual words, not by the whole phrase. This means a query such as
+        // "ulin pinang" can match Customer=ULIN and Barang=PINANG in the same manifest row.
+        // Every token must match at least one searchable column, while different tokens
+        // are allowed to match different columns. Arguments are bound, so user text never
+        // becomes raw SQL.
         try {
-            _results.value = dao.search(q)
+            val tokens = q
+                .split(Regex("\\s+"))
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .take(8)
+
+            if (tokens.isEmpty()) {
+                _results.value = emptyList()
+                return
+            }
+
+            val columns = listOf(
+                "pti", "customer", "description", "no",
+                "flightNo", "destination", "fromStation", "manifestDate",
+                "pcs", "weightPerPiece", "subTotal"
+            )
+
+            val whereParts = mutableListOf<String>()
+            val args = mutableListOf<Any>()
+
+            tokens.forEach { token ->
+                val tokenColumns = columns.joinToString(" OR ") { column ->
+                    "$column LIKE ? COLLATE NOCASE"
+                }
+                whereParts += "($tokenColumns)"
+                columns.forEach { args += "%$token%" }
+            }
+
+            val sql = "SELECT * FROM manifest_items WHERE ${whereParts.joinToString(" AND ")} " +
+                "ORDER BY year DESC, manifestDate DESC, id DESC LIMIT 50"
+
+            _results.value = dao.searchDynamic(SimpleSQLiteQuery(sql, args.toTypedArray()))
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {

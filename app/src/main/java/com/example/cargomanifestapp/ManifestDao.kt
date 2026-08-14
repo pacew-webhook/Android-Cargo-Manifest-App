@@ -5,6 +5,8 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.room.RawQuery
+import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -16,19 +18,15 @@ interface ManifestDao {
      * Search is intentionally limited and only runs when the user has entered text.
      * Leading-wildcard LIKE is used for flexible searches across PTI/customer/item/no.
      */
-    @Query(
-        "SELECT * FROM manifest_items WHERE " +
-            "pti LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "customer LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "description LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "no LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "flightNo LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "destination LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "fromStation LIKE '%' || :query || '%' COLLATE NOCASE OR " +
-            "manifestDate LIKE '%' || :query || '%' COLLATE NOCASE " +
-            "ORDER BY year DESC, manifestDate DESC, id DESC LIMIT 50"
-    )
-    suspend fun search(query: String): List<ManifestEntity>
+    /**
+     * Dynamic token search. The ViewModel builds a parameterized query where EVERY
+     * word must occur in at least one searchable column.
+     *
+     * Example: "ULIN PINANG" matches a row where customer contains ULIN and
+     * description contains PINANG, even though the two words are in different columns.
+     */
+    @RawQuery
+    suspend fun searchDynamic(query: SupportSQLiteQuery): List<ManifestEntity>
 
     @Query("SELECT COUNT(*) FROM manifest_items")
     suspend fun count(): Int
