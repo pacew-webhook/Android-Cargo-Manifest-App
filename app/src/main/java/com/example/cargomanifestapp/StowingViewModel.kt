@@ -54,28 +54,32 @@ class StowingViewModel : ViewModel() {
     var kgIndexToDelete by mutableStateOf<Int?>(null)
         private set
 
-    // Normalisasi kode agar input selalu memakai awalan standar.
-    // PAG: 001 MYI -> PAG 001 MYI
-    // PTI: 001 -> KAL001
-    private fun normalizePag(value: String): String {
-        val raw = value.trim()
-        if (raw.isBlank()) return ""
-        return if (raw.startsWith("PAG", ignoreCase = true)) {
-            val rest = raw.substring(3).trim()
-            if (rest.isBlank()) "PAG" else "PAG $rest"
-        } else {
-            "PAG $raw"
+    // Kode disimpan dengan format standar, tetapi saat mengetik prefix tidak
+    // ditambahkan ke state pada setiap karakter. Prefix ditampilkan oleh UI.
+    private fun stripPagPrefix(value: String): String {
+        var result = value.trim()
+        while (result.startsWith("PAG", ignoreCase = true)) {
+            result = result.substring(3).trim()
         }
+        return result
+    }
+
+    private fun normalizePag(value: String): String {
+        val raw = stripPagPrefix(value)
+        return if (raw.isBlank()) "" else "PAG $raw"
+    }
+
+    private fun stripPtiPrefix(value: String): String {
+        var result = value.trim()
+        while (result.startsWith("KAL", ignoreCase = true)) {
+            result = result.substring(3).trim()
+        }
+        return result
     }
 
     private fun normalizePti(value: String): String {
-        val raw = value.trim()
-        if (raw.isBlank()) return ""
-        return if (raw.startsWith("KAL", ignoreCase = true)) {
-            "KAL${raw.substring(3).trim()}"
-        } else {
-            "KAL$raw"
-        }
+        val raw = stripPtiPrefix(value)
+        return if (raw.isBlank()) "" else "KAL$raw"
     }
 
     // --- DERIVED STATES ---
@@ -133,7 +137,8 @@ class StowingViewModel : ViewModel() {
         get() = currentActiveEntries.sum()
 
     // --- SETTER UNTUK INPUT UI ---
-    fun updateNoPag(value: String) { noPag = normalizePag(value) }
+    fun updateNoPag(value: String) { noPag = stripPagPrefix(value).uppercase() }
+    fun commitNoPag() { noPag = stripPagPrefix(noPag).uppercase() }
     fun updateCustomer(value: String) {
         customer = value.uppercase()
         expandedCustomer = true
@@ -141,10 +146,11 @@ class StowingViewModel : ViewModel() {
         val descriptions = descriptionsForCustomer(customer)
         val customerPtis = ptisForCustomer(customer)
         if (descriptions.size == 1) description = descriptions.first()
-        if (customerPtis.size == 1) pti = customerPtis.first()
+        if (customerPtis.size == 1) pti = stripPtiPrefix(customerPtis.first())
     }
     fun updateDescription(value: String) { description = value.uppercase() }
-    fun updatePti(value: String) { pti = normalizePti(value) }
+    fun updatePti(value: String) { pti = stripPtiPrefix(value).uppercase() }
+    fun commitPti() { pti = stripPtiPrefix(pti).uppercase() }
     fun updateExpandedCustomer(expanded: Boolean) { expandedCustomer = expanded }
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
@@ -285,10 +291,10 @@ class StowingViewModel : ViewModel() {
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
         editingIndex = indexInOriginalList
-        noPag = normalizePag(item.noPag)
+        noPag = stripPagPrefix(item.noPag)
         customer = item.customer
         description = item.description
-        pti = normalizePti(item.pti)
+        pti = stripPtiPrefix(item.pti)
         inputKg = ""
         currentKgEntries.clear()
         currentKgEntries.addAll(item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() })

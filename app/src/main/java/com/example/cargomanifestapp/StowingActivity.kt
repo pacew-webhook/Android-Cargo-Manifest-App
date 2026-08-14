@@ -30,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -63,6 +65,7 @@ fun StowingInputScreen(
 ) {
     val context = LocalContext.current
     val scanScope = rememberCoroutineScope()
+    val customerFocusRequester = remember { FocusRequester() }
 
     var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
     var showScanResultDialog by remember { mutableStateOf(false) }
@@ -511,8 +514,19 @@ fun StowingInputScreen(
                                 value = viewModel.noPag,
                                 onValueChange = { viewModel.updateNoPag(it) },
                                 label = { Text("NO PAG") },
-                                placeholder = { Text("PAG 001 MYI") },
+                                placeholder = { Text("001 MYI") },
+                                prefix = { Text("PAG") },
                                 singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    capitalization = KeyboardCapitalization.Characters,
+                                    imeAction = ImeAction.Next
+                                ),
+                                keyboardActions = KeyboardActions(
+                                    onNext = {
+                                        viewModel.commitNoPag()
+                                        customerFocusRequester.requestFocus()
+                                    }
+                                ),
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPag) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                 modifier = Modifier.menuAnchor().fillMaxWidth()
@@ -538,10 +552,17 @@ fun StowingInputScreen(
                             onValueChange = { viewModel.updateNoPag(it) },
                             label = { Text("NO PAG") },
                             placeholder = { Text("001 MYI") },
+                            prefix = { Text("PAG") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = {
+                                    viewModel.commitNoPag()
+                                    customerFocusRequester.requestFocus()
+                                }
                             ),
                             modifier = Modifier.weight(1f)
                         )
@@ -563,7 +584,7 @@ fun StowingInputScreen(
                                 imeAction = ImeAction.Next
                             ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedCustomer) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(customerFocusRequester)
                         )
                         ExposedDropdownMenu(
                             expanded = viewModel.expandedCustomer && customerSuggestions.isNotEmpty(),
@@ -631,11 +652,15 @@ fun StowingInputScreen(
                             value = viewModel.pti,
                             onValueChange = { viewModel.updatePti(it) },
                             label = { Text("PTI (opsional)") },
-                            placeholder = { Text("KAL001") },
+                            placeholder = { Text("001") },
+                            prefix = { Text("KAL") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(
                                 capitalization = KeyboardCapitalization.Characters,
                                 imeAction = ImeAction.Next
+                            ),
+                            keyboardActions = KeyboardActions(
+                                onNext = { viewModel.commitPti() }
                             ),
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPti) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
