@@ -13,6 +13,17 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 import java.io.OutputStream
 
+/**
+ * V11 FIXED REV2
+ *
+ * Perbaikan utama:
+ * 1. TOTAL Manifest dan TOTAL Stowing selalu dihitung ulang dari cargoList
+ *    yang benar-benar diekspor.
+ * 2. Nilai/formula total lama dari template dibersihkan sebelum ditulis.
+ * 3. STOWING_DATA dibangun ulang dari cargoList sebagai sumber data persis.
+ * 4. Penambahan baris otomatis tetap dipertahankan.
+ * 5. Regex normalize menggunakan "\\\\s+" agar aman di Kotlin.
+ */
 object ExcelUtils {
 
     private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
@@ -39,6 +50,7 @@ object ExcelUtils {
                 SheetVisibility.VERY_HIDDEN
             )
 
+            workbook.setForceFormulaRecalculation(true)
             saveWorkbook(context, uri, workbook)
         } finally {
             workbook.close()
@@ -78,71 +90,60 @@ object ExcelUtils {
                         names.getOrElse(index) { "PAG TEMPLATE ${index + 1}" }
 
                     val targetSheet = workbook.createSheet(targetName)
-
-                    copySheet(
-                        sourceSheet,
-                        targetSheet,
-                        workbook
-                    )
+                    copySheet(sourceSheet, targetSheet, workbook)
 
                     if (index == 0) {
-                        fillStowingPagSheet(
-                            targetSheet,
-                            cargoList
-                        )
+                        fillStowingPagSheet(targetSheet, cargoList)
                     }
                 }
             } finally {
                 pagWorkbook.close()
             }
 
-            val stowingDataSheet =
-                getOrCreateStowingDataSheet(workbook)
-
-            fillStowingDataSheet(
-                stowingDataSheet,
-                cargoList
-            )
+            val stowingDataSheet = getOrCreateStowingDataSheet(workbook)
+            fillStowingDataSheet(stowingDataSheet, cargoList)
 
             workbook.setSheetVisibility(
                 workbook.getSheetIndex(stowingDataSheet),
                 SheetVisibility.VERY_HIDDEN
             )
 
+            workbook.setForceFormulaRecalculation(true)
             saveWorkbook(context, uri, workbook)
         } finally {
             workbook.close()
         }
     }
 
-    private fun getOrCreateStowingDataSheet(
-        workbook: XSSFWorkbook
-    ): XSSFSheet {
+    private fun getOrCreateStowingDataSheet(workbook: XSSFWorkbook): XSSFSheet {
         return workbook.getSheet("STOWING_DATA")
             ?: workbook.createSheet("STOWING_DATA")
     }
 
+    /**
+     * STOWING_DATA adalah sumber data internal yang harus identik dengan
+     * cargoList saat export.
+     *
+     * Seluruh isi lama dibersihkan terlebih dahulu agar baris lama yang
+     * jumlahnya lebih banyak tidak tertinggal dan kemudian terbaca lagi
+     * ketika file di-import.
+     */
     private fun fillStowingDataSheet(
         sheet: XSSFSheet,
         cargoList: List<CargoItem>
     ) {
-        /*
-         * Bersihkan isi lama sepenuhnya agar data hasil import lama tidak
-         * tertinggal ketika jumlah data berubah.
-         */
-        if (sheet.lastRowNum >= 0) {
-            for (r in 0..sheet.lastRowNum) {
-                val row = sheet.getRow(r) ?: continue
-
-                for (c in 0 until maxOf(
-                    8,
-                    row.lastCellNum.toInt()
-                )) {
-                    row.getCell(c)?.setBlank()
-                }
+        // Hapus SEMUA row lama dengan menghapus dari indeks terakhir
+        // menuju indeks pertama. Menghapus dari belakang mencegah row
+        // yang tersisa bergeser/tertinggal dan terbaca kembali saat import.
+        for (r in sheet.lastRowNum downTo 0) {
+            val row = sheet.getRow(r)
+            if (row != null) {
+                sheet.removeRow(row)
             }
         }
 
+        // Setelah removeRow(), pastikan sheet benar-benar tidak menyimpan
+        // baris lama yang masih terindeks.
         val headers = listOf(
             "No",
             "NO PAG",
@@ -154,21 +155,13 @@ object ExcelUtils {
             "Sub Total KG"
         )
 
-        val header =
-            sheet.getRow(0) ?: sheet.createRow(0)
-
+        val header = sheet.createRow(0)
         headers.forEachIndexed { index, value ->
-            val cell =
-                header.getCell(index)
-                    ?: header.createCell(index)
-
-            cell.setCellValue(value)
+            header.createCell(index).setCellValue(value)
         }
 
         cargoList.forEachIndexed { index, item ->
-            val row =
-                sheet.getRow(index + 1)
-                    ?: sheet.createRow(index + 1)
+            val row = sheet.createRow(index + 1)
 
             val values = listOf(
                 (index + 1).toString(),
@@ -182,153 +175,97 @@ object ExcelUtils {
             )
 
             values.forEachIndexed { col, value ->
-                val cell =
-                    row.getCell(col)
-                        ?: row.createCell(col)
-
-                cell.setCellValue(value)
+                row.createCell(col).setCellValue(value)
             }
         }
 
-        val widths = intArrayOf(
-            8, 18, 14, 20, 24, 12, 28, 16
-        )
+        // Jangan biarkan row setelah data terakhir tetap berada di sheet.
+        // Ini adalah pengaman tambahan terhadap data export lama.
+        val expectedLastRow = cargoList.size
+        for (r in sheet.lastRowNum downTo expectedLastRow + 1) {
+            sheet.getRow(r)?.let { sheet.removeRow(it) }
+        }
 
+        val widths = intArrayOf(8, 18, 14, 20, 24, 12, 28, 16)
         widths.forEachIndexed { col, width ->
-            sheet.setColumnWidth(
-                col,
-                width * 256
-            )
+            sheet.setColumnWidth(col, width * 256)
         }
 
         sheet.createFreezePane(0, 1)
     }
 
-    /**
-     * Export Manifest + Stowing.
-     *
-     * V11 FIX:
-     *
-     * 1. Sumber TOTAL selalu cargoList TERBARU.
-     * 2. Manifest ditulis terlebih dahulu sampai seluruh cargoList selesai.
-     * 3. Total Manifest dihitung dari item yang benar-benar ditulis.
-     * 4. Stowing ditulis secara independen.
-     * 5. Total Stowing dihitung dari group yang benar-benar ditulis.
-     * 6. Tidak menggunakan nilai/formula Total lama dari template.
-     * 7. Data baru setelah Import tetap masuk ke perhitungan Total.
-     * 8. Mekanisme penambahan baris yang sudah fix tetap dipertahankan.
-     */
     private fun fillManifestSheet(
         workbook: XSSFWorkbook,
         sheet: XSSFSheet,
         cargoList: List<CargoItem>
     ) {
         val startRow = 13
-
-        /*
-         * Index baris template sebelum ada insertRowsBefore().
-         * Ini sengaja dipertahankan dari versi sebelumnya agar layout UI/Excel
-         * tidak berubah.
-         */
         val baseStowingTotalRow = 36
         val baseManifestTotalRow = 44
 
-        /*
-         * Snapshot baru.
-         *
-         * Sangat penting: Export hanya bekerja dari daftar yang diterima
-         * fungsi ini. Jadi data hasil Import + data baru yang sudah masuk
-         * cargoList akan ikut seluruhnya.
-         */
+        // Snapshot supaya export konsisten walaupun list adalah SnapshotStateList.
         val manifestRows = cargoList.toList()
 
-        /*
-         * Group Stowing berdasarkan NO PAG.
-         */
         val groupedStowing = cargoList
             .filter { it.noPag.isNotBlank() }
             .groupBy { normalize(it.noPag) }
             .map { (_, items) ->
-                val totalNet =
-                    items.sumOf {
-                        parseWeight(it.subTotal)
-                    }
+                val totalNet = items.sumOf { parseWeight(it.subTotal) }
 
-                val customers =
-                    items
-                        .map { it.customer.trim() }
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .take(4)
+                val customers = items
+                    .map { it.customer.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
 
-                val descriptions =
-                    items
-                        .map { it.description.trim() }
-                        .filter { it.isNotBlank() }
-                        .distinct()
-                        .take(4)
+                val descriptions = items
+                    .map { it.description.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
 
                 items.first().copy(
-                    customer =
-                        customers.joinToString(" / "),
-                    description =
-                        descriptions.joinToString(" / "),
-                    subTotal =
-                        formatNumber(totalNet)
+                    customer = customers.joinToString(" / "),
+                    description = descriptions.joinToString(" / "),
+                    subTotal = formatNumber(totalNet)
                 )
             }
 
-        /*
-         * -------------------------------------------------------------
-         * 1. Hitung kebutuhan baris Stowing.
-         * -------------------------------------------------------------
-         */
-        val stowingCapacity =
-            baseStowingTotalRow - startRow + 1
-
-        val stowingExtra =
-            maxOf(
-                0,
-                groupedStowing.size - stowingCapacity
-            )
+        val stowingCapacity = baseStowingTotalRow - startRow + 1
+        val stowingExtra = maxOf(
+            0,
+            groupedStowing.size - stowingCapacity
+        )
 
         if (stowingExtra > 0) {
             insertRowsBefore(
-                sheet = sheet,
-                rowIndex = baseStowingTotalRow,
-                count = stowingExtra,
-                styleSourceRowIndex = baseStowingTotalRow - 1
+                sheet,
+                baseStowingTotalRow,
+                stowingExtra,
+                baseStowingTotalRow - 1
             )
         }
 
-        /*
-         * Posisi Total Manifest ikut bergeser jika baris Stowing ditambah.
-         */
         val manifestTotalRowAfterStowing =
             baseManifestTotalRow + stowingExtra
 
         val manifestCapacityAfterStowing =
             manifestTotalRowAfterStowing - startRow
 
-        val manifestExtra =
-            maxOf(
-                0,
-                manifestRows.size - manifestCapacityAfterStowing
-            )
+        val manifestExtra = maxOf(
+            0,
+            manifestRows.size - manifestCapacityAfterStowing
+        )
 
         if (manifestExtra > 0) {
             insertRowsBefore(
-                sheet = sheet,
-                rowIndex = manifestTotalRowAfterStowing,
-                count = manifestExtra,
-                styleSourceRowIndex =
-                    manifestTotalRowAfterStowing - 1
+                sheet,
+                manifestTotalRowAfterStowing,
+                manifestExtra,
+                manifestTotalRowAfterStowing - 1
             )
         }
 
-        /*
-         * Posisi final Total setelah semua insertRowsBefore selesai.
-         */
         val finalStowingTotalRow =
             baseStowingTotalRow + stowingExtra
 
@@ -336,266 +273,229 @@ object ExcelUtils {
             manifestTotalRowAfterStowing + manifestExtra
 
         /*
-         * -------------------------------------------------------------
-         * 2. Bersihkan AREA DATA LAMA.
-         * -------------------------------------------------------------
+         * Bersihkan area data DAN baris total sebelum menulis.
          *
-         * Hanya kolom masing-masing tabel yang dibersihkan.
-         * Dengan demikian Manifest A:G dan Stowing H:M tidak saling
-         * menghapus.
+         * Ini penting karena template dapat berisi formula/nilai lama.
+         * Jika tidak dibersihkan, Excel dapat tetap menampilkan angka lama
+         * walaupun cargoList sudah berubah.
          */
         clearDataArea(
-            sheet = sheet,
-            startRow = startRow,
-            endRow = finalManifestTotalRow - 1,
-            startCol = 0,
-            endCol = 6
+            sheet,
+            startRow,
+            finalManifestTotalRow - 1,
+            0,
+            6
         )
 
         clearDataArea(
-            sheet = sheet,
-            startRow = startRow,
-            endRow = finalStowingTotalRow - 1,
-            startCol = 7,
-            endCol = 12
+            sheet,
+            startRow,
+            finalStowingTotalRow - 1,
+            7,
+            12
         )
 
-        val sampleRow =
-            sheet.getRow(startRow)
+        clearCells(
+            sheet.getRow(finalManifestTotalRow),
+            0,
+            6
+        )
+
+        clearCells(
+            sheet.getRow(finalStowingTotalRow),
+            7,
+            12
+        )
+
+        val sampleRow = sheet.getRow(startRow)
 
         /*
-         * -------------------------------------------------------------
-         * 3. TOTAL DARI CARGO LIST TERBARU.
-         * -------------------------------------------------------------
+         * TOTAL DIHITUNG DARI DATA YANG BENAR-BENAR DITULIS.
          *
-         * Jangan mengambil total dari formula/template lama.
+         * Tidak menggunakan formula lama dari template.
          */
         var totalManifestPcs = 0.0
         var totalManifestWeight = 0.0
-
-        /*
-         * -------------------------------------------------------------
-         * 4. TULIS MANIFEST SAJA.
-         * -------------------------------------------------------------
-         *
-         * Loop terpisah dari Stowing supaya jumlah data Manifest
-         * tidak pernah bergantung pada jumlah group Stowing.
-         */
-        manifestRows.forEachIndexed { index, item ->
-            val rowIndex =
-                startRow + index
-
-            val row =
-                sheet.getRow(rowIndex)
-                    ?: sheet.createRow(rowIndex)
-
-            val pcs =
-                parseWeight(item.pcsQty)
-
-            val subtotal =
-                parseWeight(item.subTotal)
-
-            /*
-             * TOTAL DIAMBIL DARI DATA YANG BENAR-BENAR DITULIS.
-             */
-            totalManifestPcs += pcs
-            totalManifestWeight += subtotal
-
-            setStyledNumericCell(
-                row = row,
-                col = 0,
-                value = (index + 1).toDouble(),
-                sample = sampleRow?.getCell(0)
-            )
-
-            setStyledTextCell(
-                row = row,
-                col = 1,
-                value = item.pti,
-                sample = sampleRow?.getCell(1)
-            )
-
-            setStyledNumericCell(
-                row = row,
-                col = 2,
-                value = pcs,
-                sample = sampleRow?.getCell(2)
-            )
-
-            val weightPerClyCell =
-                row.getCell(3)
-                    ?: row.createCell(3)
-
-            weightPerClyCell.setBlank()
-
-            sampleRow
-                ?.getCell(3)
-                ?.let {
-                    weightPerClyCell.cellStyle =
-                        it.cellStyle
-                }
-
-            setStyledNumericCell(
-                row = row,
-                col = 4,
-                value = subtotal,
-                sample = sampleRow?.getCell(4)
-            )
-
-            setStyledTextCell(
-                row = row,
-                col = 5,
-                value = item.description,
-                sample = sampleRow?.getCell(5)
-            )
-
-            setStyledTextCell(
-                row = row,
-                col = 6,
-                value = item.customer,
-                sample = sampleRow?.getCell(6)
-            )
-        }
-
-        /*
-         * -------------------------------------------------------------
-         * 5. TULIS STOWING SAJA.
-         * -------------------------------------------------------------
-         */
         var totalStowingNet = 0.0
         var totalStowingGross = 0.0
 
-        groupedStowing.forEachIndexed { index, item ->
-            val rowIndex =
-                startRow + index
+        val maxRows = maxOf(
+            manifestRows.size,
+            groupedStowing.size
+        )
 
+        for (i in 0 until maxRows) {
+            val rowIndex = startRow + i
             val row =
                 sheet.getRow(rowIndex)
                     ?: sheet.createRow(rowIndex)
 
-            val net =
-                parseWeight(item.subTotal)
+            if (i < manifestRows.size) {
+                val item = manifestRows[i]
 
-            val gross =
-                net + 125.0
+                val pcs = parseWeight(item.pcsQty)
+                val subtotal = parseWeight(item.subTotal)
 
-            totalStowingNet += net
-            totalStowingGross += gross
+                // Hanya dari item Manifest yang benar-benar ditulis.
+                totalManifestPcs += pcs
+                totalManifestWeight += subtotal
 
-            setStyledNumericCell(
-                row = row,
-                col = 7,
-                value = (index + 1).toDouble(),
-                sample = sampleRow?.getCell(7)
-            )
+                setStyledNumericCell(
+                    row,
+                    0,
+                    (i + 1).toDouble(),
+                    sampleRow?.getCell(0)
+                )
 
-            setStyledTextCell(
-                row = row,
-                col = 8,
-                value = item.noPag,
-                sample = sampleRow?.getCell(8)
-            )
+                setStyledTextCell(
+                    row,
+                    1,
+                    item.pti,
+                    sampleRow?.getCell(1)
+                )
 
-            setChecklistTextCell(
-                workbook = workbook,
-                row = row,
-                col = 9,
-                value = item.description,
-                sample = sampleRow?.getCell(9)
-            )
+                setStyledNumericCell(
+                    row,
+                    2,
+                    pcs,
+                    sampleRow?.getCell(2)
+                )
 
-            setStyledNumericCell(
-                row = row,
-                col = 10,
-                value = net,
-                sample = sampleRow?.getCell(10)
-            )
+                val weightPerClyCell =
+                    row.getCell(3)
+                        ?: row.createCell(3)
 
-            setStyledNumericCell(
-                row = row,
-                col = 11,
-                value = gross,
-                sample = sampleRow?.getCell(11)
-            )
+                weightPerClyCell.setBlank()
 
-            setChecklistTextCell(
-                workbook = workbook,
-                row = row,
-                col = 12,
-                value = item.customer,
-                sample = sampleRow?.getCell(12)
-            )
+                if (sampleRow != null) {
+                    weightPerClyCell.cellStyle =
+                        sampleRow.getCell(3).cellStyle
+                }
+
+                setStyledNumericCell(
+                    row,
+                    4,
+                    subtotal,
+                    sampleRow?.getCell(4)
+                )
+
+                setStyledTextCell(
+                    row,
+                    5,
+                    item.description,
+                    sampleRow?.getCell(5)
+                )
+
+                setStyledTextCell(
+                    row,
+                    6,
+                    item.customer,
+                    sampleRow?.getCell(6)
+                )
+            }
+
+            if (i < groupedStowing.size) {
+                val item = groupedStowing[i]
+
+                val net = parseWeight(item.subTotal)
+                val gross = net + 125.0
+
+                // Hanya dari group Stowing yang benar-benar ditulis.
+                totalStowingNet += net
+                totalStowingGross += gross
+
+                setStyledNumericCell(
+                    row,
+                    7,
+                    (i + 1).toDouble(),
+                    sampleRow?.getCell(7)
+                )
+
+                setStyledTextCell(
+                    row,
+                    8,
+                    item.noPag,
+                    sampleRow?.getCell(8)
+                )
+
+                setChecklistTextCell(
+                    workbook,
+                    row,
+                    9,
+                    item.description,
+                    sampleRow?.getCell(9)
+                )
+
+                setStyledNumericCell(
+                    row,
+                    10,
+                    net,
+                    sampleRow?.getCell(10)
+                )
+
+                setStyledNumericCell(
+                    row,
+                    11,
+                    gross,
+                    sampleRow?.getCell(11)
+                )
+
+                setChecklistTextCell(
+                    workbook,
+                    row,
+                    12,
+                    item.customer,
+                    sampleRow?.getCell(12)
+                )
+            }
         }
 
         /*
-         * -------------------------------------------------------------
-         * 6. TULIS ULANG TOTAL MANIFEST.
-         * -------------------------------------------------------------
+         * Tulis TOTAL FINAL sebagai numeric value.
          *
-         * Ini sengaja bukan formula Excel.
-         *
-         * Dengan angka final, Excel/Google Sheets tidak akan menggunakan
-         * cached formula lama dari template.
+         * Kita sengaja menghapus formula lama sehingga tidak ada formula
+         * template yang masih menunjuk range lama.
          */
-        val manifestTotalRow =
+        val manifestTotalRowObj =
             sheet.getRow(finalManifestTotalRow)
                 ?: sheet.createRow(finalManifestTotalRow)
 
+        clearCells(manifestTotalRowObj, 0, 12)
+
         setNumericCell(
-            row = manifestTotalRow,
-            col = 2,
-            value = totalManifestPcs
+            manifestTotalRowObj,
+            2,
+            totalManifestPcs
         )
 
         setNumericCell(
-            row = manifestTotalRow,
-            col = 4,
-            value = totalManifestWeight
+            manifestTotalRowObj,
+            4,
+            totalManifestWeight
         )
 
-        /*
-         * Hapus formula lama pada kolom total lainnya.
-         */
-        manifestTotalRow.getCell(0)?.setBlank()
-        manifestTotalRow.getCell(1)?.setBlank()
-        manifestTotalRow.getCell(3)?.setBlank()
-        manifestTotalRow.getCell(5)?.setBlank()
-        manifestTotalRow.getCell(6)?.setBlank()
-
-        /*
-         * -------------------------------------------------------------
-         * 7. TULIS ULANG TOTAL STOWING.
-         * -------------------------------------------------------------
-         */
-        val stowingTotalRow =
+        val stowingTotalRowObj =
             sheet.getRow(finalStowingTotalRow)
                 ?: sheet.createRow(finalStowingTotalRow)
 
-        /*
-         * Pastikan kolom H:M tidak menyimpan formula lama.
-         */
-        for (col in 7..12) {
-            stowingTotalRow.getCell(col)?.setBlank()
-        }
+        clearCells(stowingTotalRowObj, 0, 12)
 
         setNumericCell(
-            row = stowingTotalRow,
-            col = 10,
-            value = totalStowingNet
+            stowingTotalRowObj,
+            10,
+            totalStowingNet
         )
 
         setNumericCell(
-            row = stowingTotalRow,
-            col = 11,
-            value = totalStowingGross
+            stowingTotalRowObj,
+            11,
+            totalStowingGross
         )
 
         /*
-         * Excel tidak perlu menghitung formula Total karena nilai final
-         * sudah ditulis sebagai numeric cell.
-         *
-         * Force recalculation tetap diaktifkan untuk formula lain yang
-         * mungkin masih ada di template.
+         * Excel/Google Sheets tetap diberi tahu bahwa workbook boleh
+         * melakukan recalculation jika ada formula lain di template.
+         * TOTAL yang kita perbaiki sendiri tetap berupa angka final.
          */
         workbook.setForceFormulaRecalculation(true)
     }
@@ -608,8 +508,7 @@ object ExcelUtils {
     ) {
         if (count <= 0) return
 
-        val lastRow =
-            sheet.lastRowNum
+        val lastRow = sheet.lastRowNum
 
         if (rowIndex <= lastRow) {
             sheet.shiftRows(
@@ -631,24 +530,19 @@ object ExcelUtils {
             )
 
         for (i in 0 until count) {
-            val newRowIndex =
-                rowIndex + i
+            val newRowIndex = rowIndex + i
 
             val newRow =
                 sheet.getRow(newRowIndex)
                     ?: sheet.createRow(newRowIndex)
 
             if (sourceRow != null) {
-                newRow.height =
-                    sourceRow.height
-
-                newRow.zeroHeight =
-                    sourceRow.zeroHeight
+                newRow.height = sourceRow.height
+                newRow.zeroHeight = sourceRow.zeroHeight
             }
 
             for (c in 0 until columnsToCopy) {
-                val sourceCell =
-                    sourceRow?.getCell(c)
+                val sourceCell = sourceRow?.getCell(c)
 
                 val newCell =
                     newRow.getCell(c)
@@ -674,12 +568,23 @@ object ExcelUtils {
         if (endRow < startRow) return
 
         for (r in startRow..endRow) {
-            val row =
-                sheet.getRow(r) ?: continue
+            val row = sheet.getRow(r) ?: continue
+            clearCells(row, startCol, endCol)
+        }
+    }
 
-            for (c in startCol..endCol) {
-                row.getCell(c)?.setBlank()
-            }
+    private fun clearCells(
+        row: Row?,
+        startCol: Int,
+        endCol: Int
+    ) {
+        if (row == null) return
+
+        for (c in startCol..endCol) {
+            val cell = row.getCell(c) ?: continue
+
+            // Hapus formula/nilai lama tanpa menghapus style.
+            cell.setBlank()
         }
     }
 
@@ -689,17 +594,14 @@ object ExcelUtils {
     ) {
         if (cargoList.isEmpty()) return
 
-        val groupedByPag =
-            cargoList
-                .groupBy { it.noPag.trim() }
-                .filterKeys { it.isNotBlank() }
+        val groupedByPag = cargoList
+            .groupBy { normalize(it.noPag) }
+            .filterKeys { it.isNotBlank() }
 
         var pagBlockIndex = 0
 
         for ((noPag, itemsInPag) in groupedByPag) {
-            if (pagBlockIndex >= PAG_ROW_INDEXES.size) {
-                break
-            }
+            if (pagBlockIndex >= PAG_ROW_INDEXES.size) break
 
             val startPagRowIndex =
                 PAG_ROW_INDEXES[pagBlockIndex]
@@ -739,17 +641,14 @@ object ExcelUtils {
                     custRow.getCell(currentStartCol)
                         ?: custRow.createCell(currentStartCol)
 
-                custCell.setCellValue(
-                    item.customer
-                )
+                custCell.setCellValue(item.customer)
 
-                val kgValues =
-                    item.weight
-                        .split(",")
-                        .mapNotNull {
-                            parseWeight(it)
-                                .takeIf { kg -> kg > 0.0 }
-                        }
+                val kgValues = item.weight
+                    .split(",")
+                    .mapNotNull {
+                        parseWeight(it)
+                            .takeIf { kg -> kg > 0.0 }
+                    }
 
                 var currentRow =
                     customerStartRow + 1
@@ -795,24 +694,19 @@ object ExcelUtils {
         targetWorkbook: XSSFWorkbook
     ) {
         val maxColumns =
-            (0..source.lastRowNum)
-                .maxOfOrNull {
-                    source.getRow(it)
-                        ?.lastCellNum
-                        ?.toInt()
-                        ?: 0
-                }
-                ?: 0
+            (0..source.lastRowNum).maxOfOrNull {
+                source.getRow(it)
+                    ?.lastCellNum
+                    ?.toInt()
+                    ?: 0
+            } ?: 0
 
         for (c in 0 until maxColumns) {
             val width =
                 source.getColumnWidth(c)
 
             if (width > 0) {
-                target.setColumnWidth(
-                    c,
-                    width
-                )
+                target.setColumnWidth(c, width)
             }
 
             target.setColumnHidden(
@@ -889,28 +783,19 @@ object ExcelUtils {
     ) {
         when (src.cellType) {
             org.apache.poi.ss.usermodel.CellType.STRING ->
-                dst.setCellValue(
-                    src.stringCellValue
-                )
+                dst.setCellValue(src.stringCellValue)
 
             org.apache.poi.ss.usermodel.CellType.NUMERIC ->
-                dst.setCellValue(
-                    src.numericCellValue
-                )
+                dst.setCellValue(src.numericCellValue)
 
             org.apache.poi.ss.usermodel.CellType.BOOLEAN ->
-                dst.setCellValue(
-                    src.booleanCellValue
-                )
+                dst.setCellValue(src.booleanCellValue)
 
             org.apache.poi.ss.usermodel.CellType.FORMULA ->
-                dst.cellFormula =
-                    src.cellFormula
+                dst.cellFormula = src.cellFormula
 
             org.apache.poi.ss.usermodel.CellType.ERROR ->
-                dst.setCellErrorValue(
-                    src.errorCellValue
-                )
+                dst.setCellErrorValue(src.errorCellValue)
 
             org.apache.poi.ss.usermodel.CellType.BLANK ->
                 dst.setBlank()
@@ -942,14 +827,9 @@ object ExcelUtils {
             style.setWrapText(true)
             style.setShrinkToFit(true)
 
-            cell.cellStyle =
-                style
+            cell.cellStyle = style
         }
 
-        /*
-         * Jika nilai panjang, jangan sampai hilang karena tinggi baris
-         * terlalu kecil.
-         */
         cell.setCellValue(value)
 
         if (row.height.toInt() < 420) {
@@ -990,10 +870,6 @@ object ExcelUtils {
                 sample.cellStyle
         }
 
-        /*
-         * setCellValue(Double) otomatis mengganti formula lama menjadi
-         * numeric cell.
-         */
         cell.setCellValue(value)
     }
 
@@ -1006,43 +882,26 @@ object ExcelUtils {
             row.getCell(col)
                 ?: row.createCell(col)
 
-        /*
-         * Jika cell sebelumnya berisi formula, setCellValue(Double)
-         * menggantinya dengan nilai numeric baru.
-         */
         cell.setCellValue(value)
     }
 
-    private fun normalize(
-        value: String
-    ): String {
+    private fun normalize(value: String): String {
         return value
             .trim()
-            .replace(
-                "\\s+".toRegex(),
-                " "
-            )
+            .replace("\\s+".toRegex(), " ")
             .uppercase()
     }
 
-    private fun parseWeight(
-        value: String
-    ): Double {
+    private fun parseWeight(value: String): Double {
         val raw =
-            value
-                .trim()
-                .replace(" ", "")
+            value.trim().replace(" ", "")
 
-        if (raw.isBlank()) {
-            return 0.0
-        }
+        if (raw.isBlank()) return 0.0
 
         return when {
             raw.contains(".") &&
                 raw.contains(",") -> {
-
-                raw
-                    .replace(".", "")
+                raw.replace(".", "")
                     .replace(",", ".")
                     .toDoubleOrNull()
                     ?: 0.0
@@ -1058,13 +917,11 @@ object ExcelUtils {
                         1
 
                 if (digitsAfter in 1..2) {
-                    raw
-                        .replace(',', '.')
+                    raw.replace(',', '.')
                         .toDoubleOrNull()
                         ?: 0.0
                 } else {
-                    raw
-                        .replace(",", "")
+                    raw.replace(",", "")
                         .toDoubleOrNull()
                         ?: 0.0
                 }
@@ -1080,12 +937,10 @@ object ExcelUtils {
                         1
 
                 if (digitsAfter in 1..2) {
-                    raw
-                        .toDoubleOrNull()
+                    raw.toDoubleOrNull()
                         ?: 0.0
                 } else {
-                    raw
-                        .replace(".", "")
+                    raw.replace(".", "")
                         .toDoubleOrNull()
                         ?: 0.0
                 }
@@ -1113,7 +968,8 @@ object ExcelUtils {
         workbook: Workbook
     ) {
         val outputStream: OutputStream =
-            context.contentResolver.openOutputStream(uri)
+            context.contentResolver
+                .openOutputStream(uri)
                 ?: throw java.io.IOException(
                     "Tidak bisa membuka output stream untuk URI tujuan"
                 )
