@@ -250,15 +250,6 @@ object ExcelUtils {
         val stowingExtra =
             maxOf(0, groupedStowing.size - stowingCapacity)
 
-        if (stowingExtra > 0) {
-            insertRowsBefore(
-                sheet = sheet,
-                rowIndex = baseStowingTotalRow,
-                count = stowingExtra,
-                styleSourceRowIndex = baseStowingTotalRow - 1
-            )
-        }
-
         val stowingTotalRow =
             baseStowingTotalRow + stowingExtra
 
@@ -274,17 +265,38 @@ object ExcelUtils {
         val manifestExtra =
             maxOf(0, manifestRows.size - manifestCapacity)
 
+        val manifestTotalRow =
+            manifestBaseAfterStowing + manifestExtra
+
+        /*
+         * Jangan menggunakan XSSFSheet.shiftRows() di sini.
+         * Template Manifest memiliki drawing/image anchor (tanda tangan).
+         * Apache POI 5.2.3 dapat melempar NullPointerException pada
+         * CTTwoCellAnchor.setFrom() ketika shiftRows mencoba memindahkan
+         * drawing tertentu dari template.
+         *
+         * Sebagai gantinya footer dipindahkan secara manual: cell, style,
+         * tinggi row, merged region, lalu anchor gambar diposisikan ulang.
+         * Dengan cara ini data boleh melewati kapasitas template tanpa
+         * menyentuh mekanisme shift drawing POI.
+         */
         if (manifestExtra > 0) {
-            insertRowsBefore(
+            moveFooterBlock(
                 sheet = sheet,
-                rowIndex = manifestBaseAfterStowing,
-                count = manifestExtra,
-                styleSourceRowIndex = manifestBaseAfterStowing - 1
+                sourceStartRow = BASE_MANIFEST_TOTAL_ROW,
+                sourceEndRow = MANIFEST_FOOTER_BASE_ROW + 8,
+                targetStartRow = manifestTotalRow
             )
         }
 
-        val manifestTotalRow =
-            manifestBaseAfterStowing + manifestExtra
+        if (stowingExtra > 0) {
+            moveFooterBlock(
+                sheet = sheet,
+                sourceStartRow = BASE_STOWING_TOTAL_ROW,
+                sourceEndRow = STOWING_FOOTER_BASE_ROW + 4,
+                targetStartRow = stowingTotalRow
+            )
+        }
 
         /*
          * Bersihkan hanya area DATA.
@@ -470,60 +482,151 @@ object ExcelUtils {
         workbook.setForceFormulaRecalculation(true)
     }
 
-    private fun insertRowsBefore(
+    private data class FooterCellSnapshot(
+        val sourceRowOffset: Int,
+        val column: Int,
+        val cellType: org.apache.poi.ss.usermodel.CellType,
+        val stringValue: String?,
+        val numericValue: Double?,
+        val booleanValue: Boolean?,
+        val errorValue: Byte?,
+        val formula: String?,
+        val style: XSSFCellStyle
+    )
+
+    private data class FooterRowSnapshot(
+        val rowOffset: Int,
+        val height: Short,
+        val zeroHeight: Boolean
+    )
+
+    private data class FooterMergeSnapshot(
+        val firstRowOffset: Int,
+        val lastRowOffset: Int,
+        val firstColumn: Int,
+        val lastColumn: Int
+    )
+
+    private fun moveFooterBlock(
         sheet: XSSFSheet,
-        rowIndex: Int,
-        count: Int,
-        styleSourceRowIndex: Int
+        sourceStartRow: Int,
+        sourceEndRow: Int,
+        targetStartRow: Int
     ) {
-        if (count <= 0) return
+        if (sourceStartRow == targetStartRow) return
 
-        val lastRow = sheet.lastRowNum
+        val rowSnapshots = mutableListOf<FooterRowSnapshot>()
+        val cellSnapshots = mutableListOf<FooterCellSnapshot>()
 
-        if (rowIndex <= lastRow) {
-            sheet.shiftRows(
-                rowIndex,
-                lastRow,
-                count,
-                true,
-                false
+        for (rowIndex in sourceStartRow..sourceEndRow) {
+            val row = sheet.getRow(rowIndex)
+            rowSnapshots += FooterRowSnapshot(
+                rowOffset = rowIndex - sourceStartRow,
+                height = row?.height ?: sheet.defaultRowHeight,
+                zeroHeight = row?.zeroHeight ?: false
             )
+
+            if (row != null) {
+                for (cell in row) {
+                    val type = cell.cellType
+                    cellSnapshots += FooterCellSnapshot(
+                        sourceRowOffset = rowIndex - sourceStartRow,
+                        column = cell.columnIndex,
+                        cellType = type,
+                        stringValue = if (type == org.apache.poi.ss.usermodel.CellType.STRING) cell.stringCellValue else null,
+                        numericValue = if (type == org.apache.poi.ss.usermodel.CellType.NUMERIC) cell.numericCellValue else null,
+                        booleanValue = if (type == org.apache.poi.ss.usermodel.CellType.BOOLEAN) cell.booleanCellValue else null,
+                        errorValue = if (type == org.apache.poi.ss.usermodel.CellType.ERROR) cell.errorCellValue else null,
+                        formula = if (type == org.apache.poi.ss.usermodel.CellType.FORMULA) cell.cellFormula else null,
+                        style = cell.cellStyle as XSSFCellStyle
+                    )
+                }
+            }
         }
 
-        val sourceRow =
-            sheet.getRow(styleSourceRowIndex)
+        val mergedSnapshots = sheet.mergedRegions
+            .filter { region ->
+                region.firstRow >= sourceStartRow &&
+                    region.lastRow <= sourceEndRow
+            }
+            .map { region ->
+                FooterMergeSnapshot(
+                    firstRowOffset = region.firstRow - sourceStartRow,
+                    lastRowOffset = region.lastRow - sourceStartRow,
+                    firstColumn = region.firstColumn,
+                    lastColumn = region.lastColumn
+                )
+            }
 
-        val columnsToCopy =
-            maxOf(
-                13,
-                sourceRow?.lastCellNum?.toInt() ?: 0
+        // Hapus merge source terlebih dahulu agar target dapat menggunakan
+        // cell-cell yang mungkin sebelumnya merupakan MergedCell.
+        for (i in sheet.mergedRegions.indices.reversed()) {
+            val region = sheet.mergedRegions[i]
+            if (region.firstRow >= sourceStartRow && region.lastRow <= sourceEndRow) {
+                sheet.removeMergedRegion(i)
+            }
+        }
+
+        // Hapus merge yang berada tepat di area target.
+        for (i in sheet.mergedRegions.indices.reversed()) {
+            val region = sheet.mergedRegions[i]
+            val overlapsTarget =
+                region.firstRow <= targetStartRow + (sourceEndRow - sourceStartRow) &&
+                    region.lastRow >= targetStartRow
+            if (overlapsTarget) {
+                sheet.removeMergedRegion(i)
+            }
+        }
+
+        // Bersihkan cell source dan target sebelum menulis snapshot.
+        for (rowIndex in sourceStartRow..sourceEndRow) {
+            val row = sheet.getRow(rowIndex) ?: continue
+            for (cell in row) {
+                cell.setBlank()
+            }
+        }
+
+        val targetEndRow = targetStartRow + (sourceEndRow - sourceStartRow)
+        for (rowIndex in targetStartRow..targetEndRow) {
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+            for (cell in row) {
+                cell.setBlank()
+            }
+        }
+
+        rowSnapshots.forEach { snapshot ->
+            val rowIndex = targetStartRow + snapshot.rowOffset
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+            row.height = snapshot.height
+            row.zeroHeight = snapshot.zeroHeight
+        }
+
+        cellSnapshots.forEach { snapshot ->
+            val row = sheet.getRow(targetStartRow + snapshot.sourceRowOffset)
+                ?: sheet.createRow(targetStartRow + snapshot.sourceRowOffset)
+            val cell = row.getCell(snapshot.column) ?: row.createCell(snapshot.column)
+            cell.cellStyle = snapshot.style
+
+            when (snapshot.cellType) {
+                org.apache.poi.ss.usermodel.CellType.STRING -> cell.setCellValue(snapshot.stringValue ?: "")
+                org.apache.poi.ss.usermodel.CellType.NUMERIC -> cell.setCellValue(snapshot.numericValue ?: 0.0)
+                org.apache.poi.ss.usermodel.CellType.BOOLEAN -> cell.setCellValue(snapshot.booleanValue ?: false)
+                org.apache.poi.ss.usermodel.CellType.ERROR -> cell.setCellErrorValue(snapshot.errorValue ?: 0)
+                org.apache.poi.ss.usermodel.CellType.FORMULA -> cell.cellFormula = snapshot.formula ?: ""
+                org.apache.poi.ss.usermodel.CellType.BLANK -> cell.setBlank()
+                else -> cell.setBlank()
+            }
+        }
+
+        mergedSnapshots.forEach { snapshot ->
+            sheet.addMergedRegion(
+                org.apache.poi.ss.util.CellRangeAddress(
+                    targetStartRow + snapshot.firstRowOffset,
+                    targetStartRow + snapshot.lastRowOffset,
+                    snapshot.firstColumn,
+                    snapshot.lastColumn
+                )
             )
-
-        for (i in 0 until count) {
-            val newRowIndex = rowIndex + i
-
-            val newRow =
-                sheet.getRow(newRowIndex)
-                    ?: sheet.createRow(newRowIndex)
-
-            if (sourceRow != null) {
-                newRow.height = sourceRow.height
-                newRow.zeroHeight = sourceRow.zeroHeight
-            }
-
-            for (c in 0 until columnsToCopy) {
-                val sourceCell = sourceRow?.getCell(c)
-                val newCell =
-                    newRow.getCell(c)
-                        ?: newRow.createCell(c)
-
-                if (sourceCell != null) {
-                    newCell.cellStyle =
-                        sourceCell.cellStyle
-                }
-
-                newCell.setBlank()
-            }
         }
     }
 
