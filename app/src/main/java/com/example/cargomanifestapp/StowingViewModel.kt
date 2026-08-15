@@ -1,13 +1,20 @@
 package com.example.cargomanifestapp
 
 import android.content.Context
+import android.net.Uri
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.apache.poi.ss.usermodel.DataFormatter
+import org.apache.poi.ss.usermodel.WorkbookFactory
 
 enum class DeleteType {
     NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
@@ -191,6 +198,106 @@ class StowingViewModel : ViewModel() {
             jsonArray.put(obj)
         }
         prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
+    }
+
+    /**
+     * Import data dari Sheet Manifest hasil export aplikasi.
+     *
+     * SETIAP BARIS MANIFEST = SATU CargoItem.
+     * Tidak ada grouping saat import.
+     * NO PAG dibaca dari kolom T (hidden column) yang ditulis oleh ExcelUtils.
+     */
+    fun importFromManifestExcel(
+        context: Context,
+        uri: Uri,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val imported = context.contentResolver.openInputStream(uri)?.use { input ->
+                    WorkbookFactory.create(input).use { workbook ->
+                        val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+                        val formatter = DataFormatter()
+                        val evaluator = workbook.creationHelper.createFormulaEvaluator()
+                        val result = mutableListOf<CargoItem>()
+
+                        for (rowIndex in 13..sheet.lastRowNum) {
+                            val row = sheet.getRow(rowIndex) ?: continue
+
+                            fun text(col: Int): String =
+                                formatter.formatCellValue(row.getCell(col), evaluator).trim()
+
+                            val no = text(0)
+                            val ptiValue = text(1)
+                            val pcsValue = text(2)
+                            val subtotalValue = text(4)
+                            val descriptionValue = text(5)
+                            val customerValue = text(6)
+                            val hiddenPag = text(19)
+
+                            // Lewati TOTAL / baris kosong template.
+                            if (no.contains("TOTAL", ignoreCase = true) ||
+                                ptiValue.contains("TOTAL", ignoreCase = true) ||
+                                descriptionValue.contains("TOTAL", ignoreCase = true)
+                            ) continue
+
+                            if (ptiValue.isBlank() && descriptionValue.isBlank() &&
+                                customerValue.isBlank() && subtotalValue.isBlank()) continue
+
+                            if (hiddenPag.isBlank()) continue
+
+                            val pcs = pcsValue.toDoubleOrNull()?.toInt()?.coerceAtLeast(1) ?: 1
+                            val subtotal = subtotalValue.toDoubleOrNull() ?: 0.0
+
+                            // Export Manifest memang mengosongkan kolom D (Pcs/Cly).
+                            // Karena detail KG per koli tidak tersedia di Manifest,
+                            // subtotal dipakai sebagai satu nilai KG untuk baris import.
+                            val weightList = if (subtotal > 0.0) {
+                                formatWeight(subtotal)
+                            } else {
+                                ""
+                            }
+
+                            result.add(
+                                CargoItem(
+                                    noPag = normalizePag(hiddenPag),
+                                    customer = customerValue,
+                                    description = descriptionValue,
+                                    pti = normalizePti(ptiValue),
+                                    pcsQty = pcs.toString(),
+                                    weight = weightList,
+                                    subTotal = formatWeight(subtotal)
+                                )
+                            )
+                        }
+
+                        result
+                    }
+                } ?: throw IllegalStateException("File tidak dapat dibuka")
+
+                withContext(Dispatchers.Main) {
+                    if (imported.isEmpty()) {
+                        onError("Tidak ada data Manifest yang dapat di-import")
+                    } else {
+                        cargoList.clear()
+                        // Urutan Manifest dipertahankan.
+                        cargoList.addAll(imported)
+                        saveCargoListToPrefs(context)
+                        resetForm()
+                        onSuccess("Import berhasil: ${imported.size} data Manifest")
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onError("Gagal Import: ${e.localizedMessage ?: "Format Excel tidak sesuai"}")
+                }
+            }
+        }
+    }
+
+    private fun formatWeight(value: Double): String {
+        return if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
     }
 
     fun loadCargoListFromPrefs(context: Context) {

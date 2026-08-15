@@ -14,6 +14,8 @@ import java.io.OutputStream
 
 object ExcelUtils {
 
+    private const val HIDDEN_PAG_COLUMN = 19 // Column T
+
     private val PAG_ROW_INDEXES = listOf(
         0, 10, 22, 33, 43, 56, 66, 77
     )
@@ -55,7 +57,7 @@ object ExcelUtils {
      *
      * - 1 file Excel
      * - Sheet Manifest memakai template aplikasi
-     * - Manifest otomatis grouping Customer + Description
+     * - Manifest: 1 data input = 1 baris (TIDAK DIGROUP)
      * - Stowing Checklist di sisi kanan Manifest
      * - Template STOWINGAN PAG ikut dimasukkan
      * - Detail PAG tetap dipertahankan untuk pengecekan LOOT
@@ -168,43 +170,21 @@ object ExcelUtils {
         val baseManifestTotalRow = 44 // Excel row 45
 
         /*
-         * Manifest: satu baris untuk setiap kombinasi
-         * PAG + Customer + Description + PTI.
+         * =============================================================
+         * MANIFEST
+         * =============================================================
+         *
+         * SATU DATA INPUT = SATU BARIS MANIFEST.
+         *
+         * Tidak ada grouping berdasarkan PAG, Customer, Description,
+         * maupun PTI. Setiap CargoItem yang tersimpan di Form Stowing
+         * ditulis sebagai satu baris tersendiri.
          */
-        val groupedManifest = cargoList
+        val manifestRows = cargoList
             .filter {
                 it.noPag.isNotBlank() &&
                     it.customer.isNotBlank() &&
                     it.description.isNotBlank()
-            }
-            .groupBy {
-                "${normalize(it.noPag)}|" +
-                    "${normalize(it.customer)}|" +
-                    "${normalize(it.description)}|" +
-                    normalize(it.pti)
-            }
-            .map { (_, items) ->
-                val pcs = items.sumOf {
-                    it.pcsQty.toDoubleOrNull() ?: 0.0
-                }
-
-                val totalWeight = items.sumOf {
-                    it.subTotal.toDoubleOrNull() ?: 0.0
-                }
-
-                val ptis = items
-                    .map { it.pti.trim() }
-                    .filter { it.isNotBlank() }
-                    .distinct()
-
-                items.first().copy(
-                    pti = ptis.firstOrNull() ?: "",
-                    pcsQty = formatNumber(pcs),
-                    subTotal = formatNumber(totalWeight),
-                    // FIX3: jangan pernah memasukkan berat per koli
-                    // ke kolom D. C = jumlah koli, E = total KG.
-                    weight = ""
-                )
             }
 
         /*
@@ -290,7 +270,7 @@ object ExcelUtils {
         val manifestExtra =
             maxOf(
                 0,
-                groupedManifest.size - manifestCapacityAfterStowing
+                manifestRows.size - manifestCapacityAfterStowing
             )
 
         if (manifestExtra > 0) {
@@ -332,6 +312,9 @@ object ExcelUtils {
             endCol = 12
         )
 
+        // Kolom T menyimpan NO PAG untuk Import dan tidak ditampilkan.
+        sheet.setColumnHidden(HIDDEN_PAG_COLUMN, true)
+
         val sampleRow =
             sheet.getRow(startRow)
 
@@ -346,7 +329,7 @@ object ExcelUtils {
          */
         val maxRows =
             maxOf(
-                groupedManifest.size,
+                manifestRows.size,
                 groupedStowing.size
             )
 
@@ -359,8 +342,8 @@ object ExcelUtils {
             /* =========================
              * MANIFEST A:G
              * ========================= */
-            if (i < groupedManifest.size) {
-                val item = groupedManifest[i]
+            if (i < manifestRows.size) {
+                val item = manifestRows[i]
 
                 val pcs =
                     item.pcsQty.toDoubleOrNull() ?: 0.0
@@ -424,6 +407,14 @@ object ExcelUtils {
                     item.customer,
                     sampleRow?.getCell(6)
                 )
+
+                // T = NO PAG untuk kebutuhan IMPORT.
+                // Kolom ini disembunyikan sehingga tidak mengubah tampilan
+                // Manifest, tetapi NO PAG setiap baris tetap tersimpan.
+                val hiddenPagCell =
+                    row.getCell(HIDDEN_PAG_COLUMN)
+                        ?: row.createCell(HIDDEN_PAG_COLUMN)
+                hiddenPagCell.setCellValue(item.noPag)
             }
 
             /* =========================

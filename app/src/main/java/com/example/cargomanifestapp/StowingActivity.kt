@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
@@ -177,6 +178,23 @@ fun StowingInputScreen(
 
     LaunchedEffect(Unit) {
         viewModel.loadCargoListFromPrefs(context)
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+
+        viewModel.importFromManifestExcel(
+            context = context,
+            uri = uri,
+            onSuccess = { message ->
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            },
+            onError = { message ->
+                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+            }
+        )
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -466,6 +484,34 @@ fun StowingInputScreen(
                     IconButton(onClick = { viewModel.showDeleteDialog(DeleteType.RESET_ALL) }) {
                         Icon(imageVector = Icons.Default.Delete, contentDescription = "Reset Data", tint = Color.Red)
                     }
+                }
+
+                // =========================
+                // IMPORT EXCEL MANIFEST
+                // =========================
+                TextButton(
+                    onClick = {
+                        importLauncher.launch(
+                            arrayOf(
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                "application/vnd.ms-excel",
+                                "application/octet-stream"
+                            )
+                        )
+                    }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.FileOpen,
+                        contentDescription = "Import Excel Manifest",
+                        tint = Color(0xFF1565C0)
+                    )
+                    Spacer(modifier = Modifier.width(3.dp))
+                    Text(
+                        text = "Import",
+                        color = Color(0xFF1565C0),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 IconButton(onClick = {
