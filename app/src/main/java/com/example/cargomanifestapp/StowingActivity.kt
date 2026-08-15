@@ -88,6 +88,8 @@ fun StowingInputScreen(
     var scanRowsText by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
     var stowingSearchQuery by remember { mutableStateOf("") }
+    var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
+    var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
 
     suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
         try {
@@ -216,13 +218,23 @@ fun StowingInputScreen(
         }.groupBy { it.second.noPag }
     }
 
-    // Pencarian khusus daftar Stowing Group. Hanya memfilter tampilan.
-    val filteredGroupedCargo = remember(groupedCargo, stowingSearchQuery) {
+    val stowingPagOptions = remember(groupedCargo) {
+        listOf("SEMUA PAG") + groupedCargo.keys.toList()
+    }
+
+    // Pencarian + filter PAG khusus daftar Stowing Group. Hanya memfilter tampilan.
+    val filteredGroupedCargo = remember(groupedCargo, stowingSearchQuery, selectedStowingPag) {
         val query = stowingSearchQuery.trim()
-        if (query.isBlank()) {
+        val pagFiltered = if (selectedStowingPag == "SEMUA PAG") {
             groupedCargo
         } else {
-            groupedCargo.mapNotNull { (pag, entries) ->
+            groupedCargo.filterKeys { it == selectedStowingPag }
+        }
+
+        if (query.isBlank()) {
+            pagFiltered
+        } else {
+            pagFiltered.mapNotNull { (pag, entries) ->
                 val filteredEntries = entries.filter { (_, item) ->
                     item.noPag.contains(query, ignoreCase = true) ||
                         item.customer.contains(query, ignoreCase = true) ||
@@ -924,7 +936,7 @@ fun StowingInputScreen(
         // --- DAFTAR CARGO TERGROUPING ---
         // --- DAFTAR CARGO TERGROUPING ---
         val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
-        val grandTotalKoli = viewModel.cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
+        val grandTotalPAG = groupedCargo.size
 
         val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
             grandTotalKg.toLong().toString()
@@ -946,7 +958,7 @@ fun StowingInputScreen(
                 )
                 if (stowingSearchQuery.isNotBlank()) {
                     Text(
-                        text = "Ditemukan ${filteredGroupedCargo.size} PAG",
+                        text = "Ditampilkan ${filteredGroupedCargo.size} PAG",
                         fontSize = 11.sp,
                         color = Color.Gray
                     )
@@ -956,7 +968,7 @@ fun StowingInputScreen(
             if (viewModel.cargoList.isNotEmpty()) {
                 Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
                     Text(
-                        text = "Total: $formattedGrandTotal KG ($grandTotalKoli Koli)",
+                        text = "Total: $formattedGrandTotal KG ($grandTotalPAG PAG)",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
@@ -986,6 +998,44 @@ fun StowingInputScreen(
                 unfocusedBorderColor = Color.LightGray
             )
         )
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        ExposedDropdownMenuBox(
+            expanded = stowingPagDropdownExpanded,
+            onExpandedChange = { stowingPagDropdownExpanded = !stowingPagDropdownExpanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            OutlinedTextField(
+                value = selectedStowingPag,
+                onValueChange = {},
+                readOnly = true,
+                singleLine = true,
+                label = { Text("Pilih PAG yang ditampilkan") },
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = stowingPagDropdownExpanded)
+                },
+                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                    focusedBorderColor = Color(0xFF381E72),
+                    unfocusedBorderColor = Color.LightGray
+                )
+            )
+            ExposedDropdownMenu(
+                expanded = stowingPagDropdownExpanded,
+                onDismissRequest = { stowingPagDropdownExpanded = false }
+            ) {
+                stowingPagOptions.forEach { pag ->
+                    DropdownMenuItem(
+                        text = { Text(pag) },
+                        onClick = {
+                            selectedStowingPag = pag
+                            stowingPagDropdownExpanded = false
+                        }
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(6.dp))
 
