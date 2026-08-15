@@ -402,46 +402,73 @@ object ExcelUtils {
 
         /*
          * TOTAL MANIFEST
+         *
+         * Jangan mempertahankan formula bawaan template seperti
+         * =SUM(E14:E44). Jika data melewati baris template (misalnya sampai
+         * row 45, 60, 100, dst.), formula harus mengikuti baris data aktual.
+         *
+         * Data dimulai pada row Excel 14 (startRow = 13, zero-based).
          */
         val manifestTotalRowObj =
             sheet.getRow(manifestTotalRow)
                 ?: sheet.createRow(manifestTotalRow)
 
-        setNumericCell(
-            manifestTotalRowObj,
-            2,
-            totalManifestPcs
-        )
+        if (manifestRows.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + manifestRows.size
 
-        manifestTotalRowObj
-            .getCell(3)
-            ?.setBlank()
+            setFormulaCell(
+                manifestTotalRowObj,
+                2,
+                "SUM(C$firstExcelRow:C$lastExcelRow)"
+            )
 
-        setNumericCell(
-            manifestTotalRowObj,
-            4,
-            totalManifestWeight
-        )
+            manifestTotalRowObj
+                .getCell(3)
+                ?.setBlank()
+
+            setFormulaCell(
+                manifestTotalRowObj,
+                4,
+                "SUM(E$firstExcelRow:E$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(manifestTotalRowObj, 2, totalManifestPcs)
+            manifestTotalRowObj.getCell(3)?.setBlank()
+            setNumericCell(manifestTotalRowObj, 4, totalManifestWeight)
+        }
 
         /*
          * TOTAL STOWING
+         *
+         * Area Stowing juga dibuat dinamis. Formula selalu berhenti tepat pada
+         * baris data Stowing terakhir, bukan pada batas template lama.
          */
         val stowingTotalRowObj =
             sheet.getRow(stowingTotalRow)
                 ?: sheet.createRow(stowingTotalRow)
 
-        setNumericCell(
-            stowingTotalRowObj,
-            10,
-            totalStowingNet
-        )
+        if (groupedStowing.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + groupedStowing.size
 
-        setNumericCell(
-            stowingTotalRowObj,
-            11,
-            totalStowingGross
-        )
+            setFormulaCell(
+                stowingTotalRowObj,
+                10,
+                "SUM(K$firstExcelRow:K$lastExcelRow)"
+            )
 
+            setFormulaCell(
+                stowingTotalRowObj,
+                11,
+                "SUM(L$firstExcelRow:L$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(stowingTotalRowObj, 10, totalStowingNet)
+            setNumericCell(stowingTotalRowObj, 11, totalStowingGross)
+        }
+
+        // Paksa Excel/POI untuk menghitung ulang formula saat file dibuka.
         workbook.setForceFormulaRecalculation(true)
     }
 
@@ -1009,6 +1036,18 @@ object ExcelUtils {
                 ?: row.createCell(col)
 
         cell.setCellValue(value)
+    }
+
+    private fun setFormulaCell(
+        row: Row,
+        col: Int,
+        formula: String
+    ) {
+        val cell =
+            row.getCell(col)
+                ?: row.createCell(col)
+
+        cell.cellFormula = formula
     }
 
     private fun normalize(
