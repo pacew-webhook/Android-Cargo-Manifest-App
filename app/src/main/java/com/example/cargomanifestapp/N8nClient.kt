@@ -16,8 +16,8 @@ import java.net.URL
  * Contoh: http://192.168.1.10:5678/webhook/cargo/manifest/items
  */
 object N8nClient {
-    const val WEBHOOK_URL = "http://192.168.43.123:5678/webhook/cargo/manifest/items"
-    const val STOWING_WEBHOOK_URL = "http://192.168.43.123:5678/webhook/cargo/stowing"
+    const val WEBHOOK_URL = "http://10.18.243.83:5678/webhook/cargo/manifest/items"
+    const val STOWING_WEBHOOK_URL = "http://10.18.243.83:5678/webhook/cargo/stowing"
 
     suspend fun sendManifest(items: List<CargoItem>): Result<String> = withContext(Dispatchers.IO) {
         try {
