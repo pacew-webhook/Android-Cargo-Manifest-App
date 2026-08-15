@@ -1,24 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
->
+    package="com.example.cargomanifestapp">
 
+    <!-- Internet untuk koneksi ke n8n -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Izin untuk Simpan/Export File Excel -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
 
     <application
-        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:icon="@android:drawable/sym_def_app_icon" 
         android:roundIcon="@android:drawable/sym_def_app_icon"
         android:label="Cargo Manifest"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
-<activity
+
+        <activity
             android:name="com.example.cargomanifestapp.MainActivity"
             android:exported="true"
             android:theme="@android:style/Theme.Material.Light.NoActionBar">
@@ -42,30 +41,17 @@
             android:label="Bukti Timbang Barang"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
-        <!-- Penerbitan label turunan dari BTB -->
-        <activity
-            android:name="com.example.cargomanifestapp.BtbLabelActivity"
-            android:exported="false"
-            android:label="Terbitkan Label"
-            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
-
-        <!-- OCR langsung display timbangan untuk BTB -->
-        <activity
-            android:name="com.example.cargomanifestapp.ScaleOcrActivity"
-            android:exported="false"
-            android:label="OCR Timbangan"
-            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
-
         <!-- Provider untuk Berbagi File Excel -->
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.provider"
+            android:authorities="com.example.cargomanifestapp.provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-</application>
+
+    </application>
 
 </manifest>
