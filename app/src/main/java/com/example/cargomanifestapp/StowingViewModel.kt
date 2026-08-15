@@ -23,8 +23,8 @@ enum class DeleteType {
 class StowingViewModel : ViewModel() {
 
     companion object {
-        // Kolom T pada Excel (index 19) menyimpan NO PAG metadata.
-        private const val HIDDEN_PAG_COLUMN = 19
+        // Nama Sheet tersembunyi yang dibuat oleh ExcelUtils saat Export.
+        private const val IMPORT_META_SHEET = "_STOWING_META"
     }
 
     // --- STATE FORM INPUT ---
@@ -227,39 +227,31 @@ class StowingViewModel : ViewModel() {
         onError: (String) -> Unit
     ) {
         viewModelScope.launch(Dispatchers.IO) {
-            var imported: List<CargoItem> = emptyList()
-
             try {
-                val resolver = context.contentResolver
-
-                imported = resolver.openInputStream(uri)?.use { input ->
+                val imported = context.contentResolver.openInputStream(uri)?.use { input ->
                     WorkbookFactory.create(input).use { workbook ->
-
-                        // Cari sheet "Manifest" tanpa mempermasalahkan huruf besar/kecil.
-                        val sheet = (0 until workbook.numberOfSheets)
+                        val manifestSheet = (0 until workbook.numberOfSheets)
                             .map { index -> workbook.getSheetAt(index) }
                             .firstOrNull {
                                 it.sheetName.trim().equals("Manifest", ignoreCase = true)
                             }
                             ?: workbook.getSheetAt(0)
 
-                        val formatter = DataFormatter()
-                        val result = mutableListOf<CargoItem>()
+                        val metaSheet = (0 until workbook.numberOfSheets)
+                            .map { index -> workbook.getSheetAt(index) }
+                            .firstOrNull {
+                                it.sheetName.trim().equals(IMPORT_META_SHEET, ignoreCase = true)
+                            }
 
-                        // Cari baris header "No" agar tidak bergantung mutlak pada row 14.
-                        // Jika tidak ditemukan, tetap gunakan row 14 (index 13)
-                        // sesuai template aplikasi.
+                        val formatter = DataFormatter()
                         var startRow = 13
-                        for (rowIndex in 0..minOf(sheet.lastRowNum, 30)) {
-                            val row = sheet.getRow(rowIndex) ?: continue
-                            val firstCell = safeCellText(
-                                formatter,
-                                row.getCell(0)
-                            )
-                            val ptiCell = safeCellText(
-                                formatter,
-                                row.getCell(1)
-                            )
+
+                        // Cari header Manifest agar tetap aman jika posisi template
+                        // berubah sedikit.
+                        for (rowIndex in 0..minOf(manifestSheet.lastRowNum, 30)) {
+                            val row = manifestSheet.getRow(rowIndex) ?: continue
+                            val firstCell = safeCellText(formatter, row.getCell(0))
+                            val ptiCell = safeCellText(formatter, row.getCell(1))
                             if (firstCell.equals("No", ignoreCase = true) &&
                                 ptiCell.equals("PTI", ignoreCase = true)
                             ) {
@@ -268,84 +260,128 @@ class StowingViewModel : ViewModel() {
                             }
                         }
 
-                        if (sheet.lastRowNum < startRow) {
-                            return@use emptyList<CargoItem>()
-                        }
+                        val result = mutableListOf<CargoItem>()
 
-                        for (rowIndex in startRow..sheet.lastRowNum) {
-                            val row = sheet.getRow(rowIndex) ?: continue
+                        /*
+                         * FILE HASIL EXPORT APLIKASI:
+                         * Gunakan metadata tersembunyi sebagai sumber NO PAG dan
+                         * rincian KG asli. Tidak ada kolom T sama sekali.
+                         */
+                        if (metaSheet != null && metaSheet.lastRowNum >= 1) {
+                            val metadataCount = metaSheet.lastRowNum
 
-                            // Jangan gunakan evaluator untuk cell normal.
-                            // DataFormatter cukup untuk numeric/text cell dan lebih stabil.
-                            fun text(col: Int): String = safeCellText(
-                                formatter,
-                                row.getCell(col)
-                            )
+                            for (i in 0 until metadataCount) {
+                                val manifestRow = manifestSheet.getRow(startRow + i) ?: continue
+                                val metaRow = metaSheet.getRow(i + 1) ?: continue
 
-                            val no = text(0)
-                            val ptiValue = text(1)
-                            val pcsValue = text(2)
-                            val subtotalValue = text(4)
-                            val descriptionValue = text(5)
-                            val customerValue = text(6)
-
-                            // Kolom T (index 19) adalah metadata NO PAG dari export V4/V5.
-                            // Tidak wajib ada agar file Manifest lama tetap bisa dibaca.
-                            val hiddenPag = text(HIDDEN_PAG_COLUMN)
-
-                            // Lewati baris TOTAL, header lanjutan, dan baris kosong.
-                            val rowText = listOf(
-                                no,
-                                ptiValue,
-                                pcsValue,
-                                subtotalValue,
-                                descriptionValue,
-                                customerValue
-                            ).joinToString(" ")
-
-                            if (rowText.contains("TOTAL", ignoreCase = true)) {
-                                continue
-                            }
-
-                            if (
-                                ptiValue.isBlank() &&
-                                descriptionValue.isBlank() &&
-                                customerValue.isBlank() &&
-                                subtotalValue.isBlank()
-                            ) {
-                                continue
-                            }
-
-                            // Baris data harus mempunyai minimal PTI/Description/Customer
-                            // atau subtotal. Nomor A tidak dipakai sebagai syarat karena
-                            // file yang diedit manual dapat mengubah kolom No.
-                            val pcs = parseNumber(pcsValue)
-                                ?.toInt()
-                                ?.coerceAtLeast(1)
-                                ?: 1
-
-                            val subtotal = parseNumber(subtotalValue) ?: 0.0
-
-                            // Export Manifest mengosongkan kolom D (Pcs/Cly).
-                            // Karena detail KG per koli tidak tersedia di Manifest,
-                            // subtotal dipertahankan sebagai satu nilai KG untuk import.
-                            val weightList = if (subtotal > 0.0) {
-                                formatWeight(subtotal)
-                            } else {
-                                ""
-                            }
-
-                            result.add(
-                                CargoItem(
-                                    noPag = normalizePag(hiddenPag),
-                                    customer = customerValue,
-                                    description = descriptionValue,
-                                    pti = normalizePti(ptiValue),
-                                    pcsQty = pcs.toString(),
-                                    weight = weightList,
-                                    subTotal = formatWeight(subtotal)
+                                fun manifestText(col: Int): String = safeCellText(
+                                    formatter,
+                                    manifestRow.getCell(col)
                                 )
-                            )
+
+                                fun metaText(col: Int): String = safeCellText(
+                                    formatter,
+                                    metaRow.getCell(col)
+                                )
+
+                                val ptiValue = manifestText(1).ifBlank { metaText(3) }
+                                val pcsValue = manifestText(2).ifBlank { metaText(4) }
+                                val subtotalValue = manifestText(4).ifBlank { metaText(6) }
+                                val descriptionValue = manifestText(5).ifBlank { metaText(2) }
+                                val customerValue = manifestText(6).ifBlank { metaText(1) }
+
+                                if (ptiValue.isBlank() &&
+                                    descriptionValue.isBlank() &&
+                                    customerValue.isBlank() &&
+                                    subtotalValue.isBlank()
+                                ) continue
+
+                                val pcs = parseNumber(pcsValue)
+                                    ?.toInt()
+                                    ?.coerceAtLeast(1)
+                                    ?: parseNumber(metaText(4))
+                                        ?.toInt()
+                                        ?.coerceAtLeast(1)
+                                    ?: 1
+
+                                val subtotal = parseNumber(subtotalValue)
+                                    ?: parseNumber(metaText(6))
+                                    ?: 0.0
+
+                                val originalWeight = metaText(5)
+                                val weightList = originalWeight.ifBlank {
+                                    if (subtotal > 0.0) formatWeight(subtotal) else ""
+                                }
+
+                                result.add(
+                                    CargoItem(
+                                        awbNo = metaText(7),
+                                        flightNo = metaText(8),
+                                        noPag = normalizePag(metaText(0)),
+                                        customer = customerValue,
+                                        description = descriptionValue,
+                                        pti = normalizePti(ptiValue),
+                                        pcsQty = pcs.toString(),
+                                        weight = weightList,
+                                        subTotal = formatWeight(subtotal)
+                                    )
+                                )
+                            }
+                        } else {
+                            /*
+                             * BACKWARD COMPATIBILITY:
+                             * File lama yang belum mempunyai _STOWING_META masih
+                             * bisa di-import dari kolom Manifest yang terlihat.
+                             * NO PAG memang tidak tersedia pada template lama, jadi
+                             * dibiarkan kosong, bukan dibuat-buat dari kolom T.
+                             */
+                            if (manifestSheet.lastRowNum >= startRow) {
+                                for (rowIndex in startRow..manifestSheet.lastRowNum) {
+                                    val row = manifestSheet.getRow(rowIndex) ?: continue
+
+                                    fun text(col: Int): String = safeCellText(
+                                        formatter,
+                                        row.getCell(col)
+                                    )
+
+                                    val no = text(0)
+                                    val ptiValue = text(1)
+                                    val pcsValue = text(2)
+                                    val subtotalValue = text(4)
+                                    val descriptionValue = text(5)
+                                    val customerValue = text(6)
+
+                                    val rowText = listOf(
+                                        no, ptiValue, pcsValue, subtotalValue,
+                                        descriptionValue, customerValue
+                                    ).joinToString(" ")
+
+                                    if (rowText.contains("TOTAL", ignoreCase = true)) continue
+                                    if (ptiValue.isBlank() &&
+                                        descriptionValue.isBlank() &&
+                                        customerValue.isBlank() &&
+                                        subtotalValue.isBlank()
+                                    ) continue
+
+                                    val pcs = parseNumber(pcsValue)
+                                        ?.toInt()
+                                        ?.coerceAtLeast(1)
+                                        ?: 1
+                                    val subtotal = parseNumber(subtotalValue) ?: 0.0
+
+                                    result.add(
+                                        CargoItem(
+                                            noPag = "",
+                                            customer = customerValue,
+                                            description = descriptionValue,
+                                            pti = normalizePti(ptiValue),
+                                            pcsQty = pcs.toString(),
+                                            weight = if (subtotal > 0.0) formatWeight(subtotal) else "",
+                                            subTotal = formatWeight(subtotal)
+                                        )
+                                    )
+                                }
+                            }
                         }
 
                         result
@@ -356,29 +392,20 @@ class StowingViewModel : ViewModel() {
                     if (imported.isEmpty()) {
                         onError(
                             "Tidak ada data Manifest yang dapat di-import. " +
-                                "Pastikan file memiliki Sheet Manifest dan data."
+                                "Pastikan file adalah hasil Export aplikasi ini."
                         )
                     } else {
-                        // PENTING: data lama baru diganti setelah seluruh file
-                        // berhasil dibaca dan menghasilkan minimal satu data.
                         cargoList.clear()
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
                         resetForm()
 
-                        val missingPag = imported.count { it.noPag.isBlank() }
-                        val message = if (missingPag > 0) {
-                            "Import berhasil: ${imported.size} data Manifest. " +
-                                "$missingPag data tidak memiliki NO PAG."
-                        } else {
+                        onSuccess(
                             "Import berhasil: ${imported.size} data Manifest"
-                        }
-                        onSuccess(message)
+                        )
                     }
                 }
             } catch (t: Throwable) {
-                // Throwable sengaja digunakan karena beberapa error runtime dari
-                // library Excel (mis. linkage/class loading) bukan turunan Exception.
                 val detail = t.message
                     ?.takeIf { it.isNotBlank() }
                     ?: t.javaClass.simpleName

@@ -14,7 +14,7 @@ import java.io.OutputStream
 
 object ExcelUtils {
 
-    private const val HIDDEN_PAG_COLUMN = 19 // Column T
+    private const val IMPORT_META_SHEET = "_STOWING_META"
 
     private val PAG_ROW_INDEXES = listOf(
         0, 10, 22, 33, 43, 56, 66, 77
@@ -85,6 +85,14 @@ object ExcelUtils {
 
             fillManifestSheet(
                 manifestSheet,
+                cargoList
+            )
+
+            // Metadata Import disimpan pada SHEET TERSEMBUNYI, bukan pada
+            // kolom tambahan di Sheet Manifest. Template Manifest tetap
+            // persis menggunakan kolom aslinya.
+            writeStowingImportMetadata(
+                workbook,
                 cargoList
             )
 
@@ -312,9 +320,6 @@ object ExcelUtils {
             endCol = 12
         )
 
-        // Kolom T menyimpan NO PAG untuk Import dan tidak ditampilkan.
-        sheet.setColumnHidden(HIDDEN_PAG_COLUMN, true)
-
         val sampleRow =
             sheet.getRow(startRow)
 
@@ -408,13 +413,6 @@ object ExcelUtils {
                     sampleRow?.getCell(6)
                 )
 
-                // T = NO PAG untuk kebutuhan IMPORT.
-                // Kolom ini disembunyikan sehingga tidak mengubah tampilan
-                // Manifest, tetapi NO PAG setiap baris tetap tersimpan.
-                val hiddenPagCell =
-                    row.getCell(HIDDEN_PAG_COLUMN)
-                        ?: row.createCell(HIDDEN_PAG_COLUMN)
-                hiddenPagCell.setCellValue(item.noPag)
             }
 
             /* =========================
@@ -529,6 +527,75 @@ object ExcelUtils {
             11,
             totalStowingGross
         )
+    }
+
+    /**
+     * Menyimpan data asli Stowing pada Sheet tersembunyi.
+     *
+     * Tujuannya adalah membuat Export -> Import menjadi round-trip yang
+     * lengkap tanpa menambah kolom apa pun pada Sheet Manifest yang terlihat.
+     * Sheet ini tidak mengubah template/tampilan Manifest.
+     *
+     * Kolom metadata:
+     * A = NO PAG
+     * B = CUSTOMER
+     * C = DESCRIPTION
+     * D = PTI
+     * E = PCS QTY
+     * F = WEIGHT LIST
+     * G = SUB TOTAL
+     * H = AWB NO
+     * I = FLIGHT NO
+     */
+    private fun writeStowingImportMetadata(
+        workbook: XSSFWorkbook,
+        cargoList: List<CargoItem>
+    ) {
+        val oldIndex = workbook.getSheetIndex(IMPORT_META_SHEET)
+        if (oldIndex >= 0) {
+            workbook.removeSheetAt(oldIndex)
+        }
+
+        val meta = workbook.createSheet(IMPORT_META_SHEET)
+
+        val headers = listOf(
+            "NO PAG",
+            "CUSTOMER",
+            "DESCRIPTION",
+            "PTI",
+            "PCS QTY",
+            "WEIGHT LIST",
+            "SUB TOTAL",
+            "AWB NO",
+            "FLIGHT NO"
+        )
+
+        val header = meta.createRow(0)
+        headers.forEachIndexed { index, value ->
+            header.createCell(index).setCellValue(value)
+        }
+
+        cargoList
+            .filter {
+                it.noPag.isNotBlank() &&
+                    it.customer.isNotBlank() &&
+                    it.description.isNotBlank()
+            }
+            .forEachIndexed { index, item ->
+                val row = meta.createRow(index + 1)
+                row.createCell(0).setCellValue(item.noPag)
+                row.createCell(1).setCellValue(item.customer)
+                row.createCell(2).setCellValue(item.description)
+                row.createCell(3).setCellValue(item.pti)
+                row.createCell(4).setCellValue(item.pcsQty)
+                row.createCell(5).setCellValue(item.weight)
+                row.createCell(6).setCellValue(item.subTotal)
+                row.createCell(7).setCellValue(item.awbNo)
+                row.createCell(8).setCellValue(item.flightNo)
+            }
+
+        // Sheet metadata tidak ditampilkan oleh pengguna.
+        workbook.setSheetHidden(workbook.getSheetIndex(meta), true)
     }
 
     /**
