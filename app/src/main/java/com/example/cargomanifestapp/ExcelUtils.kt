@@ -889,9 +889,9 @@ object ExcelUtils {
             val delta = targetRow.toInt() - currentRow
             if (delta == 0) continue
 
-            anchor.row1 = (anchor.row1 + delta).toShort()
+            anchor.row1 = anchor.row1 + delta
             if (anchor.row2 >= 0) {
-                anchor.row2 = anchor.row2 + delta
+                anchor.row2 = (anchor.row2 + delta).toShort()
             }
         }
     }
