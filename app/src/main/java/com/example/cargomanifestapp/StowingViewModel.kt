@@ -326,18 +326,54 @@ class StowingViewModel : ViewModel() {
                             emptyList()
                         }
 
-                        if (manifestItems.isEmpty()) {
+                        val stowingDataHasDetails = stowingData.any { raw ->
+                            raw.pti.isNotBlank() ||
+                                raw.customer.isNotBlank() ||
+                                raw.description.isNotBlank() ||
+                                raw.pcsQty.isNotBlank() ||
+                                raw.weight.isNotBlank() ||
+                                raw.subTotal.isNotBlank()
+                        }
+
+                        if (stowingData.isNotEmpty() && stowingDataHasDetails) {
+                            /*
+                             * V14 FIX: untuk file hasil Export aplikasi, STOWING_DATA
+                             * adalah sumber kebenaran untuk data Stowing.
+                             *
+                             * Sebelumnya importer hanya mengambil NO PAG dari
+                             * STOWING_DATA lalu mengambil Pcs/Sub Total dari sheet
+                             * Manifest. Masalahnya, sheet Manifest memang sengaja
+                             * merangkum satu PAG/customer/description menjadi satu
+                             * baris. Akibatnya input 50, 50, 50, 50 kg berubah saat
+                             * import menjadi satu item: 4 koli / 200 kg.
+                             *
+                             * STOWING_DATA menyimpan kembali data asli per CargoItem,
+                             * termasuk Weight Detail (50, 50, 50, 50), Pcs/Cly, dan
+                             * Sub Total. Karena itu seluruh CargoItem direkonstruksi
+                             * langsung dari sheet ini dan tidak lagi dipasangkan
+                             * dengan baris Manifest yang sudah diringkas.
+                             */
+                            stowingData.map { raw ->
+                                CargoItem(
+                                    noPag = normalizePag(raw.noPag),
+                                    customer = raw.customer.trim(),
+                                    description = raw.description.trim(),
+                                    pti = normalizePti(raw.pti),
+                                    pcsQty = raw.pcsQty.trim(),
+                                    weight = raw.weight.trim(),
+                                    subTotal = raw.subTotal.trim()
+                                )
+                            }
+                        } else if (manifestItems.isEmpty()) {
                             emptyList()
                         } else if (stowingData.isNotEmpty()) {
-                            // PENTING: mapping berdasarkan urutan baris. Export V8
-                            // menulis Manifest dan STOWING_DATA dari cargoList yang sama,
-                            // sehingga baris ke-N pasti merupakan data input yang sama.
+                            // Kompatibilitas export lama yang hanya menyimpan NO PAG
+                            // di STOWING_DATA: pertahankan data Manifest dan tempelkan
+                            // NO PAG berdasarkan urutan baris.
                             manifestItems.mapIndexed { index, item ->
                                 val raw = stowingData.getOrNull(index)
-                                if (raw != null) {
-                                    item.copy(
-                                        noPag = normalizePag(raw.noPag)
-                                    )
+                                if (raw != null && raw.noPag.isNotBlank()) {
+                                    item.copy(noPag = normalizePag(raw.noPag))
                                 } else {
                                     item
                                 }
@@ -409,8 +445,10 @@ class StowingViewModel : ViewModel() {
     )
 
     /**
-     * V8: baca sheet STOWING_DATA yang dibuat oleh Export aplikasi.
-     * Hanya kolom sheet ini yang digunakan untuk NO PAG.
+     * Baca sheet STOWING_DATA yang dibuat oleh Export aplikasi.
+     *
+     * Sheet ini adalah snapshot data asli per CargoItem dan menjadi sumber
+     * utama saat re-import file hasil export.
      */
     private fun readStowingDataSheet(
         sheet: org.apache.poi.ss.usermodel.Sheet,

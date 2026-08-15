@@ -14,7 +14,7 @@ import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * ExcelUtils_V12_FIXED
+ * ExcelUtils_V15_DYNAMIC_PAG
  *
  * Perbaikan utama:
  * 1. Data Manifest dan Stowing Checklist tetap mengikuti cargoList terbaru.
@@ -25,10 +25,18 @@ import java.io.OutputStream
  * 6. Row total diposisikan berdasarkan jumlah data aktual.
  * 7. Tidak membuat "baris data kosong" hanya karena sisi Manifest dan Stowing
  *    memiliki jumlah baris yang berbeda.
+ * 8. PAG dan koli pada sheet STOWINGAN PAG diperluas dinamis melewati template.
+ * 9. Ringkasan NO PAG ikut diperluas dan tidak membatasi jumlah PAG.
+ * 10. Koli > kapasitas kolom template diteruskan ke kolom berikutnya.
  */
 object ExcelUtils {
 
-    private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
+    // The template contains 8 visual PAG blocks. These are only the seed blocks;
+    // export now creates additional blocks dynamically when the data exceeds them.
+    private val TEMPLATE_PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
+    private const val PAG_BLOCK_HEIGHT = 10
+    private const val PAG_SUMMARY_START_ROW = 88
+    private const val PAG_TEMPLATE_LAST_COL = 45
 
     fun writeCargoListToExcel(
         context: Context,
@@ -521,94 +529,287 @@ object ExcelUtils {
         val groupedByPag = cargoList
             .groupBy { it.noPag.trim() }
             .filterKeys { it.isNotBlank() }
+            .toList()
 
-        var pagBlockIndex = 0
+        if (groupedByPag.isEmpty()) return
 
-        for ((noPag, itemsInPag) in groupedByPag) {
-            if (pagBlockIndex >= PAG_ROW_INDEXES.size) break
+        /*
+         * The original XLSX contains only 8 PAG blocks.  Never use that as a
+         * data limit.  Keep the original 8 blocks for visual compatibility and
+         * append more blocks immediately before the PAG summary when necessary.
+         */
+        val extraBlockCount =
+            (groupedByPag.size - TEMPLATE_PAG_ROW_INDEXES.size).coerceAtLeast(0)
 
-            val startPagRowIndex =
-                PAG_ROW_INDEXES[pagBlockIndex]
+        if (extraBlockCount > 0) {
+            sheet.shiftRows(
+                PAG_SUMMARY_START_ROW,
+                sheet.lastRowNum,
+                extraBlockCount * PAG_BLOCK_HEIGHT,
+                true,
+                false
+            )
 
-            val pagRow =
-                sheet.getRow(startPagRowIndex)
-                    ?: sheet.createRow(startPagRowIndex)
+            val firstExtraStart = TEMPLATE_PAG_ROW_INDEXES.last() + PAG_BLOCK_HEIGHT
+            for (i in 0 until extraBlockCount) {
+                copyPagBlock(
+                    sourceSheet = sheet,
+                    sourceStartRow = TEMPLATE_PAG_ROW_INDEXES.last(),
+                    targetStartRow = firstExtraStart + (i * PAG_BLOCK_HEIGHT)
+                )
+            }
+        }
 
-            val pagCell =
-                pagRow.getCell(1)
-                    ?: pagRow.createCell(1)
+        val pagRowIndexes = buildList {
+            addAll(TEMPLATE_PAG_ROW_INDEXES)
+            val firstExtraStart =
+                TEMPLATE_PAG_ROW_INDEXES.last() + PAG_BLOCK_HEIGHT
+            repeat(extraBlockCount) { index ->
+                add(firstExtraStart + (index * PAG_BLOCK_HEIGHT))
+            }
+        }
 
+        /*
+         * The summary at the bottom of the template also had an 8-PAG limit.
+         * Add rows for every additional PAG before the footer area and rewrite
+         * all summary formulas so they point to the actual dynamic blocks.
+         */
+        val summaryStartRow =
+            PAG_SUMMARY_START_ROW + (extraBlockCount * PAG_BLOCK_HEIGHT)
+
+        val extraSummaryRows =
+            (groupedByPag.size - TEMPLATE_PAG_ROW_INDEXES.size).coerceAtLeast(0)
+
+        if (extraSummaryRows > 0) {
+            val summaryInsertRow = summaryStartRow + 1 + TEMPLATE_PAG_ROW_INDEXES.size
+            val summaryLastRow = sheet.lastRowNum
+            if (summaryInsertRow <= summaryLastRow) {
+                sheet.shiftRows(
+                    summaryInsertRow,
+                    summaryLastRow,
+                    extraSummaryRows,
+                    true,
+                    false
+                )
+            }
+
+            for (i in 0 until extraSummaryRows) {
+                copySummaryRow(
+                    sheet = sheet,
+                    sourceRowIndex = summaryStartRow + TEMPLATE_PAG_ROW_INDEXES.size,
+                    targetRowIndex = summaryInsertRow + i
+                )
+            }
+        }
+
+        // Clear the visible PAG/total fields first.
+        pagRowIndexes.forEach { startRow ->
+            val row = sheet.getRow(startRow) ?: sheet.createRow(startRow)
+            row.getCell(1)?.setBlank()
+            row.getCell(4)?.setBlank()
+        }
+
+        groupedByPag.forEachIndexed { pagIndex, (noPag, itemsInPag) ->
+            val startPagRowIndex = pagRowIndexes[pagIndex]
+            val pagRow = sheet.getRow(startPagRowIndex)
+                ?: sheet.createRow(startPagRowIndex)
+
+            val pagCell = pagRow.getCell(1)
+                ?: pagRow.createCell(1)
             pagCell.setCellValue(noPag)
 
-            val totalPagKg =
-                itemsInPag.sumOf {
-                    parseWeight(it.subTotal)
-                }
+            val totalPagKg = itemsInPag.sumOf {
+                parseWeight(it.subTotal)
+            }
 
-            val totalCell =
-                pagRow.getCell(4)
-                    ?: pagRow.createCell(4)
-
+            val totalCell = pagRow.getCell(4)
+                ?: pagRow.createCell(4)
             totalCell.setCellValue(totalPagKg)
 
-            val customerStartRow =
-                startPagRowIndex + 2
-
+            val customerStartRow = startPagRowIndex + 2
             var currentStartCol = 0
 
             for (item in itemsInPag) {
-                val custRow =
-                    sheet.getRow(customerStartRow)
-                        ?: sheet.createRow(customerStartRow)
+                val custRow = sheet.getRow(customerStartRow)
+                    ?: sheet.createRow(customerStartRow)
 
-                val custCell =
-                    custRow.getCell(currentStartCol)
-                        ?: custRow.createCell(currentStartCol)
+                ensureStowingPagColumn(
+                    sheet = sheet,
+                    columnIndex = currentStartCol,
+                    blockStartRow = startPagRowIndex
+                )
 
+                val custCell = custRow.getCell(currentStartCol)
+                    ?: custRow.createCell(currentStartCol)
                 custCell.setCellValue(item.customer)
 
                 val kgValues = item.weight
                     .split(",")
                     .mapNotNull {
-                        parseWeight(it)
-                            .takeIf { kg -> kg > 0.0 }
+                        parseWeight(it).takeIf { kg -> kg > 0.0 }
                     }
 
-                var currentRow =
-                    customerStartRow + 1
-
+                var currentRow = customerStartRow + 1
                 var colOffset = 0
                 var rowCountInCol = 0
 
                 for (kg in kgValues) {
-                    val r =
-                        sheet.getRow(currentRow)
-                            ?: sheet.createRow(currentRow)
+                    val targetCol = currentStartCol + colOffset
+                    ensureStowingPagColumn(
+                        sheet = sheet,
+                        columnIndex = targetCol,
+                        blockStartRow = startPagRowIndex
+                    )
 
-                    val targetCol =
-                        currentStartCol + colOffset
-
-                    val c =
-                        r.getCell(targetCol)
-                            ?: r.createCell(targetCol)
-
+                    val r = sheet.getRow(currentRow)
+                        ?: sheet.createRow(currentRow)
+                    val c = r.getCell(targetCol)
+                        ?: r.createCell(targetCol)
                     c.setCellValue(kg)
 
                     currentRow++
                     rowCountInCol++
 
+                    // Five weights fit vertically in one column.  Additional
+                    // koli automatically continue into the next column.
                     if (rowCountInCol >= 5) {
                         rowCountInCol = 0
                         colOffset++
-                        currentRow =
-                            customerStartRow + 1
+                        currentRow = customerStartRow + 1
                     }
                 }
 
-                currentStartCol += 6
+                // Keep each cargo input separated. If one input contains more
+                // than five koli, it consumes additional columns; the next input
+                // must start after those columns instead of jumping a fixed 6.
+                val columnsUsedByItem = maxOf(1, (kgValues.size + 4) / 5)
+                currentStartCol += maxOf(6, columnsUsedByItem + 1)
+            }
+        }
+
+        // Rebuild the dynamic PAG summary.
+        val summaryHeader = sheet.getRow(summaryStartRow)
+            ?: sheet.createRow(summaryStartRow)
+        val headerCell = summaryHeader.getCell(3)
+            ?: summaryHeader.createCell(3)
+        headerCell.setCellValue("NO PAG")
+
+        groupedByPag.forEachIndexed { index, _ ->
+            val rowIndex = summaryStartRow + 1 + index
+            val row = sheet.getRow(rowIndex)
+                ?: sheet.createRow(rowIndex)
+            val cell = row.getCell(3)
+                ?: row.createCell(3)
+            val blockExcelRow = pagRowIndexes[index] + 1
+            cell.cellFormula = "B$blockExcelRow"
+        }
+
+        // Remove any stale summary formulas after the current PAG count.
+        val firstStaleRow = summaryStartRow + 1 + groupedByPag.size
+        val lastPossibleSummaryRow =
+            firstStaleRow + TEMPLATE_PAG_ROW_INDEXES.size
+        for (r in firstStaleRow..lastPossibleSummaryRow) {
+            val row = sheet.getRow(r) ?: continue
+            row.getCell(3)?.setBlank()
+            row.getCell(4)?.setBlank()
+        }
+    }
+
+    /** Copy one of the existing visual PAG blocks for an additional PAG. */
+    private fun copyPagBlock(
+        sourceSheet: XSSFSheet,
+        sourceStartRow: Int,
+        targetStartRow: Int
+    ) {
+        val maxColumns = maxOf(
+            PAG_TEMPLATE_LAST_COL + 1,
+            (0..PAG_BLOCK_HEIGHT - 1).maxOfOrNull { offset ->
+                sourceSheet.getRow(sourceStartRow + offset)?.lastCellNum?.toInt() ?: 0
+            } ?: 0
+        )
+
+        for (offset in 0 until PAG_BLOCK_HEIGHT) {
+            val sourceRow = sourceSheet.getRow(sourceStartRow + offset)
+            val targetRow = sourceSheet.getRow(targetStartRow + offset)
+                ?: sourceSheet.createRow(targetStartRow + offset)
+
+            if (sourceRow != null) {
+                targetRow.height = sourceRow.height
+                targetRow.zeroHeight = sourceRow.zeroHeight
             }
 
-            pagBlockIndex++
+            for (col in 0 until maxColumns) {
+                val sourceCell = sourceRow?.getCell(col)
+                val targetCell = targetRow.getCell(col)
+                    ?: targetRow.createCell(col)
+
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                    copyCellValue(sourceCell, targetCell)
+                } else {
+                    targetCell.setBlank()
+                }
+            }
+        }
+    }
+
+    /** Copy the formatting of the 8th summary row to a newly inserted row. */
+    private fun copySummaryRow(
+        sheet: XSSFSheet,
+        sourceRowIndex: Int,
+        targetRowIndex: Int
+    ) {
+        val sourceRow = sheet.getRow(sourceRowIndex)
+        val targetRow = sheet.getRow(targetRowIndex)
+            ?: sheet.createRow(targetRowIndex)
+
+        if (sourceRow != null) {
+            targetRow.height = sourceRow.height
+            for (col in 0 until maxOf(6, sourceRow.lastCellNum.toInt())) {
+                val sourceCell = sourceRow.getCell(col)
+                val targetCell = targetRow.getCell(col)
+                    ?: targetRow.createCell(col)
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                    targetCell.setBlank()
+                }
+            }
+        }
+    }
+
+    /**
+     * Extend the horizontal template when a PAG contains more koli than the
+     * original workbook's columns. New columns inherit the last template
+     * column's width/style, so data is not silently dropped at column 46.
+     */
+    private fun ensureStowingPagColumn(
+        sheet: XSSFSheet,
+        columnIndex: Int,
+        blockStartRow: Int
+    ) {
+        if (columnIndex < 0) return
+
+        val templateColumn = PAG_TEMPLATE_LAST_COL
+        if (columnIndex > sheet.lastRowNum) {
+            // no-op; this condition is intentionally not used for rows. POI
+            // creates cells lazily below.
+        }
+
+        if (columnIndex > templateColumn) {
+            val width = sheet.getColumnWidth(templateColumn)
+            if (width > 0) sheet.setColumnWidth(columnIndex, width)
+            sheet.setColumnHidden(columnIndex, false)
+
+            for (offset in 0 until PAG_BLOCK_HEIGHT) {
+                val row = sheet.getRow(blockStartRow + offset)
+                    ?: sheet.createRow(blockStartRow + offset)
+                val sourceCell = row.getCell(templateColumn)
+                val targetCell = row.getCell(columnIndex)
+                    ?: row.createCell(columnIndex)
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                }
+            }
         }
     }
 
