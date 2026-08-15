@@ -14,8 +14,6 @@ import java.io.OutputStream
 
 object ExcelUtils {
 
-    private const val IMPORT_META_SHEET = "_STOWING_META"
-
     private val PAG_ROW_INDEXES = listOf(
         0, 10, 22, 33, 43, 56, 66, 77
     )
@@ -84,15 +82,8 @@ object ExcelUtils {
                     ?: workbook.getSheetAt(0)
 
             fillManifestSheet(
-                manifestSheet,
-                cargoList
-            )
-
-            // Metadata Import disimpan pada SHEET TERSEMBUNYI, bukan pada
-            // kolom tambahan di Sheet Manifest. Template Manifest tetap
-            // persis menggunakan kolom aslinya.
-            writeStowingImportMetadata(
                 workbook,
+                manifestSheet,
                 cargoList
             )
 
@@ -168,6 +159,7 @@ object ExcelUtils {
      * - Kolom D Manifest (Pcs/Cly) sengaja tetap kosong.
      */
     private fun fillManifestSheet(
+        workbook: XSSFWorkbook,
         sheet: XSSFSheet,
         cargoList: List<CargoItem>
     ) {
@@ -188,12 +180,11 @@ object ExcelUtils {
          * maupun PTI. Setiap CargoItem yang tersimpan di Form Stowing
          * ditulis sebagai satu baris tersendiri.
          */
-        val manifestRows = cargoList
-            .filter {
-                it.noPag.isNotBlank() &&
-                    it.customer.isNotBlank() &&
-                    it.description.isNotBlank()
-            }
+        // MANIFEST = setiap data input ditulis satu per satu.
+        // Jangan filter berdasarkan PAG/customer/description karena
+        // Import harus bisa membaca kembali seluruh baris yang memang
+        // ada di tabel Manifest.
+        val manifestRows = cargoList.toList()
 
         /*
          * Stowing Checklist:
@@ -222,15 +213,20 @@ object ExcelUtils {
                     it.subTotal.toDoubleOrNull() ?: 0.0
                 }
 
+                // HANYA 4 nilai pertama yang ditampilkan di Checklist.
+                // distinct() menjaga agar nama/description yang sama tidak
+                // muncul berulang. Nilai yang lebih dari 4 tidak ditulis.
                 val customers = items
                     .map { it.customer.trim() }
                     .filter { it.isNotBlank() }
                     .distinct()
+                    .take(4)
 
                 val descriptions = items
                     .map { it.description.trim() }
                     .filter { it.isNotBlank() }
                     .distinct()
+                    .take(4)
 
                 items.first().copy(
                     customer = customers.joinToString(" / "),
@@ -445,7 +441,8 @@ object ExcelUtils {
                     sampleRow?.getCell(8)
                 )
 
-                setStyledTextCell(
+                setChecklistTextCell(
+                    workbook,
                     row,
                     9,
                     item.description,
@@ -466,7 +463,8 @@ object ExcelUtils {
                     sampleRow?.getCell(11)
                 )
 
-                setStyledTextCell(
+                setChecklistTextCell(
+                    workbook,
                     row,
                     12,
                     item.customer,
@@ -527,75 +525,6 @@ object ExcelUtils {
             11,
             totalStowingGross
         )
-    }
-
-    /**
-     * Menyimpan data asli Stowing pada Sheet tersembunyi.
-     *
-     * Tujuannya adalah membuat Export -> Import menjadi round-trip yang
-     * lengkap tanpa menambah kolom apa pun pada Sheet Manifest yang terlihat.
-     * Sheet ini tidak mengubah template/tampilan Manifest.
-     *
-     * Kolom metadata:
-     * A = NO PAG
-     * B = CUSTOMER
-     * C = DESCRIPTION
-     * D = PTI
-     * E = PCS QTY
-     * F = WEIGHT LIST
-     * G = SUB TOTAL
-     * H = AWB NO
-     * I = FLIGHT NO
-     */
-    private fun writeStowingImportMetadata(
-        workbook: XSSFWorkbook,
-        cargoList: List<CargoItem>
-    ) {
-        val oldIndex = workbook.getSheetIndex(IMPORT_META_SHEET)
-        if (oldIndex >= 0) {
-            workbook.removeSheetAt(oldIndex)
-        }
-
-        val meta = workbook.createSheet(IMPORT_META_SHEET)
-
-        val headers = listOf(
-            "NO PAG",
-            "CUSTOMER",
-            "DESCRIPTION",
-            "PTI",
-            "PCS QTY",
-            "WEIGHT LIST",
-            "SUB TOTAL",
-            "AWB NO",
-            "FLIGHT NO"
-        )
-
-        val header = meta.createRow(0)
-        headers.forEachIndexed { index, value ->
-            header.createCell(index).setCellValue(value)
-        }
-
-        cargoList
-            .filter {
-                it.noPag.isNotBlank() &&
-                    it.customer.isNotBlank() &&
-                    it.description.isNotBlank()
-            }
-            .forEachIndexed { index, item ->
-                val row = meta.createRow(index + 1)
-                row.createCell(0).setCellValue(item.noPag)
-                row.createCell(1).setCellValue(item.customer)
-                row.createCell(2).setCellValue(item.description)
-                row.createCell(3).setCellValue(item.pti)
-                row.createCell(4).setCellValue(item.pcsQty)
-                row.createCell(5).setCellValue(item.weight)
-                row.createCell(6).setCellValue(item.subTotal)
-                row.createCell(7).setCellValue(item.awbNo)
-                row.createCell(8).setCellValue(item.flightNo)
-            }
-
-        // Sheet metadata tidak ditampilkan oleh pengguna.
-        workbook.setSheetHidden(workbook.getSheetIndex(meta), true)
     }
 
     /**
@@ -1002,6 +931,37 @@ object ExcelUtils {
             else -> {
                 dst.setBlank()
             }
+        }
+    }
+
+    /**
+     * Teks untuk Description/Customer pada Stowing Checklist.
+     *
+     * - Maksimal 4 item sudah dibatasi saat grouping.
+     * - Wrap + shrink-to-fit menjaga teks tetap berada di dalam kolom,
+     *   bukan meluber ke kolom sebelah.
+     */
+    private fun setChecklistTextCell(
+        workbook: XSSFWorkbook,
+        row: Row,
+        col: Int,
+        value: String,
+        sample: Cell?
+    ) {
+        val cell = row.getCell(col) ?: row.createCell(col)
+
+        if (sample != null) {
+            val style = workbook.createCellStyle()
+            style.cloneStyleFrom(sample.cellStyle)
+            style.setWrapText(true)
+            style.setShrinkToFit(true)
+            cell.cellStyle = style
+        }
+
+        cell.setCellValue(value)
+        // Sedikit tinggi tambahan agar wrap tetap terbaca jika diperlukan.
+        if (row.height.toInt() < 420) {
+            row.height = 420
         }
     }
 

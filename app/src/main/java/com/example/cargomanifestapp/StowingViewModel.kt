@@ -22,11 +22,6 @@ enum class DeleteType {
 
 class StowingViewModel : ViewModel() {
 
-    companion object {
-        // Nama Sheet tersembunyi yang dibuat oleh ExcelUtils saat Export.
-        private const val IMPORT_META_SHEET = "_STOWING_META"
-    }
-
     // --- STATE FORM INPUT ---
     var noPag by mutableStateOf("")
         private set
@@ -206,19 +201,22 @@ class StowingViewModel : ViewModel() {
     }
 
     /**
-     * Import data dari Sheet Manifest hasil export aplikasi.
+     * Import file Excel hasil Export aplikasi.
      *
-     * SETIAP BARIS MANIFEST = SATU CargoItem.
-     * Tidak ada grouping saat import.
+     * SUMBER YANG DIBACA HANYA KOLOM YANG TERLIHAT:
+     * - Sheet Manifest, kolom A:G untuk data per baris.
+     * - Sheet Manifest, bagian Stowing Checklist (H:M) untuk NO PAG.
      *
-     * V5 FIX:
-     * - Jangan menghapus data lama sebelum seluruh file berhasil dibaca.
-     * - Tangkap Throwable agar error POI/Android tidak langsung membuat app crash.
-     * - Jangan mewajibkan kolom T. Jika NO PAG tersembunyi tidak tersedia,
-     *   import tetap berjalan dan NO PAG dibiarkan kosong.
-     * - Tidak memakai FormulaEvaluator saat membaca cell biasa; ini lebih aman
-     *   untuk file XLSX yang dibuat/diedit oleh Google Sheets/Excel mobile.
-     * - Cari sheet Manifest secara case-insensitive sebelum memakai sheet pertama.
+     * Tidak membaca kolom T, sheet metadata, hidden metadata, atau
+     * data tambahan lainnya.
+     *
+     * Manifest:
+     *   1 baris Excel = 1 CargoItem.
+     *
+     * NO PAG:
+     *   diambil dari kolom NO PAG pada Stowing Checklist, kemudian
+     *   dipasangkan kembali ke baris Manifest berdasarkan total NET
+     *   serta Customer/Description yang terlihat di checklist.
      */
     fun importFromManifestExcel(
         context: Context,
@@ -230,161 +228,104 @@ class StowingViewModel : ViewModel() {
             try {
                 val imported = context.contentResolver.openInputStream(uri)?.use { input ->
                     WorkbookFactory.create(input).use { workbook ->
+                        val formatter = DataFormatter()
+
                         val manifestSheet = (0 until workbook.numberOfSheets)
-                            .map { index -> workbook.getSheetAt(index) }
+                            .map { workbook.getSheetAt(it) }
                             .firstOrNull {
                                 it.sheetName.trim().equals("Manifest", ignoreCase = true)
                             }
                             ?: workbook.getSheetAt(0)
 
-                        val metaSheet = (0 until workbook.numberOfSheets)
-                            .map { index -> workbook.getSheetAt(index) }
-                            .firstOrNull {
-                                it.sheetName.trim().equals(IMPORT_META_SHEET, ignoreCase = true)
+                        val manifestStartRow = findManifestDataStartRow(
+                            manifestSheet,
+                            formatter
+                        )
+
+                        val manifestItems = mutableListOf<CargoItem>()
+                        val manifestEndRow = findManifestTotalRow(
+                            manifestSheet,
+                            formatter
+                        )
+
+                        if (manifestSheet.lastRowNum >= manifestStartRow) {
+                            val endRow = if (manifestEndRow >= manifestStartRow) {
+                                manifestEndRow - 1
+                            } else {
+                                manifestSheet.lastRowNum
                             }
 
-                        val formatter = DataFormatter()
-                        var startRow = 13
+                            for (rowIndex in manifestStartRow..endRow) {
+                                val row = manifestSheet.getRow(rowIndex) ?: continue
 
-                        // Cari header Manifest agar tetap aman jika posisi template
-                        // berubah sedikit.
-                        for (rowIndex in 0..minOf(manifestSheet.lastRowNum, 30)) {
-                            val row = manifestSheet.getRow(rowIndex) ?: continue
-                            val firstCell = safeCellText(formatter, row.getCell(0))
-                            val ptiCell = safeCellText(formatter, row.getCell(1))
-                            if (firstCell.equals("No", ignoreCase = true) &&
-                                ptiCell.equals("PTI", ignoreCase = true)
-                            ) {
-                                startRow = rowIndex + 1
-                                break
-                            }
-                        }
-
-                        val result = mutableListOf<CargoItem>()
-
-                        /*
-                         * FILE HASIL EXPORT APLIKASI:
-                         * Gunakan metadata tersembunyi sebagai sumber NO PAG dan
-                         * rincian KG asli. Tidak ada kolom T sama sekali.
-                         */
-                        if (metaSheet != null && metaSheet.lastRowNum >= 1) {
-                            val metadataCount = metaSheet.lastRowNum
-
-                            for (i in 0 until metadataCount) {
-                                val manifestRow = manifestSheet.getRow(startRow + i) ?: continue
-                                val metaRow = metaSheet.getRow(i + 1) ?: continue
-
-                                fun manifestText(col: Int): String = safeCellText(
+                                fun text(col: Int): String = safeCellText(
                                     formatter,
-                                    manifestRow.getCell(col)
+                                    row.getCell(col)
                                 )
 
-                                fun metaText(col: Int): String = safeCellText(
-                                    formatter,
-                                    metaRow.getCell(col)
-                                )
+                                val no = text(0)
+                                val ptiValue = text(1)
+                                val pcsValue = text(2)
+                                val subtotalValue = text(4)
+                                val descriptionValue = text(5)
+                                val customerValue = text(6)
 
-                                val ptiValue = manifestText(1).ifBlank { metaText(3) }
-                                val pcsValue = manifestText(2).ifBlank { metaText(4) }
-                                val subtotalValue = manifestText(4).ifBlank { metaText(6) }
-                                val descriptionValue = manifestText(5).ifBlank { metaText(2) }
-                                val customerValue = manifestText(6).ifBlank { metaText(1) }
+                                // TOTAL WEIGHT / baris total dan baris kosong dilewati.
+                                val rowText = listOf(
+                                    no,
+                                    ptiValue,
+                                    pcsValue,
+                                    subtotalValue,
+                                    descriptionValue,
+                                    customerValue
+                                ).joinToString(" ")
 
+                                if (rowText.contains("TOTAL", ignoreCase = true)) continue
                                 if (ptiValue.isBlank() &&
+                                    pcsValue.isBlank() &&
+                                    subtotalValue.isBlank() &&
                                     descriptionValue.isBlank() &&
-                                    customerValue.isBlank() &&
-                                    subtotalValue.isBlank()
+                                    customerValue.isBlank()
                                 ) continue
 
                                 val pcs = parseNumber(pcsValue)
                                     ?.toInt()
                                     ?.coerceAtLeast(1)
-                                    ?: parseNumber(metaText(4))
-                                        ?.toInt()
-                                        ?.coerceAtLeast(1)
                                     ?: 1
 
-                                val subtotal = parseNumber(subtotalValue)
-                                    ?: parseNumber(metaText(6))
-                                    ?: 0.0
+                                val subtotal = parseNumber(subtotalValue) ?: 0.0
 
-                                val originalWeight = metaText(5)
-                                val weightList = originalWeight.ifBlank {
-                                    if (subtotal > 0.0) formatWeight(subtotal) else ""
-                                }
-
-                                result.add(
+                                manifestItems.add(
                                     CargoItem(
-                                        awbNo = metaText(7),
-                                        flightNo = metaText(8),
-                                        noPag = normalizePag(metaText(0)),
+                                        noPag = "",
                                         customer = customerValue,
                                         description = descriptionValue,
                                         pti = normalizePti(ptiValue),
                                         pcsQty = pcs.toString(),
-                                        weight = weightList,
+                                        weight = if (subtotal > 0.0) formatWeight(subtotal) else "",
                                         subTotal = formatWeight(subtotal)
                                     )
                                 )
                             }
-                        } else {
-                            /*
-                             * BACKWARD COMPATIBILITY:
-                             * File lama yang belum mempunyai _STOWING_META masih
-                             * bisa di-import dari kolom Manifest yang terlihat.
-                             * NO PAG memang tidak tersedia pada template lama, jadi
-                             * dibiarkan kosong, bukan dibuat-buat dari kolom T.
-                             */
-                            if (manifestSheet.lastRowNum >= startRow) {
-                                for (rowIndex in startRow..manifestSheet.lastRowNum) {
-                                    val row = manifestSheet.getRow(rowIndex) ?: continue
-
-                                    fun text(col: Int): String = safeCellText(
-                                        formatter,
-                                        row.getCell(col)
-                                    )
-
-                                    val no = text(0)
-                                    val ptiValue = text(1)
-                                    val pcsValue = text(2)
-                                    val subtotalValue = text(4)
-                                    val descriptionValue = text(5)
-                                    val customerValue = text(6)
-
-                                    val rowText = listOf(
-                                        no, ptiValue, pcsValue, subtotalValue,
-                                        descriptionValue, customerValue
-                                    ).joinToString(" ")
-
-                                    if (rowText.contains("TOTAL", ignoreCase = true)) continue
-                                    if (ptiValue.isBlank() &&
-                                        descriptionValue.isBlank() &&
-                                        customerValue.isBlank() &&
-                                        subtotalValue.isBlank()
-                                    ) continue
-
-                                    val pcs = parseNumber(pcsValue)
-                                        ?.toInt()
-                                        ?.coerceAtLeast(1)
-                                        ?: 1
-                                    val subtotal = parseNumber(subtotalValue) ?: 0.0
-
-                                    result.add(
-                                        CargoItem(
-                                            noPag = "",
-                                            customer = customerValue,
-                                            description = descriptionValue,
-                                            pti = normalizePti(ptiValue),
-                                            pcsQty = pcs.toString(),
-                                            weight = if (subtotal > 0.0) formatWeight(subtotal) else "",
-                                            subTotal = formatWeight(subtotal)
-                                        )
-                                    )
-                                }
-                            }
                         }
 
-                        result
+                        val pagGroups = readVisibleStowingChecklist(
+                            manifestSheet,
+                            formatter
+                        )
+
+                        if (manifestItems.isEmpty()) {
+                            emptyList()
+                        } else if (pagGroups.isEmpty()) {
+                            // Tetap import semua data Manifest. NO PAG kosong karena
+                            // memang tidak ada kolom PAG yang bisa dibaca.
+                            manifestItems
+                        } else {
+                            applyVisiblePagGroups(
+                                manifestItems,
+                                pagGroups
+                            )
+                        }
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
 
@@ -392,16 +333,23 @@ class StowingViewModel : ViewModel() {
                     if (imported.isEmpty()) {
                         onError(
                             "Tidak ada data Manifest yang dapat di-import. " +
-                                "Pastikan file adalah hasil Export aplikasi ini."
+                                "Pastikan file Excel memiliki data pada kolom Manifest."
                         )
                     } else {
+                        // Data lama baru diganti setelah seluruh file selesai dibaca.
                         cargoList.clear()
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
                         resetForm()
 
+                        val pagCount = imported.count { it.noPag.isNotBlank() }
                         onSuccess(
-                            "Import berhasil: ${imported.size} data Manifest"
+                            "Import berhasil: ${imported.size} data Manifest" +
+                                if (pagCount > 0) {
+                                    " • ${pagCount} data berhasil dipasangkan NO PAG"
+                                } else {
+                                    " • NO PAG tidak ditemukan"
+                                }
                         )
                     }
                 }
@@ -416,6 +364,260 @@ class StowingViewModel : ViewModel() {
                             "Detail: $detail"
                     )
                 }
+            }
+        }
+    }
+
+    private data class VisiblePagGroup(
+        val noPag: String,
+        val descriptions: Set<String>,
+        val customers: Set<String>,
+        val net: Double
+    )
+
+    private fun findManifestDataStartRow(
+        sheet: org.apache.poi.ss.usermodel.Sheet,
+        formatter: DataFormatter
+    ): Int {
+        for (rowIndex in 0..minOf(sheet.lastRowNum, 40)) {
+            val row = sheet.getRow(rowIndex) ?: continue
+            val a = safeCellText(formatter, row.getCell(0))
+            val b = safeCellText(formatter, row.getCell(1))
+            if (a.equals("No", ignoreCase = true) &&
+                b.equals("PTI", ignoreCase = true)
+            ) {
+                return rowIndex + 1
+            }
+        }
+        return 13
+    }
+
+    private fun findManifestTotalRow(
+        sheet: org.apache.poi.ss.usermodel.Sheet,
+        formatter: DataFormatter
+    ): Int {
+        for (r in 0..sheet.lastRowNum) {
+            val row = sheet.getRow(r) ?: continue
+            val text = (0..6)
+                .map { safeCellText(formatter, row.getCell(it)) }
+                .joinToString(" ")
+
+            if (text.contains("TOTAL WEIGHT", ignoreCase = true) ||
+                text.equals("TOTAL", ignoreCase = true)
+            ) {
+                return r
+            }
+        }
+        return -1
+    }
+
+    /**
+     * Membaca H:M pada Sheet Manifest, yaitu Stowing Checklist yang memang
+     * terlihat oleh pengguna.
+     */
+    private fun readVisibleStowingChecklist(
+        sheet: org.apache.poi.ss.usermodel.Sheet,
+        formatter: DataFormatter
+    ): List<VisiblePagGroup> {
+        var headerRow = -1
+
+        for (r in 0..minOf(sheet.lastRowNum, 80)) {
+            val row = sheet.getRow(r) ?: continue
+            val noPag = safeCellText(formatter, row.getCell(8))
+            val desc = safeCellText(formatter, row.getCell(9))
+            val weight = safeCellText(formatter, row.getCell(10))
+            val customer = safeCellText(formatter, row.getCell(12))
+
+            if (noPag.equals("NO PAG", ignoreCase = true) &&
+                desc.equals("DESCRIPTION", ignoreCase = true) &&
+                weight.equals("Net", ignoreCase = true) &&
+                (customer.contains("CUSTOM", ignoreCase = true) ||
+                    customer.contains("COSTUM", ignoreCase = true))
+            ) {
+                headerRow = r
+                break
+            }
+        }
+
+        if (headerRow < 0) return emptyList()
+
+        val result = mutableListOf<VisiblePagGroup>()
+
+        for (r in headerRow + 1..sheet.lastRowNum) {
+            val row = sheet.getRow(r) ?: continue
+
+            val noPag = safeCellText(formatter, row.getCell(8)).trim()
+            val description = safeCellText(formatter, row.getCell(9)).trim()
+            val net = parseNumber(
+                safeCellText(formatter, row.getCell(10))
+            ) ?: 0.0
+            val customer = safeCellText(formatter, row.getCell(12)).trim()
+
+            if (noPag.isBlank()) {
+                // Berhenti setelah TOTAL WEIGHT / akhir data.
+                continue
+            }
+
+            if (noPag.contains("TOTAL", ignoreCase = true)) break
+
+            if (description.isBlank() && customer.isBlank() && net == 0.0) continue
+
+            result.add(
+                VisiblePagGroup(
+                    noPag = normalizePag(noPag),
+                    descriptions = splitChecklistValues(description),
+                    customers = splitChecklistValues(customer),
+                    net = net
+                )
+            )
+        }
+
+        return result
+    }
+
+    private fun splitChecklistValues(value: String): Set<String> {
+        return value
+            .split("/")
+            .map { it.trim().uppercase() }
+            .filter { it.isNotBlank() }
+            .toSet()
+    }
+
+    /**
+     * Pasangkan NO PAG berdasarkan isi kolom yang terlihat.
+     *
+     * Prioritas:
+     * 1. Customer/Description harus cocok dengan daftar yang tampil.
+     * 2. Total KG group harus habis tepat.
+     *
+     * Jika sebuah group tidak bisa dicocokkan secara unik, item tersebut
+     * dibiarkan kosong daripada menebak PAG yang salah.
+     */
+    private fun applyVisiblePagGroups(
+        items: List<CargoItem>,
+        groups: List<VisiblePagGroup>
+    ): List<CargoItem> {
+        if (items.isEmpty() || groups.isEmpty()) return items
+
+        val weights = items.map {
+            kotlin.math.round(
+                (it.subTotal.toDoubleOrNull() ?: 0.0) * 100.0
+            ).toLong()
+        }
+        val targets = groups.map {
+            kotlin.math.round(it.net * 100.0).toLong()
+        }
+
+        val assigned = IntArray(items.size) { -1 }
+
+        fun matches(item: CargoItem, group: VisiblePagGroup): Boolean {
+            val customer = item.customer.trim().uppercase()
+            val description = item.description.trim().uppercase()
+            return (customer.isNotBlank() && customer in group.customers) ||
+                (description.isNotBlank() && description in group.descriptions)
+        }
+
+        fun solveGroup(
+            groupIndex: Int,
+            available: MutableList<Int>
+        ): Boolean {
+            // Group terakhir harus menerima semua baris yang tersisa.
+            if (groupIndex == groups.lastIndex) {
+                val total = available.sumOf { weights[it] }
+                if (total != targets[groupIndex]) return false
+
+                for (index in available) {
+                    assigned[index] = groupIndex
+                }
+                return true
+            }
+
+            val group = groups[groupIndex]
+            val target = targets[groupIndex]
+
+            var candidates = available.filter { matches(items[it], group) }
+
+            // Karena Checklist hanya menampilkan maksimal 4 Customer dan
+            // 4 Description, sebuah data valid bisa saja tidak masuk daftar
+            // yang terlihat. Jika kandidat yang cocok tidak cukup berat,
+            // fallback ke seluruh baris yang tersisa agar tidak kehilangan data.
+            if (candidates.sumOf { weights[it] } < target) {
+                candidates = available.toList()
+            }
+
+            if (candidates.isEmpty()) return false
+
+            // Urutkan berat terbesar dulu agar pencarian subset lebih cepat.
+            candidates = candidates.sortedByDescending { weights[it] }
+
+            val suffix = LongArray(candidates.size + 1)
+            for (i in candidates.indices.reversed()) {
+                suffix[i] = suffix[i + 1] + weights[candidates[i]]
+            }
+
+            val chosen = mutableListOf<Int>()
+            val dead = HashSet<String>()
+
+            fun choose(position: Int, remainingTarget: Long): Boolean {
+                if (remainingTarget == 0L) {
+                    val nextAvailable = available
+                        .filterNot { it in chosen }
+                        .toMutableList()
+
+                    for (index in chosen) assigned[index] = groupIndex
+
+                    if (solveGroup(groupIndex + 1, nextAvailable)) {
+                        return true
+                    }
+
+                    for (index in chosen) assigned[index] = -1
+                    return false
+                }
+
+                if (remainingTarget < 0L || position >= candidates.size) return false
+                if (suffix[position] < remainingTarget) return false
+
+                val key = "$position:$remainingTarget:${chosen.size}"
+                if (!dead.add(key)) return false
+
+                val index = candidates[position]
+                val weight = weights[index]
+
+                // Ambil item ini.
+                if (weight <= remainingTarget) {
+                    chosen.add(index)
+                    if (choose(position + 1, remainingTarget - weight)) return true
+                    chosen.removeAt(chosen.lastIndex)
+                }
+
+                // Lewati item ini.
+                return choose(position + 1, remainingTarget)
+            }
+
+            return choose(0, target)
+        }
+
+        val available = items.indices.toMutableList()
+        val solved = solveGroup(0, available)
+
+        if (!solved) {
+            // Jangan pernah menebak PAG secara paksa. Jika kombinasi visible
+            // tidak dapat direkonstruksi, hanya pasangkan group yang unik.
+            for (index in items.indices) {
+                val item = items[index]
+                val matches = groups.indices.filter { matches(item, groups[it]) }
+                if (matches.size == 1) {
+                    assigned[index] = matches.first()
+                }
+            }
+        }
+
+        return items.mapIndexed { index, item ->
+            val groupIndex = assigned[index]
+            if (groupIndex >= 0) {
+                item.copy(noPag = groups[groupIndex].noPag)
+            } else {
+                item
             }
         }
     }
