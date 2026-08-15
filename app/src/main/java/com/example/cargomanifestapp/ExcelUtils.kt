@@ -880,18 +880,18 @@ object ExcelUtils {
             // di template: checklist berada di kolom J (index 9), sedangkan
             // footer Manifest berada di kolom A (index 0). Logo di bagian atas
             // tidak disentuh.
-            val targetRow = when (anchor.col1) {
-                9 -> stowingFooterRow
-                0 -> manifestFooterRow
-                else -> null
-            } ?: continue
+            val targetRow: Short = when (anchor.col1.toInt()) {
+                9 -> stowingFooterRow.toShort()
+                0 -> manifestFooterRow.toShort()
+                else -> continue
+            }
 
-            val delta = targetRow - currentRow
+            val delta = targetRow.toInt() - currentRow
             if (delta == 0) continue
 
-            anchor.row1 = anchor.row1 + delta
+            anchor.row1 = (anchor.row1 + delta).toShort()
             if (anchor.row2 >= 0) {
-                anchor.row2 = anchor.row2 + delta
+                anchor.row2 = (anchor.row2 + delta).toShort()
             }
         }
     }

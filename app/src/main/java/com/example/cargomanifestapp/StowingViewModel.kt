@@ -325,7 +325,7 @@ class StowingViewModel : ViewModel() {
                             emptyList()
                         }
 
-                        val imported: List<CargoItem> = if (stowingData.isNotEmpty()) {
+                        val parsedItems: List<CargoItem> = if (stowingData.isNotEmpty()) {
                             /*
                              * File hasil Export aplikasi mempunyai STOWING_DATA sebagai
                              * sumber data cargo yang paling lengkap. Satu baris di sini
@@ -375,6 +375,8 @@ class StowingViewModel : ViewModel() {
                         } else {
                             emptyList()
                         }
+
+                        parsedItems
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
 
