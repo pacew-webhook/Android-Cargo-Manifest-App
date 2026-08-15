@@ -205,11 +205,10 @@ class StowingViewModel : ViewModel() {
      *
      * SUMBER YANG DIBACA HANYA KOLOM YANG TERLIHAT:
      * - Sheet Manifest, kolom A:G untuk data per baris.
-     * - Sheet STOWING_DATA untuk NO PAG pada file hasil Export V8.
+     * - Sheet STOWING_DATA sebagai sumber data cargo lengkap pada file hasil Export aplikasi.
      * - Hanya sebagai fallback, file lama boleh membaca Stowing Checklist.
      *
-     * V8 tidak membaca kolom T atau metadata lama. STOWING_DATA adalah
-     * sheet data khusus yang memang dibuat oleh aplikasi sendiri.
+     * STOWING_DATA adalah sheet data khusus yang dibuat oleh aplikasi sendiri.
      *
      * Manifest:
      *   1 baris Excel = 1 CargoItem.
@@ -326,59 +325,41 @@ class StowingViewModel : ViewModel() {
                             emptyList()
                         }
 
-                        val stowingDataHasDetails = stowingData.any { raw ->
-                            raw.pti.isNotBlank() ||
-                                raw.customer.isNotBlank() ||
-                                raw.description.isNotBlank() ||
-                                raw.pcsQty.isNotBlank() ||
-                                raw.weight.isNotBlank() ||
-                                raw.subTotal.isNotBlank()
-                        }
-
-                        if (stowingData.isNotEmpty() && stowingDataHasDetails) {
+                        if (stowingData.isNotEmpty()) {
                             /*
-                             * V14 FIX: untuk file hasil Export aplikasi, STOWING_DATA
-                             * adalah sumber kebenaran untuk data Stowing.
+                             * File hasil Export aplikasi mempunyai STOWING_DATA sebagai
+                             * sumber data cargo yang paling lengkap. Satu baris di sini
+                             * mewakili satu input CargoItem, termasuk Weight Detail
+                             * seperti "50, 50, 50, 50".
                              *
-                             * Sebelumnya importer hanya mengambil NO PAG dari
-                             * STOWING_DATA lalu mengambil Pcs/Sub Total dari sheet
-                             * Manifest. Masalahnya, sheet Manifest memang sengaja
-                             * merangkum satu PAG/customer/description menjadi satu
-                             * baris. Akibatnya input 50, 50, 50, 50 kg berubah saat
-                             * import menjadi satu item: 4 koli / 200 kg.
+                             * Footer Excel (Prepared by, Approved by, foto tanda tangan)
+                             * sama sekali tidak dibaca dari sheet ini, sehingga tidak
+                             * mungkin masuk menjadi CargoItem.
                              *
-                             * STOWING_DATA menyimpan kembali data asli per CargoItem,
-                             * termasuk Weight Detail (50, 50, 50, 50), Pcs/Cly, dan
-                             * Sub Total. Karena itu seluruh CargoItem direkonstruksi
-                             * langsung dari sheet ini dan tidak lagi dipasangkan
-                             * dengan baris Manifest yang sudah diringkas.
+                             * Jika STOWING_DATA lebih lengkap daripada Manifest, kita
+                             * tetap memakai semua baris STOWING_DATA. Ini menjaga data
+                             * per-koli tetap utuh saat Export -> Import.
                              */
                             stowingData.map { raw ->
                                 CargoItem(
                                     noPag = normalizePag(raw.noPag),
-                                    customer = raw.customer.trim(),
-                                    description = raw.description.trim(),
+                                    customer = raw.customer,
+                                    description = raw.description,
                                     pti = normalizePti(raw.pti),
-                                    pcsQty = raw.pcsQty.trim(),
-                                    weight = raw.weight.trim(),
-                                    subTotal = raw.subTotal.trim()
+                                    pcsQty = raw.pcsQty,
+                                    weight = raw.weight,
+                                    subTotal = raw.subTotal
                                 )
+                            }.filter { item ->
+                                item.noPag.isNotBlank() ||
+                                    item.customer.isNotBlank() ||
+                                    item.description.isNotBlank() ||
+                                    item.pti.isNotBlank() ||
+                                    item.pcsQty.isNotBlank() ||
+                                    item.weight.isNotBlank() ||
+                                    item.subTotal.isNotBlank()
                             }
-                        } else if (manifestItems.isEmpty()) {
-                            emptyList()
-                        } else if (stowingData.isNotEmpty()) {
-                            // Kompatibilitas export lama yang hanya menyimpan NO PAG
-                            // di STOWING_DATA: pertahankan data Manifest dan tempelkan
-                            // NO PAG berdasarkan urutan baris.
-                            manifestItems.mapIndexed { index, item ->
-                                val raw = stowingData.getOrNull(index)
-                                if (raw != null && raw.noPag.isNotBlank()) {
-                                    item.copy(noPag = normalizePag(raw.noPag))
-                                } else {
-                                    item
-                                }
-                            }
-                        } else {
+                        } else if (manifestItems.isNotEmpty()) {
                             // Kompatibilitas file V7/lama: fallback membaca checklist
                             // yang terlihat. Tidak digunakan untuk file V8.
                             val pagGroups = readVisibleStowingChecklist(
@@ -445,10 +426,8 @@ class StowingViewModel : ViewModel() {
     )
 
     /**
-     * Baca sheet STOWING_DATA yang dibuat oleh Export aplikasi.
-     *
-     * Sheet ini adalah snapshot data asli per CargoItem dan menjadi sumber
-     * utama saat re-import file hasil export.
+     * V8: baca sheet STOWING_DATA yang dibuat oleh Export aplikasi.
+     * Hanya kolom sheet ini yang digunakan untuk NO PAG.
      */
     private fun readStowingDataSheet(
         sheet: org.apache.poi.ss.usermodel.Sheet,
@@ -518,14 +497,16 @@ class StowingViewModel : ViewModel() {
         sheet: org.apache.poi.ss.usermodel.Sheet,
         formatter: DataFormatter
     ): Int {
+        // Di sheet Manifest ada dua TOTAL WEIGHT: satu untuk Stowing Checklist
+        // (kolom H:M) dan satu untuk Manifest (kolom A:E). Untuk Import Manifest,
+        // yang dicari harus TOTAL pada kolom A agar data baru setelah row 37 tidak
+        // terpotong hanya karena total checklist ditemukan lebih dahulu.
         for (r in 0..sheet.lastRowNum) {
             val row = sheet.getRow(r) ?: continue
-            val text = (0..6)
-                .map { safeCellText(formatter, row.getCell(it)) }
-                .joinToString(" ")
+            val firstCell = safeCellText(formatter, row.getCell(0)).trim()
 
-            if (text.contains("TOTAL WEIGHT", ignoreCase = true) ||
-                text.equals("TOTAL", ignoreCase = true)
+            if (firstCell.contains("TOTAL WEIGHT", ignoreCase = true) ||
+                firstCell.equals("TOTAL", ignoreCase = true)
             ) {
                 return r
             }
