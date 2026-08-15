@@ -22,6 +22,11 @@ enum class DeleteType {
 
 class StowingViewModel : ViewModel() {
 
+    companion object {
+        // Kolom T pada Excel (index 19) menyimpan NO PAG metadata.
+        private const val HIDDEN_PAG_COLUMN = 19
+    }
+
     // --- STATE FORM INPUT ---
     var noPag by mutableStateOf("")
         private set
@@ -205,7 +210,15 @@ class StowingViewModel : ViewModel() {
      *
      * SETIAP BARIS MANIFEST = SATU CargoItem.
      * Tidak ada grouping saat import.
-     * NO PAG dibaca dari kolom T (hidden column) yang ditulis oleh ExcelUtils.
+     *
+     * V5 FIX:
+     * - Jangan menghapus data lama sebelum seluruh file berhasil dibaca.
+     * - Tangkap Throwable agar error POI/Android tidak langsung membuat app crash.
+     * - Jangan mewajibkan kolom T. Jika NO PAG tersembunyi tidak tersedia,
+     *   import tetap berjalan dan NO PAG dibiarkan kosong.
+     * - Tidak memakai FormulaEvaluator saat membaca cell biasa; ini lebih aman
+     *   untuk file XLSX yang dibuat/diedit oleh Google Sheets/Excel mobile.
+     * - Cari sheet Manifest secara case-insensitive sebelum memakai sheet pertama.
      */
     fun importFromManifestExcel(
         context: Context,
@@ -214,19 +227,60 @@ class StowingViewModel : ViewModel() {
         onError: (String) -> Unit
     ) {
         viewModelScope.launch(Dispatchers.IO) {
+            var imported: List<CargoItem> = emptyList()
+
             try {
-                val imported = context.contentResolver.openInputStream(uri)?.use { input ->
+                val resolver = context.contentResolver
+
+                imported = resolver.openInputStream(uri)?.use { input ->
                     WorkbookFactory.create(input).use { workbook ->
-                        val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+
+                        // Cari sheet "Manifest" tanpa mempermasalahkan huruf besar/kecil.
+                        val sheet = (0 until workbook.numberOfSheets)
+                            .map { index -> workbook.getSheetAt(index) }
+                            .firstOrNull {
+                                it.sheetName.trim().equals("Manifest", ignoreCase = true)
+                            }
+                            ?: workbook.getSheetAt(0)
+
                         val formatter = DataFormatter()
-                        val evaluator = workbook.creationHelper.createFormulaEvaluator()
                         val result = mutableListOf<CargoItem>()
 
-                        for (rowIndex in 13..sheet.lastRowNum) {
+                        // Cari baris header "No" agar tidak bergantung mutlak pada row 14.
+                        // Jika tidak ditemukan, tetap gunakan row 14 (index 13)
+                        // sesuai template aplikasi.
+                        var startRow = 13
+                        for (rowIndex in 0..minOf(sheet.lastRowNum, 30)) {
+                            val row = sheet.getRow(rowIndex) ?: continue
+                            val firstCell = safeCellText(
+                                formatter,
+                                row.getCell(0)
+                            )
+                            val ptiCell = safeCellText(
+                                formatter,
+                                row.getCell(1)
+                            )
+                            if (firstCell.equals("No", ignoreCase = true) &&
+                                ptiCell.equals("PTI", ignoreCase = true)
+                            ) {
+                                startRow = rowIndex + 1
+                                break
+                            }
+                        }
+
+                        if (sheet.lastRowNum < startRow) {
+                            return@use emptyList<CargoItem>()
+                        }
+
+                        for (rowIndex in startRow..sheet.lastRowNum) {
                             val row = sheet.getRow(rowIndex) ?: continue
 
-                            fun text(col: Int): String =
-                                formatter.formatCellValue(row.getCell(col), evaluator).trim()
+                            // Jangan gunakan evaluator untuk cell normal.
+                            // DataFormatter cukup untuk numeric/text cell dan lebih stabil.
+                            fun text(col: Int): String = safeCellText(
+                                formatter,
+                                row.getCell(col)
+                            )
 
                             val no = text(0)
                             val ptiValue = text(1)
@@ -234,25 +288,47 @@ class StowingViewModel : ViewModel() {
                             val subtotalValue = text(4)
                             val descriptionValue = text(5)
                             val customerValue = text(6)
-                            val hiddenPag = text(19)
 
-                            // Lewati TOTAL / baris kosong template.
-                            if (no.contains("TOTAL", ignoreCase = true) ||
-                                ptiValue.contains("TOTAL", ignoreCase = true) ||
-                                descriptionValue.contains("TOTAL", ignoreCase = true)
-                            ) continue
+                            // Kolom T (index 19) adalah metadata NO PAG dari export V4/V5.
+                            // Tidak wajib ada agar file Manifest lama tetap bisa dibaca.
+                            val hiddenPag = text(HIDDEN_PAG_COLUMN)
 
-                            if (ptiValue.isBlank() && descriptionValue.isBlank() &&
-                                customerValue.isBlank() && subtotalValue.isBlank()) continue
+                            // Lewati baris TOTAL, header lanjutan, dan baris kosong.
+                            val rowText = listOf(
+                                no,
+                                ptiValue,
+                                pcsValue,
+                                subtotalValue,
+                                descriptionValue,
+                                customerValue
+                            ).joinToString(" ")
 
-                            if (hiddenPag.isBlank()) continue
+                            if (rowText.contains("TOTAL", ignoreCase = true)) {
+                                continue
+                            }
 
-                            val pcs = pcsValue.toDoubleOrNull()?.toInt()?.coerceAtLeast(1) ?: 1
-                            val subtotal = subtotalValue.toDoubleOrNull() ?: 0.0
+                            if (
+                                ptiValue.isBlank() &&
+                                descriptionValue.isBlank() &&
+                                customerValue.isBlank() &&
+                                subtotalValue.isBlank()
+                            ) {
+                                continue
+                            }
 
-                            // Export Manifest memang mengosongkan kolom D (Pcs/Cly).
+                            // Baris data harus mempunyai minimal PTI/Description/Customer
+                            // atau subtotal. Nomor A tidak dipakai sebagai syarat karena
+                            // file yang diedit manual dapat mengubah kolom No.
+                            val pcs = parseNumber(pcsValue)
+                                ?.toInt()
+                                ?.coerceAtLeast(1)
+                                ?: 1
+
+                            val subtotal = parseNumber(subtotalValue) ?: 0.0
+
+                            // Export Manifest mengosongkan kolom D (Pcs/Cly).
                             // Karena detail KG per koli tidak tersedia di Manifest,
-                            // subtotal dipakai sebagai satu nilai KG untuk baris import.
+                            // subtotal dipertahankan sebagai satu nilai KG untuk import.
                             val weightList = if (subtotal > 0.0) {
                                 formatWeight(subtotal)
                             } else {
@@ -278,21 +354,106 @@ class StowingViewModel : ViewModel() {
 
                 withContext(Dispatchers.Main) {
                     if (imported.isEmpty()) {
-                        onError("Tidak ada data Manifest yang dapat di-import")
+                        onError(
+                            "Tidak ada data Manifest yang dapat di-import. " +
+                                "Pastikan file memiliki Sheet Manifest dan data."
+                        )
                     } else {
+                        // PENTING: data lama baru diganti setelah seluruh file
+                        // berhasil dibaca dan menghasilkan minimal satu data.
                         cargoList.clear()
-                        // Urutan Manifest dipertahankan.
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
                         resetForm()
-                        onSuccess("Import berhasil: ${imported.size} data Manifest")
+
+                        val missingPag = imported.count { it.noPag.isBlank() }
+                        val message = if (missingPag > 0) {
+                            "Import berhasil: ${imported.size} data Manifest. " +
+                                "$missingPag data tidak memiliki NO PAG."
+                        } else {
+                            "Import berhasil: ${imported.size} data Manifest"
+                        }
+                        onSuccess(message)
                     }
                 }
-            } catch (e: Exception) {
+            } catch (t: Throwable) {
+                // Throwable sengaja digunakan karena beberapa error runtime dari
+                // library Excel (mis. linkage/class loading) bukan turunan Exception.
+                val detail = t.message
+                    ?.takeIf { it.isNotBlank() }
+                    ?: t.javaClass.simpleName
+
                 withContext(Dispatchers.Main) {
-                    onError("Gagal Import: ${e.localizedMessage ?: "Format Excel tidak sesuai"}")
+                    onError(
+                        "Gagal Import Excel. Data lama tetap aman.\n" +
+                            "Detail: $detail"
+                    )
                 }
             }
+        }
+    }
+
+    private fun safeCellText(
+        formatter: DataFormatter,
+        cell: org.apache.poi.ss.usermodel.Cell?
+    ): String {
+        if (cell == null) return ""
+        return try {
+            formatter.formatCellValue(cell).trim()
+        } catch (_: Throwable) {
+            try {
+                when (cell.cellType) {
+                    org.apache.poi.ss.usermodel.CellType.STRING ->
+                        cell.stringCellValue.trim()
+
+                    org.apache.poi.ss.usermodel.CellType.NUMERIC ->
+                        formatter.formatCellValue(cell).trim()
+
+                    org.apache.poi.ss.usermodel.CellType.BOOLEAN ->
+                        cell.booleanCellValue.toString()
+
+                    else -> ""
+                }
+            } catch (_: Throwable) {
+                ""
+            }
+        }
+    }
+
+    private fun parseNumber(value: String): Double? {
+        val raw = value.trim().replace(" ", "")
+        if (raw.isBlank()) return null
+
+        // Menangani format angka yang umum di Excel/Google Sheets:
+        // 1250      -> 1250
+        // 1250.5    -> 1250.5
+        // 1.250     -> 1250 (pemisah ribuan Indonesia)
+        // 1,5       -> 1.5
+        // 1.250,5   -> 1250.5
+        return when {
+            raw.contains('.') && raw.contains(',') -> {
+                // Anggap titik = ribuan dan koma = desimal.
+                raw.replace(".", "").replace(",", ".").toDoubleOrNull()
+            }
+            raw.count { it == ',' } == 1 -> {
+                val commaIndex = raw.indexOf(',')
+                val digitsAfter = raw.length - commaIndex - 1
+                if (digitsAfter in 1..2) {
+                    raw.replace(',', '.').toDoubleOrNull()
+                } else {
+                    raw.replace(",", "").toDoubleOrNull()
+                }
+            }
+            raw.count { it == '.' } == 1 -> {
+                val dotIndex = raw.indexOf('.')
+                val digitsAfter = raw.length - dotIndex - 1
+                if (digitsAfter in 1..2) {
+                    raw.toDoubleOrNull()
+                } else {
+                    raw.replace(".", "").toDoubleOrNull()
+                }
+            }
+            else -> raw.toDoubleOrNull()
         }
     }
 
