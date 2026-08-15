@@ -429,6 +429,41 @@ fun StowingInputScreen(
         )
     }
 
+    // --- DIALOG WARNING VALIDASI SILANG MANIFEST vs STOWING ---
+    // Muncul setelah Import jika total KG/Pcs per Customer+Description+PTI
+    // antara Sheet Manifest dan data Stowing yang terbentuk tidak sama.
+    if (viewModel.manifestValidationWarning != null) {
+        AlertDialog(
+            onDismissRequest = { viewModel.dismissManifestValidationWarning() },
+            title = {
+                Text(
+                    "⚠ Selisih Manifest vs Stowing",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFB00020)
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        "Data hasil import berbeda dengan Sheet Manifest. " +
+                            "Periksa kembali sebelum melanjutkan, kemungkinan ada NO PAG " +
+                            "yang salah pasang atau baris yang hilang/dobel:",
+                        fontSize = 12.sp
+                    )
+                    Text(
+                        viewModel.manifestValidationWarning ?: "",
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { viewModel.dismissManifestValidationWarning() }) {
+                    Text("Mengerti")
+                }
+            }
+        )
+    }
+
     // --- POP-UP DIALOG KONFIRMASI DELETE ---
     if (viewModel.deleteType != DeleteType.NONE) {
         AlertDialog(

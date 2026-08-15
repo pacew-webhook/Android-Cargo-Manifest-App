@@ -61,6 +61,15 @@ class StowingViewModel : ViewModel() {
     var kgIndexToDelete by mutableStateOf<Int?>(null)
         private set
 
+    // Pesan peringatan hasil validasi silang Manifest vs Stowing setelah Import.
+    // Null berarti tidak ada selisih terdeteksi (atau belum pernah import).
+    var manifestValidationWarning by mutableStateOf<String?>(null)
+        private set
+
+    fun dismissManifestValidationWarning() {
+        manifestValidationWarning = null
+    }
+
     // Kode disimpan dengan format standar, tetapi saat mengetik prefix tidak
     // ditambahkan ke state pada setiap karakter. Prefix ditampilkan oleh UI.
     private fun stripPagPrefix(value: String): String {
@@ -227,6 +236,10 @@ class StowingViewModel : ViewModel() {
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
+                // Diisi di dalam blok pembacaan workbook, dibaca lagi setelah
+                // pindah ke Main dispatcher untuk ditampilkan sebagai warning.
+                var validationWarningResult: String? = null
+
                 val imported = context.contentResolver.openInputStream(uri)?.use { input ->
                     WorkbookFactory.create(input).use { workbook ->
                         val formatter = DataFormatter()
@@ -335,7 +348,7 @@ class StowingViewModel : ViewModel() {
                                 raw.subTotal.isNotBlank()
                         }
 
-                        if (stowingData.isNotEmpty() && stowingDataHasDetails) {
+                        val finalList = if (stowingData.isNotEmpty() && stowingDataHasDetails) {
                             /*
                              * V14 FIX: untuk file hasil Export aplikasi, STOWING_DATA
                              * adalah sumber kebenaran untuk data Stowing.
@@ -392,6 +405,19 @@ class StowingViewModel : ViewModel() {
                                 applyVisiblePagGroups(manifestItems, pagGroups)
                             }
                         }
+
+                        // --- VALIDASI SILANG MANIFEST vs STOWING ---
+                        // manifestItems = baris asli Sheet "Manifest" (sumber kebenaran
+                        // pcs/berat). finalList = data yang akan dipakai sebagai
+                        // cargoList (Stowing). Bandingkan totalnya per Customer +
+                        // Description + PTI supaya bug pemasangan NO PAG yang salah
+                        // (atau baris yang hilang/dobel saat import) ketahuan sejak awal.
+                        validationWarningResult = validateManifestVsStowing(
+                            manifestItems,
+                            finalList
+                        )
+
+                        finalList
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
 
@@ -407,6 +433,10 @@ class StowingViewModel : ViewModel() {
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
                         resetForm()
+
+                        // Tampilkan warning selisih Manifest vs Stowing (jika ada)
+                        // sebagai dialog terpisah, tidak mengganggu pesan sukses.
+                        manifestValidationWarning = validationWarningResult
 
                         val pagCount = imported.count { it.noPag.isNotBlank() }
                         onSuccess(
@@ -810,6 +840,85 @@ class StowingViewModel : ViewModel() {
 
     private fun formatWeight(value: Double): String {
         return if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+    }
+
+    // --- VALIDASI SILANG MANIFEST vs STOWING ---
+
+    // Key pengelompokan dibuat dari Customer + Description + PTI, bukan NO PAG,
+    // karena NO PAG justru yang paling sering salah pasang. Menggunakan key ini
+    // membuat perbandingan tetap valid walau pemasangan NO PAG-nya keliru.
+    private fun validationGroupKey(item: CargoItem): String {
+        val customer = item.customer.trim().uppercase()
+        val description = item.description.trim().uppercase()
+        val pti = normalizePti(item.pti)
+        return "$customer|$description|$pti"
+    }
+
+    private fun summarizeByGroup(items: List<CargoItem>): Map<String, Pair<Double, Int>> {
+        val result = mutableMapOf<String, Pair<Double, Int>>()
+        for (item in items) {
+            val key = validationGroupKey(item)
+            val kg = parseNumber(item.subTotal) ?: 0.0
+            val pcs = item.pcsQty.trim().toIntOrNull() ?: 0
+            val existing = result[key] ?: (0.0 to 0)
+            result[key] = (existing.first + kg) to (existing.second + pcs)
+        }
+        return result
+    }
+
+    /**
+     * Membandingkan total KG & Pcs per Customer/Description/PTI antara data
+     * mentah Sheet Manifest (sumber kebenaran) dengan data final yang akan
+     * dipakai sebagai daftar Stowing.
+     *
+     * Return null jika tidak ada selisih (dalam toleransi pembulatan), atau
+     * teks ringkasan selisih yang siap ditampilkan ke pengguna.
+     */
+    private fun validateManifestVsStowing(
+        manifestItems: List<CargoItem>,
+        finalItems: List<CargoItem>
+    ): String? {
+        if (manifestItems.isEmpty()) return null
+
+        val manifestSummary = summarizeByGroup(manifestItems)
+        val stowingSummary = summarizeByGroup(finalItems)
+
+        val kgTolerance = 0.5 // toleransi pembulatan angka Excel
+        val mismatchLines = mutableListOf<String>()
+
+        val allKeys = (manifestSummary.keys + stowingSummary.keys).distinct()
+        for (key in allKeys) {
+            val (manifestKg, manifestPcs) = manifestSummary[key] ?: (0.0 to 0)
+            val (stowingKg, stowingPcs) = stowingSummary[key] ?: (0.0 to 0)
+
+            val kgDiff = kotlin.math.abs(manifestKg - stowingKg)
+            val pcsDiff = kotlin.math.abs(manifestPcs - stowingPcs)
+
+            if (kgDiff > kgTolerance || pcsDiff > 0) {
+                val parts = key.split("|")
+                val label = listOf(parts.getOrNull(0).orEmpty(), parts.getOrNull(1).orEmpty())
+                    .filter { it.isNotBlank() }
+                    .joinToString(" - ")
+                    .ifBlank { "(tanpa Customer/Description)" }
+
+                mismatchLines.add(
+                    "$label: Manifest ${formatWeight(manifestKg)} KG/$manifestPcs koli " +
+                        "≠ Stowing ${formatWeight(stowingKg)} KG/$stowingPcs koli"
+                )
+            }
+        }
+
+        if (mismatchLines.isEmpty()) return null
+
+        val grandManifestKg = manifestSummary.values.sumOf { it.first }
+        val grandStowingKg = stowingSummary.values.sumOf { it.first }
+
+        return buildString {
+            append("Total Manifest: ${formatWeight(grandManifestKg)} KG\n")
+            append("Total Stowing: ${formatWeight(grandStowingKg)} KG\n\n")
+            append("Selisih per Customer/Description:\n")
+            mismatchLines.forEach { append("• $it\n") }
+        }.trim()
     }
 
     fun loadCargoListFromPrefs(context: Context) {
