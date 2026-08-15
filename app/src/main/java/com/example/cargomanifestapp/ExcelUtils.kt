@@ -580,7 +580,7 @@ object ExcelUtils {
     private fun normalize(value: String): String {
         return value
             .trim()
-            .replace("\s+".toRegex(), " ")
+            .replace("\\s+".toRegex(), " ")
             .uppercase()
     }
 
