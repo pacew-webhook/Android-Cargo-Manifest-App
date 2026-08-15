@@ -891,7 +891,7 @@ object ExcelUtils {
 
             anchor.row1 = (anchor.row1 + delta).toShort()
             if (anchor.row2 >= 0) {
-                anchor.row2 = (anchor.row2 + delta).toShort()
+                anchor.row2 = anchor.row2 + delta
             }
         }
     }
