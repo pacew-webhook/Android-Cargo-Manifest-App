@@ -63,6 +63,8 @@ object ExcelUtils {
      * - 1 file Excel
      * - Sheet Manifest memakai template aplikasi
      * - Manifest: 1 data input = 1 baris (TIDAK DIGROUP)
+     * - V9: urutan cargoList dipertahankan; data baru yang ditambahkan
+     *   setelah Import akan diekspor sebagai baris baru di bawah data lama.
      * - Stowing Checklist di sisi kanan Manifest
      * - Template STOWINGAN PAG ikut dimasukkan
      * - Detail PAG tetap dipertahankan untuk pengecekan LOOT

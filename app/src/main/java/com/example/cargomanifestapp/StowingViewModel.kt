@@ -880,7 +880,10 @@ class StowingViewModel : ViewModel() {
             cargoList[index] = newItem
             onSuccess("Data berhasil diperbarui!")
         } else {
-            cargoList.add(0, newItem)
+            // V9: data baru selalu ditambahkan ke AKHIR daftar.
+            // Dengan begitu data lama hasil Import tetap berada di atas
+            // dan data baru akan menjadi baris baru di bawahnya saat Export Manifest.
+            cargoList.add(newItem)
             onSuccess("Data berhasil disimpan!")
         }
         saveCargoListToPrefs(context)
