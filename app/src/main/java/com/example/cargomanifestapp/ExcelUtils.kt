@@ -8,15 +8,13 @@ import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.SheetVisibility
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
-import org.apache.poi.xssf.usermodel.XSSFDrawing
-import org.apache.poi.xssf.usermodel.XSSFPicture
 import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 import java.io.OutputStream
 
 /**
- * ExcelUtils_V17_DYNAMIC_FOOTER
+ * ExcelUtils_V15_DYNAMIC_PAG
  *
  * Perbaikan utama:
  * 1. Data Manifest dan Stowing Checklist tetap mengikuti cargoList terbaru.
@@ -27,19 +25,18 @@ import java.io.OutputStream
  * 6. Row total diposisikan berdasarkan jumlah data aktual.
  * 7. Tidak membuat "baris data kosong" hanya karena sisi Manifest dan Stowing
  *    memiliki jumlah baris yang berbeda.
- * 8. Formula TOTAL Manifest/Stowing mengikuti baris data aktual.
- * 9. Footer Prepared/Approved dan foto tanda tangan mengikuti posisi TOTAL baru.
- * 10. Import file hasil export menggunakan STOWING_DATA untuk menjaga detail cargo.
+ * 8. PAG dan koli pada sheet STOWINGAN PAG diperluas dinamis melewati template.
+ * 9. Ringkasan NO PAG ikut diperluas dan tidak membatasi jumlah PAG.
+ * 10. Koli > kapasitas kolom template diteruskan ke kolom berikutnya.
  */
 object ExcelUtils {
 
-    private val PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
-
-    // Posisi 0-based dari template Manifest asli.
-    private const val BASE_STOWING_TOTAL_ROW = 36
-    private const val STOWING_FOOTER_BASE_ROW = 39
-    private const val BASE_MANIFEST_TOTAL_ROW = 44
-    private const val MANIFEST_FOOTER_BASE_ROW = 47
+    // The template contains 8 visual PAG blocks. These are only the seed blocks;
+    // export now creates additional blocks dynamically when the data exceeds them.
+    private val TEMPLATE_PAG_ROW_INDEXES = listOf(0, 10, 22, 33, 43, 56, 66, 77)
+    private const val PAG_BLOCK_HEIGHT = 10
+    private const val PAG_SUMMARY_START_ROW = 88
+    private const val PAG_TEMPLATE_LAST_COL = 45
 
     fun writeCargoListToExcel(
         context: Context,
@@ -199,10 +196,10 @@ object ExcelUtils {
 
         // Baris total asli template (0-based).
         // Data Stowing tersedia pada row 14..37 Excel.
-        val baseStowingTotalRow = BASE_STOWING_TOTAL_ROW
+        val baseStowingTotalRow = 36
 
         // Baris total Manifest asli template (0-based).
-        val baseManifestTotalRow = BASE_MANIFEST_TOTAL_ROW
+        val baseManifestTotalRow = 44
 
         val manifestRows = cargoList.toList()
 
@@ -250,6 +247,15 @@ object ExcelUtils {
         val stowingExtra =
             maxOf(0, groupedStowing.size - stowingCapacity)
 
+        if (stowingExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = baseStowingTotalRow,
+                count = stowingExtra,
+                styleSourceRowIndex = baseStowingTotalRow - 1
+            )
+        }
+
         val stowingTotalRow =
             baseStowingTotalRow + stowingExtra
 
@@ -265,38 +271,17 @@ object ExcelUtils {
         val manifestExtra =
             maxOf(0, manifestRows.size - manifestCapacity)
 
+        if (manifestExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = manifestBaseAfterStowing,
+                count = manifestExtra,
+                styleSourceRowIndex = manifestBaseAfterStowing - 1
+            )
+        }
+
         val manifestTotalRow =
             manifestBaseAfterStowing + manifestExtra
-
-        /*
-         * Jangan menggunakan XSSFSheet.shiftRows() di sini.
-         * Template Manifest memiliki drawing/image anchor (tanda tangan).
-         * Apache POI 5.2.3 dapat melempar NullPointerException pada
-         * CTTwoCellAnchor.setFrom() ketika shiftRows mencoba memindahkan
-         * drawing tertentu dari template.
-         *
-         * Sebagai gantinya footer dipindahkan secara manual: cell, style,
-         * tinggi row, merged region, lalu anchor gambar diposisikan ulang.
-         * Dengan cara ini data boleh melewati kapasitas template tanpa
-         * menyentuh mekanisme shift drawing POI.
-         */
-        if (manifestExtra > 0) {
-            moveFooterBlock(
-                sheet = sheet,
-                sourceStartRow = BASE_MANIFEST_TOTAL_ROW,
-                sourceEndRow = MANIFEST_FOOTER_BASE_ROW + 8,
-                targetStartRow = manifestTotalRow
-            )
-        }
-
-        if (stowingExtra > 0) {
-            moveFooterBlock(
-                sheet = sheet,
-                sourceStartRow = BASE_STOWING_TOTAL_ROW,
-                sourceEndRow = STOWING_FOOTER_BASE_ROW + 4,
-                targetStartRow = stowingTotalRow
-            )
-        }
 
         /*
          * Bersihkan hanya area DATA.
@@ -417,216 +402,130 @@ object ExcelUtils {
 
         /*
          * TOTAL MANIFEST
+         *
+         * Jangan mempertahankan formula bawaan template seperti
+         * =SUM(E14:E44). Jika data melewati baris template (misalnya sampai
+         * row 45, 60, 100, dst.), formula harus mengikuti baris data aktual.
+         *
+         * Data dimulai pada row Excel 14 (startRow = 13, zero-based).
          */
         val manifestTotalRowObj =
             sheet.getRow(manifestTotalRow)
                 ?: sheet.createRow(manifestTotalRow)
 
-        // TOTAL MANIFEST dibuat sebagai formula dinamis agar selalu mengikuti
-        // baris data aktual. Formula template lama seperti E14:E44 tidak lagi
-        // dipertahankan ketika jumlah data melewati kapasitas template.
-        setFormulaCell(
-            manifestTotalRowObj,
-            2,
-            "SUM(C${startRow + 1}:C${manifestTotalRow})"
-        )
+        if (manifestRows.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + manifestRows.size
 
-        manifestTotalRowObj
-            .getCell(3)
-            ?.setBlank()
+            setFormulaCell(
+                manifestTotalRowObj,
+                2,
+                "SUM(C$firstExcelRow:C$lastExcelRow)"
+            )
 
-        setFormulaCell(
-            manifestTotalRowObj,
-            4,
-            "SUM(E${startRow + 1}:E${manifestTotalRow})"
-        )
+            manifestTotalRowObj
+                .getCell(3)
+                ?.setBlank()
+
+            setFormulaCell(
+                manifestTotalRowObj,
+                4,
+                "SUM(E$firstExcelRow:E$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(manifestTotalRowObj, 2, totalManifestPcs)
+            manifestTotalRowObj.getCell(3)?.setBlank()
+            setNumericCell(manifestTotalRowObj, 4, totalManifestWeight)
+        }
 
         /*
-         * TOTAL STOWING juga dibuat dinamis.
+         * TOTAL STOWING
+         *
+         * Area Stowing juga dibuat dinamis. Formula selalu berhenti tepat pada
+         * baris data Stowing terakhir, bukan pada batas template lama.
          */
         val stowingTotalRowObj =
             sheet.getRow(stowingTotalRow)
                 ?: sheet.createRow(stowingTotalRow)
 
-        setFormulaCell(
-            stowingTotalRowObj,
-            10,
-            "SUM(K${startRow + 1}:K${stowingTotalRow})"
-        )
+        if (groupedStowing.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + groupedStowing.size
 
-        setFormulaCell(
-            stowingTotalRowObj,
-            11,
-            "SUM(L${startRow + 1}:L${stowingTotalRow})"
-        )
+            setFormulaCell(
+                stowingTotalRowObj,
+                10,
+                "SUM(K$firstExcelRow:K$lastExcelRow)"
+            )
 
-        /*
-         * Footer template ikut bergerak bersama data. Row teks biasanya sudah
-         * ikut dipindahkan oleh shiftRows(), tetapi gambar Excel mempunyai
-         * anchor drawing sendiri, sehingga harus diposisikan ulang secara
-         * eksplisit.
-         *
-         * Ada dua footer di template Manifest:
-         * 1) footer Stowing Checklist: total + 3 baris
-         * 2) footer Manifest: total Manifest + 3 baris
-         */
-        val stowingFooterRow = stowingTotalRow + (STOWING_FOOTER_BASE_ROW - BASE_STOWING_TOTAL_ROW)
-        val manifestFooterRow = manifestTotalRow + (MANIFEST_FOOTER_BASE_ROW - BASE_MANIFEST_TOTAL_ROW)
+            setFormulaCell(
+                stowingTotalRowObj,
+                11,
+                "SUM(L$firstExcelRow:L$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(stowingTotalRowObj, 10, totalStowingNet)
+            setNumericCell(stowingTotalRowObj, 11, totalStowingGross)
+        }
 
-        repositionManifestFooterPictures(
-            sheet = sheet,
-            stowingFooterRow = stowingFooterRow,
-            manifestFooterRow = manifestFooterRow
-        )
-
+        // Paksa Excel/POI untuk menghitung ulang formula saat file dibuka.
         workbook.setForceFormulaRecalculation(true)
     }
 
-    private data class FooterCellSnapshot(
-        val sourceRowOffset: Int,
-        val column: Int,
-        val cellType: org.apache.poi.ss.usermodel.CellType,
-        val stringValue: String?,
-        val numericValue: Double?,
-        val booleanValue: Boolean?,
-        val errorValue: Byte?,
-        val formula: String?,
-        val style: XSSFCellStyle
-    )
-
-    private data class FooterRowSnapshot(
-        val rowOffset: Int,
-        val height: Short,
-        val zeroHeight: Boolean
-    )
-
-    private data class FooterMergeSnapshot(
-        val firstRowOffset: Int,
-        val lastRowOffset: Int,
-        val firstColumn: Int,
-        val lastColumn: Int
-    )
-
-    private fun moveFooterBlock(
+    private fun insertRowsBefore(
         sheet: XSSFSheet,
-        sourceStartRow: Int,
-        sourceEndRow: Int,
-        targetStartRow: Int
+        rowIndex: Int,
+        count: Int,
+        styleSourceRowIndex: Int
     ) {
-        if (sourceStartRow == targetStartRow) return
+        if (count <= 0) return
 
-        val rowSnapshots = mutableListOf<FooterRowSnapshot>()
-        val cellSnapshots = mutableListOf<FooterCellSnapshot>()
+        val lastRow = sheet.lastRowNum
 
-        for (rowIndex in sourceStartRow..sourceEndRow) {
-            val row = sheet.getRow(rowIndex)
-            rowSnapshots += FooterRowSnapshot(
-                rowOffset = rowIndex - sourceStartRow,
-                height = row?.height ?: sheet.defaultRowHeight,
-                zeroHeight = row?.zeroHeight ?: false
+        if (rowIndex <= lastRow) {
+            sheet.shiftRows(
+                rowIndex,
+                lastRow,
+                count,
+                true,
+                false
+            )
+        }
+
+        val sourceRow =
+            sheet.getRow(styleSourceRowIndex)
+
+        val columnsToCopy =
+            maxOf(
+                13,
+                sourceRow?.lastCellNum?.toInt() ?: 0
             )
 
-            if (row != null) {
-                for (cell in row) {
-                    val type = cell.cellType
-                    cellSnapshots += FooterCellSnapshot(
-                        sourceRowOffset = rowIndex - sourceStartRow,
-                        column = cell.columnIndex,
-                        cellType = type,
-                        stringValue = if (type == org.apache.poi.ss.usermodel.CellType.STRING) cell.stringCellValue else null,
-                        numericValue = if (type == org.apache.poi.ss.usermodel.CellType.NUMERIC) cell.numericCellValue else null,
-                        booleanValue = if (type == org.apache.poi.ss.usermodel.CellType.BOOLEAN) cell.booleanCellValue else null,
-                        errorValue = if (type == org.apache.poi.ss.usermodel.CellType.ERROR) cell.errorCellValue else null,
-                        formula = if (type == org.apache.poi.ss.usermodel.CellType.FORMULA) cell.cellFormula else null,
-                        style = cell.cellStyle as XSSFCellStyle
-                    )
+        for (i in 0 until count) {
+            val newRowIndex = rowIndex + i
+
+            val newRow =
+                sheet.getRow(newRowIndex)
+                    ?: sheet.createRow(newRowIndex)
+
+            if (sourceRow != null) {
+                newRow.height = sourceRow.height
+                newRow.zeroHeight = sourceRow.zeroHeight
+            }
+
+            for (c in 0 until columnsToCopy) {
+                val sourceCell = sourceRow?.getCell(c)
+                val newCell =
+                    newRow.getCell(c)
+                        ?: newRow.createCell(c)
+
+                if (sourceCell != null) {
+                    newCell.cellStyle =
+                        sourceCell.cellStyle
                 }
+
+                newCell.setBlank()
             }
-        }
-
-        val mergedSnapshots = sheet.mergedRegions
-            .filter { region ->
-                region.firstRow >= sourceStartRow &&
-                    region.lastRow <= sourceEndRow
-            }
-            .map { region ->
-                FooterMergeSnapshot(
-                    firstRowOffset = region.firstRow - sourceStartRow,
-                    lastRowOffset = region.lastRow - sourceStartRow,
-                    firstColumn = region.firstColumn,
-                    lastColumn = region.lastColumn
-                )
-            }
-
-        // Hapus merge source terlebih dahulu agar target dapat menggunakan
-        // cell-cell yang mungkin sebelumnya merupakan MergedCell.
-        for (i in sheet.mergedRegions.indices.reversed()) {
-            val region = sheet.mergedRegions[i]
-            if (region.firstRow >= sourceStartRow && region.lastRow <= sourceEndRow) {
-                sheet.removeMergedRegion(i)
-            }
-        }
-
-        // Hapus merge yang berada tepat di area target.
-        for (i in sheet.mergedRegions.indices.reversed()) {
-            val region = sheet.mergedRegions[i]
-            val overlapsTarget =
-                region.firstRow <= targetStartRow + (sourceEndRow - sourceStartRow) &&
-                    region.lastRow >= targetStartRow
-            if (overlapsTarget) {
-                sheet.removeMergedRegion(i)
-            }
-        }
-
-        // Bersihkan cell source dan target sebelum menulis snapshot.
-        for (rowIndex in sourceStartRow..sourceEndRow) {
-            val row = sheet.getRow(rowIndex) ?: continue
-            for (cell in row) {
-                cell.setBlank()
-            }
-        }
-
-        val targetEndRow = targetStartRow + (sourceEndRow - sourceStartRow)
-        for (rowIndex in targetStartRow..targetEndRow) {
-            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-            for (cell in row) {
-                cell.setBlank()
-            }
-        }
-
-        rowSnapshots.forEach { snapshot ->
-            val rowIndex = targetStartRow + snapshot.rowOffset
-            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
-            row.height = snapshot.height
-            row.zeroHeight = snapshot.zeroHeight
-        }
-
-        cellSnapshots.forEach { snapshot ->
-            val row = sheet.getRow(targetStartRow + snapshot.sourceRowOffset)
-                ?: sheet.createRow(targetStartRow + snapshot.sourceRowOffset)
-            val cell = row.getCell(snapshot.column) ?: row.createCell(snapshot.column)
-            cell.cellStyle = snapshot.style
-
-            when (snapshot.cellType) {
-                org.apache.poi.ss.usermodel.CellType.STRING -> cell.setCellValue(snapshot.stringValue ?: "")
-                org.apache.poi.ss.usermodel.CellType.NUMERIC -> cell.setCellValue(snapshot.numericValue ?: 0.0)
-                org.apache.poi.ss.usermodel.CellType.BOOLEAN -> cell.setCellValue(snapshot.booleanValue ?: false)
-                org.apache.poi.ss.usermodel.CellType.ERROR -> cell.setCellErrorValue(snapshot.errorValue ?: 0)
-                org.apache.poi.ss.usermodel.CellType.FORMULA -> cell.cellFormula = snapshot.formula ?: ""
-                org.apache.poi.ss.usermodel.CellType.BLANK -> cell.setBlank()
-                else -> cell.setBlank()
-            }
-        }
-
-        mergedSnapshots.forEach { snapshot ->
-            sheet.addMergedRegion(
-                org.apache.poi.ss.util.CellRangeAddress(
-                    targetStartRow + snapshot.firstRowOffset,
-                    targetStartRow + snapshot.lastRowOffset,
-                    snapshot.firstColumn,
-                    snapshot.lastColumn
-                )
-            )
         }
     }
 
@@ -657,94 +556,287 @@ object ExcelUtils {
         val groupedByPag = cargoList
             .groupBy { it.noPag.trim() }
             .filterKeys { it.isNotBlank() }
+            .toList()
 
-        var pagBlockIndex = 0
+        if (groupedByPag.isEmpty()) return
 
-        for ((noPag, itemsInPag) in groupedByPag) {
-            if (pagBlockIndex >= PAG_ROW_INDEXES.size) break
+        /*
+         * The original XLSX contains only 8 PAG blocks.  Never use that as a
+         * data limit.  Keep the original 8 blocks for visual compatibility and
+         * append more blocks immediately before the PAG summary when necessary.
+         */
+        val extraBlockCount =
+            (groupedByPag.size - TEMPLATE_PAG_ROW_INDEXES.size).coerceAtLeast(0)
 
-            val startPagRowIndex =
-                PAG_ROW_INDEXES[pagBlockIndex]
+        if (extraBlockCount > 0) {
+            sheet.shiftRows(
+                PAG_SUMMARY_START_ROW,
+                sheet.lastRowNum,
+                extraBlockCount * PAG_BLOCK_HEIGHT,
+                true,
+                false
+            )
 
-            val pagRow =
-                sheet.getRow(startPagRowIndex)
-                    ?: sheet.createRow(startPagRowIndex)
+            val firstExtraStart = TEMPLATE_PAG_ROW_INDEXES.last() + PAG_BLOCK_HEIGHT
+            for (i in 0 until extraBlockCount) {
+                copyPagBlock(
+                    sourceSheet = sheet,
+                    sourceStartRow = TEMPLATE_PAG_ROW_INDEXES.last(),
+                    targetStartRow = firstExtraStart + (i * PAG_BLOCK_HEIGHT)
+                )
+            }
+        }
 
-            val pagCell =
-                pagRow.getCell(1)
-                    ?: pagRow.createCell(1)
+        val pagRowIndexes = buildList {
+            addAll(TEMPLATE_PAG_ROW_INDEXES)
+            val firstExtraStart =
+                TEMPLATE_PAG_ROW_INDEXES.last() + PAG_BLOCK_HEIGHT
+            repeat(extraBlockCount) { index ->
+                add(firstExtraStart + (index * PAG_BLOCK_HEIGHT))
+            }
+        }
 
+        /*
+         * The summary at the bottom of the template also had an 8-PAG limit.
+         * Add rows for every additional PAG before the footer area and rewrite
+         * all summary formulas so they point to the actual dynamic blocks.
+         */
+        val summaryStartRow =
+            PAG_SUMMARY_START_ROW + (extraBlockCount * PAG_BLOCK_HEIGHT)
+
+        val extraSummaryRows =
+            (groupedByPag.size - TEMPLATE_PAG_ROW_INDEXES.size).coerceAtLeast(0)
+
+        if (extraSummaryRows > 0) {
+            val summaryInsertRow = summaryStartRow + 1 + TEMPLATE_PAG_ROW_INDEXES.size
+            val summaryLastRow = sheet.lastRowNum
+            if (summaryInsertRow <= summaryLastRow) {
+                sheet.shiftRows(
+                    summaryInsertRow,
+                    summaryLastRow,
+                    extraSummaryRows,
+                    true,
+                    false
+                )
+            }
+
+            for (i in 0 until extraSummaryRows) {
+                copySummaryRow(
+                    sheet = sheet,
+                    sourceRowIndex = summaryStartRow + TEMPLATE_PAG_ROW_INDEXES.size,
+                    targetRowIndex = summaryInsertRow + i
+                )
+            }
+        }
+
+        // Clear the visible PAG/total fields first.
+        pagRowIndexes.forEach { startRow ->
+            val row = sheet.getRow(startRow) ?: sheet.createRow(startRow)
+            row.getCell(1)?.setBlank()
+            row.getCell(4)?.setBlank()
+        }
+
+        groupedByPag.forEachIndexed { pagIndex, (noPag, itemsInPag) ->
+            val startPagRowIndex = pagRowIndexes[pagIndex]
+            val pagRow = sheet.getRow(startPagRowIndex)
+                ?: sheet.createRow(startPagRowIndex)
+
+            val pagCell = pagRow.getCell(1)
+                ?: pagRow.createCell(1)
             pagCell.setCellValue(noPag)
 
-            val totalPagKg =
-                itemsInPag.sumOf {
-                    parseWeight(it.subTotal)
-                }
+            val totalPagKg = itemsInPag.sumOf {
+                parseWeight(it.subTotal)
+            }
 
-            val totalCell =
-                pagRow.getCell(4)
-                    ?: pagRow.createCell(4)
-
+            val totalCell = pagRow.getCell(4)
+                ?: pagRow.createCell(4)
             totalCell.setCellValue(totalPagKg)
 
-            val customerStartRow =
-                startPagRowIndex + 2
-
+            val customerStartRow = startPagRowIndex + 2
             var currentStartCol = 0
 
             for (item in itemsInPag) {
-                val custRow =
-                    sheet.getRow(customerStartRow)
-                        ?: sheet.createRow(customerStartRow)
+                val custRow = sheet.getRow(customerStartRow)
+                    ?: sheet.createRow(customerStartRow)
 
-                val custCell =
-                    custRow.getCell(currentStartCol)
-                        ?: custRow.createCell(currentStartCol)
+                ensureStowingPagColumn(
+                    sheet = sheet,
+                    columnIndex = currentStartCol,
+                    blockStartRow = startPagRowIndex
+                )
 
+                val custCell = custRow.getCell(currentStartCol)
+                    ?: custRow.createCell(currentStartCol)
                 custCell.setCellValue(item.customer)
 
                 val kgValues = item.weight
                     .split(",")
                     .mapNotNull {
-                        parseWeight(it)
-                            .takeIf { kg -> kg > 0.0 }
+                        parseWeight(it).takeIf { kg -> kg > 0.0 }
                     }
 
-                var currentRow =
-                    customerStartRow + 1
-
+                var currentRow = customerStartRow + 1
                 var colOffset = 0
                 var rowCountInCol = 0
 
                 for (kg in kgValues) {
-                    val r =
-                        sheet.getRow(currentRow)
-                            ?: sheet.createRow(currentRow)
+                    val targetCol = currentStartCol + colOffset
+                    ensureStowingPagColumn(
+                        sheet = sheet,
+                        columnIndex = targetCol,
+                        blockStartRow = startPagRowIndex
+                    )
 
-                    val targetCol =
-                        currentStartCol + colOffset
-
-                    val c =
-                        r.getCell(targetCol)
-                            ?: r.createCell(targetCol)
-
+                    val r = sheet.getRow(currentRow)
+                        ?: sheet.createRow(currentRow)
+                    val c = r.getCell(targetCol)
+                        ?: r.createCell(targetCol)
                     c.setCellValue(kg)
 
                     currentRow++
                     rowCountInCol++
 
+                    // Five weights fit vertically in one column.  Additional
+                    // koli automatically continue into the next column.
                     if (rowCountInCol >= 5) {
                         rowCountInCol = 0
                         colOffset++
-                        currentRow =
-                            customerStartRow + 1
+                        currentRow = customerStartRow + 1
                     }
                 }
 
-                currentStartCol += 6
+                // Keep each cargo input separated. If one input contains more
+                // than five koli, it consumes additional columns; the next input
+                // must start after those columns instead of jumping a fixed 6.
+                val columnsUsedByItem = maxOf(1, (kgValues.size + 4) / 5)
+                currentStartCol += maxOf(6, columnsUsedByItem + 1)
+            }
+        }
+
+        // Rebuild the dynamic PAG summary.
+        val summaryHeader = sheet.getRow(summaryStartRow)
+            ?: sheet.createRow(summaryStartRow)
+        val headerCell = summaryHeader.getCell(3)
+            ?: summaryHeader.createCell(3)
+        headerCell.setCellValue("NO PAG")
+
+        groupedByPag.forEachIndexed { index, _ ->
+            val rowIndex = summaryStartRow + 1 + index
+            val row = sheet.getRow(rowIndex)
+                ?: sheet.createRow(rowIndex)
+            val cell = row.getCell(3)
+                ?: row.createCell(3)
+            val blockExcelRow = pagRowIndexes[index] + 1
+            cell.cellFormula = "B$blockExcelRow"
+        }
+
+        // Remove any stale summary formulas after the current PAG count.
+        val firstStaleRow = summaryStartRow + 1 + groupedByPag.size
+        val lastPossibleSummaryRow =
+            firstStaleRow + TEMPLATE_PAG_ROW_INDEXES.size
+        for (r in firstStaleRow..lastPossibleSummaryRow) {
+            val row = sheet.getRow(r) ?: continue
+            row.getCell(3)?.setBlank()
+            row.getCell(4)?.setBlank()
+        }
+    }
+
+    /** Copy one of the existing visual PAG blocks for an additional PAG. */
+    private fun copyPagBlock(
+        sourceSheet: XSSFSheet,
+        sourceStartRow: Int,
+        targetStartRow: Int
+    ) {
+        val maxColumns = maxOf(
+            PAG_TEMPLATE_LAST_COL + 1,
+            (0..PAG_BLOCK_HEIGHT - 1).maxOfOrNull { offset ->
+                sourceSheet.getRow(sourceStartRow + offset)?.lastCellNum?.toInt() ?: 0
+            } ?: 0
+        )
+
+        for (offset in 0 until PAG_BLOCK_HEIGHT) {
+            val sourceRow = sourceSheet.getRow(sourceStartRow + offset)
+            val targetRow = sourceSheet.getRow(targetStartRow + offset)
+                ?: sourceSheet.createRow(targetStartRow + offset)
+
+            if (sourceRow != null) {
+                targetRow.height = sourceRow.height
+                targetRow.zeroHeight = sourceRow.zeroHeight
             }
 
-            pagBlockIndex++
+            for (col in 0 until maxColumns) {
+                val sourceCell = sourceRow?.getCell(col)
+                val targetCell = targetRow.getCell(col)
+                    ?: targetRow.createCell(col)
+
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                    copyCellValue(sourceCell, targetCell)
+                } else {
+                    targetCell.setBlank()
+                }
+            }
+        }
+    }
+
+    /** Copy the formatting of the 8th summary row to a newly inserted row. */
+    private fun copySummaryRow(
+        sheet: XSSFSheet,
+        sourceRowIndex: Int,
+        targetRowIndex: Int
+    ) {
+        val sourceRow = sheet.getRow(sourceRowIndex)
+        val targetRow = sheet.getRow(targetRowIndex)
+            ?: sheet.createRow(targetRowIndex)
+
+        if (sourceRow != null) {
+            targetRow.height = sourceRow.height
+            for (col in 0 until maxOf(6, sourceRow.lastCellNum.toInt())) {
+                val sourceCell = sourceRow.getCell(col)
+                val targetCell = targetRow.getCell(col)
+                    ?: targetRow.createCell(col)
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                    targetCell.setBlank()
+                }
+            }
+        }
+    }
+
+    /**
+     * Extend the horizontal template when a PAG contains more koli than the
+     * original workbook's columns. New columns inherit the last template
+     * column's width/style, so data is not silently dropped at column 46.
+     */
+    private fun ensureStowingPagColumn(
+        sheet: XSSFSheet,
+        columnIndex: Int,
+        blockStartRow: Int
+    ) {
+        if (columnIndex < 0) return
+
+        val templateColumn = PAG_TEMPLATE_LAST_COL
+        if (columnIndex > sheet.lastRowNum) {
+            // no-op; this condition is intentionally not used for rows. POI
+            // creates cells lazily below.
+        }
+
+        if (columnIndex > templateColumn) {
+            val width = sheet.getColumnWidth(templateColumn)
+            if (width > 0) sheet.setColumnWidth(columnIndex, width)
+            sheet.setColumnHidden(columnIndex, false)
+
+            for (offset in 0 until PAG_BLOCK_HEIGHT) {
+                val row = sheet.getRow(blockStartRow + offset)
+                    ?: sheet.createRow(blockStartRow + offset)
+                val sourceCell = row.getCell(templateColumn)
+                val targetCell = row.getCell(columnIndex)
+                    ?: row.createCell(columnIndex)
+                if (sourceCell != null) {
+                    targetCell.cellStyle = sourceCell.cellStyle
+                }
+            }
         }
     }
 
@@ -956,47 +1048,6 @@ object ExcelUtils {
                 ?: row.createCell(col)
 
         cell.cellFormula = formula
-    }
-
-    /**
-     * Menempatkan ulang foto tanda tangan yang berasal dari template.
-     *
-     * POI dapat memindahkan row/cell dengan shiftRows(), tetapi gambar adalah
-     * drawing object dengan anchor sendiri. Karena itu gambar diarahkan ke
-     * footer yang baru berdasarkan row footer aktual, tanpa mengubah ukuran
-     * atau kolom tempat gambar berada.
-     */
-    private fun repositionManifestFooterPictures(
-        sheet: XSSFSheet,
-        stowingFooterRow: Int,
-        manifestFooterRow: Int
-    ) {
-        val drawing: XSSFDrawing = sheet.getDrawingPatriarch() ?: return
-
-        for (shape in drawing.shapes) {
-            val picture = shape as? XSSFPicture ?: continue
-            val anchor = picture.clientAnchor ?: continue
-            val currentRow = anchor.row1
-            if (currentRow < 0) continue
-
-            // Kolom anchor membedakan dua foto tanda tangan yang memang ada
-            // di template: checklist berada di kolom J (index 9), sedangkan
-            // footer Manifest berada di kolom A (index 0). Logo di bagian atas
-            // tidak disentuh.
-            val targetRow: Short = when (anchor.col1.toInt()) {
-                9 -> stowingFooterRow.toShort()
-                0 -> manifestFooterRow.toShort()
-                else -> continue
-            }
-
-            val delta = targetRow.toInt() - currentRow
-            if (delta == 0) continue
-
-            anchor.row1 = anchor.row1 + delta
-            if (anchor.row2 >= 0) {
-                anchor.row2 = anchor.row2 + delta
-            }
-        }
     }
 
     private fun normalize(
