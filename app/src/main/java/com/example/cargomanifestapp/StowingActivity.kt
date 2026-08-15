@@ -90,6 +90,7 @@ fun StowingInputScreen(
     var stowingSearchQuery by remember { mutableStateOf("") }
     var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
     var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
+    var sendingToN8n by remember { mutableStateOf(false) }
 
     suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
         try {
@@ -932,13 +933,24 @@ fun StowingInputScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(text = "TOTAL KG:", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        Text(
-                            text = if (viewModel.currentTotalKg % 1.0 == 0.0) "${viewModel.currentTotalKg.toInt()} KG" else "${viewModel.currentTotalKg} KG",
-                            color = Color.Yellow,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp
-                        )
+                        Column {
+                            Text(text = "TOTAL", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(
+                                text = if (viewModel.currentTotalKg % 1.0 == 0.0) "${viewModel.currentTotalKg.toInt()} KG" else "${viewModel.currentTotalKg} KG",
+                                color = Color.Yellow,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
+                            )
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(text = "JUMLAH SELURUH PAG", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text(
+                                text = "${groupedCargo.size} PAG",
+                                color = Color.Yellow,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -1003,7 +1015,7 @@ fun StowingInputScreen(
             if (viewModel.cargoList.isNotEmpty()) {
                 Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
                     Text(
-                        text = "Total: $formattedGrandTotal KG ($grandTotalPAG PAG)",
+                        text = "Total: $formattedGrandTotal KG",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
@@ -1070,6 +1082,34 @@ fun StowingInputScreen(
                     )
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                sendingToN8n = true
+                scanScope.launch {
+                    val selected = if (selectedStowingPag.equals("SEMUA PAG", true)) null else selectedStowingPag
+                    val result = N8nClient.sendStowing(viewModel.cargoList.toList(), selected)
+                    sendingToN8n = false
+                    result.onSuccess {
+                        val target = selected ?: "SEMUA PAG"
+                        Toast.makeText(context, "Stowing $target berhasil dikirim ke n8n", Toast.LENGTH_LONG).show()
+                    }.onFailure {
+                        Toast.makeText(context, "Gagal kirim Stowing ke n8n: ${it.localizedMessage ?: "koneksi gagal"}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            },
+            enabled = viewModel.cargoList.isNotEmpty() && !sendingToN8n,
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Text(
+                text = if (sendingToN8n) "Mengirim ke Laptop (n8n)..." else "Kirim Stowing ke Laptop (n8n)",
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1166,7 +1206,7 @@ fun StowingInputScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "TOTAL PAG ($groupTotalKoli Koli):", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
+                            Text(text = "TOTAL PAG:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
                             Text(text = "$formattedGroupKg KG", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color(0xFF2E7D32))
                         }
                     }
