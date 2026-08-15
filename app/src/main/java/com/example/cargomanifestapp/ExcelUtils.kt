@@ -338,24 +338,24 @@ object ExcelUtils {
         }
 
         val sourceRow = sheet.getRow(styleSourceRowIndex)
+        val columnsToCopy = maxOf(13, sourceRow?.lastCellNum?.toInt() ?: 0)
 
         for (i in 0 until count) {
             val newRowIndex = rowIndex + i
-            val newRow =
-                sheet.getRow(newRowIndex) ?: sheet.createRow(newRowIndex)
+            val newRow = sheet.getRow(newRowIndex) ?: sheet.createRow(newRowIndex)
 
             if (sourceRow != null) {
                 newRow.height = sourceRow.height
                 newRow.zeroHeight = sourceRow.zeroHeight
+            }
 
-                for (c in 0 until sourceRow.lastCellNum.coerceAtLeast(0)) {
-                    val sourceCell = sourceRow.getCell(c) ?: continue
-                    val newCell =
-                        newRow.getCell(c) ?: newRow.createCell(c)
-
+            for (c in 0 until columnsToCopy) {
+                val sourceCell = sourceRow?.getCell(c)
+                val newCell = newRow.getCell(c) ?: newRow.createCell(c)
+                if (sourceCell != null) {
                     newCell.cellStyle = sourceCell.cellStyle
-                    newCell.setBlank()
                 }
+                newCell.setBlank()
             }
         }
     }
