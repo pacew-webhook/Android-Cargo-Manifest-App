@@ -230,17 +230,14 @@ object ExcelUtils {
          * Manifest NET dan Stowing NET dihitung dari cargoList yang sama.
          * Data tanpa NO PAG tidak boleh hilang dari total Stowing.
          */
-        val totalManifestPcs =
-            cargoList.sumOf { parseWeight(it.pcsQty) }
-
-        val totalManifestWeight =
-            cargoList.sumOf { parseWeight(it.subTotal) }
-
-        val totalStowingNet =
-            cargoList.sumOf { parseWeight(it.subTotal) }
-
-        val totalStowingGross =
-            totalStowingNet + (groupedStowing.size * 125.0)
+        // V10 FIX: total TIDAK dihitung sebelum proses penulisan.
+        // Total dikumpulkan dari setiap baris yang benar-benar ditulis ke
+        // area Manifest/Stowing di bawah. Ini mencegah data baru terlewat
+        // setelah Import + penambahan data baru.
+        var totalManifestPcs = 0.0
+        var totalManifestWeight = 0.0
+        var totalStowingNet = 0.0
+        var totalStowingGross = 0.0
 
         val maxRows = maxOf(manifestRows.size, groupedStowing.size)
 
@@ -252,6 +249,10 @@ object ExcelUtils {
                 val item = manifestRows[i]
                 val pcs = parseWeight(item.pcsQty)
                 val subtotal = parseWeight(item.subTotal)
+
+                // Hitung HANYA dari data Manifest yang benar-benar ditulis.
+                totalManifestPcs += pcs
+                totalManifestWeight += subtotal
 
                 setStyledNumericCell(
                     row, 0, (i + 1).toDouble(), sampleRow?.getCell(0)
@@ -287,6 +288,10 @@ object ExcelUtils {
                 val net = parseWeight(item.subTotal)
                 val gross = net + 125.0
 
+                // Hitung HANYA dari group Stowing yang benar-benar ditulis.
+                totalStowingNet += net
+                totalStowingGross += gross
+
                 setStyledNumericCell(
                     row, 7, (i + 1).toDouble(), sampleRow?.getCell(7)
                 )
@@ -315,6 +320,11 @@ object ExcelUtils {
         setNumericCell(manifestTotalRowObj, 2, totalManifestPcs)
         manifestTotalRowObj.getCell(3)?.setBlank()
         setNumericCell(manifestTotalRowObj, 4, totalManifestWeight)
+
+        // V10: nilai total ditulis sebagai angka final, bukan bergantung pada
+        // formula Excel. Force recalculation tetap diaktifkan untuk kompatibilitas
+        // dengan viewer Excel/Sheets.
+        workbook.setForceFormulaRecalculation(true)
 
         val stowingTotalRowObj =
             sheet.getRow(finalStowingTotalRow)
