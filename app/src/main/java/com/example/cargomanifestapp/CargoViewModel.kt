@@ -102,6 +102,26 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    // ==========================================
+    // 1B. KIRIM SNAPSHOT MANIFEST KE n8n
+    // ==========================================
+    // Android mengirim data mentah dari Room. Pengelompokan resmi dilakukan
+    // di n8n dengan kunci: PTI + NO PAG + Customer + Description.
+    fun sendManifestToN8n(onResult: (Result<String>) -> Unit) {
+        val snapshot = cargoList.value
+        if (snapshot.isEmpty()) {
+            onResult(Result.failure(IllegalStateException("Data Manifest kosong")))
+            return
+        }
+
+        viewModelScope.launch {
+            val result = N8nClient.sendManifest(snapshot)
+            withContext(Dispatchers.Main) {
+                onResult(result)
+            }
+        }
+    }
+
     fun updateCargo(item: CargoItem) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.updateCargo(item)

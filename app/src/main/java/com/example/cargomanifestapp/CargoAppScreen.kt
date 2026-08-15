@@ -87,6 +87,7 @@ fun CargoAppScreen(
 
     var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
     var showDeleteAllDialog by remember { mutableStateOf(false) }
+    var isSendingToN8n by remember { mutableStateOf(false) }
 
     val textNextKeyboardOptions = KeyboardOptions(
         capitalization = KeyboardCapitalization.Characters,
@@ -444,6 +445,36 @@ fun CargoAppScreen(
                     Text("Hapus Semua", fontSize = 11.sp)
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(6.dp))
+
+        Button(
+            onClick = {
+                if (!isSendingToN8n) {
+                    isSendingToN8n = true
+                    viewModel.sendManifestToN8n { result ->
+                        isSendingToN8n = false
+                        result.onSuccess {
+                            Toast.makeText(context, "Data Manifest berhasil dikirim ke n8n", Toast.LENGTH_LONG).show()
+                        }.onFailure { error ->
+                            Toast.makeText(context, "Gagal kirim ke n8n: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            },
+            enabled = cargoList.isNotEmpty() && !isSendingToN8n,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(46.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+            shape = RoundedCornerShape(24.dp)
+        ) {
+            Text(
+                text = if (isSendingToN8n) "Mengirim ke Laptop..." else "Kirim ke Laptop (n8n)",
+                color = Color.White,
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(modifier = Modifier.height(6.dp))
