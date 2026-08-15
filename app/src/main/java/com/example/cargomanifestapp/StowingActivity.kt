@@ -1,6 +1,6 @@
 package com.example.cargomanifestapp
 
-import android.net.Uri
+import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -22,25 +22,24 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FileOpen
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.viewmodel.compose.viewModel
-import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
 class StowingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,146 +57,89 @@ class StowingActivity : ComponentActivity() {
     }
 }
 
+// --- HELPER UNTUK AUTO-SAVE & LOAD LOCAL STORAGE ---
+private fun saveCargoListToPrefs(context: Context, list: List<CargoItem>) {
+    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+    val jsonArray = JSONArray()
+    for (item in list) {
+        val obj = JSONObject().apply {
+            put("noPag", item.noPag)
+            put("customer", item.customer)
+            put("pcsQty", item.pcsQty)
+            put("weight", item.weight)
+            put("subTotal", item.subTotal)
+        }
+        jsonArray.put(obj)
+    }
+    prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
+}
+
+private fun loadCargoListFromPrefs(context: Context): List<CargoItem> {
+    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+    val jsonString = prefs.getString("saved_cargo_list", null) ?: return emptyList()
+    val list = mutableListOf<CargoItem>()
+    try {
+        val jsonArray = JSONArray(jsonString)
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            list.add(
+                CargoItem(
+                    noPag = obj.getString("noPag"),
+                    customer = obj.getString("customer"),
+                    pcsQty = obj.getString("pcsQty"),
+                    weight = obj.getString("weight"),
+                    subTotal = obj.getString("subTotal")
+                )
+            )
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return list
+}
+
+private enum class DeleteType {
+    NONE, RESET_ALL, CARGO_ITEM, KG_ENTRY
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StowingInputScreen(
-    onBack: () -> Unit,
-    viewModel: StowingViewModel = viewModel()
-) {
+fun StowingInputScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val scanScope = rememberCoroutineScope()
-    val customerFocusRequester = remember { FocusRequester() }
-    val descriptionFocusRequester = remember { FocusRequester() }
-    val ptiFocusRequester = remember { FocusRequester() }
-    val kgFocusRequester = remember { FocusRequester() }
+    val coroutineScope = rememberCoroutineScope()
 
-    fun closeAllDropdowns() {
-        viewModel.updateExpandedPag(false)
-        viewModel.updateExpandedCustomer(false)
-        viewModel.updateExpandedDescription(false)
-        viewModel.updateExpandedPti(false)
-    }
+    // State Form Input
+    var noPag by remember { mutableStateOf("") }
+    var customer by remember { mutableStateOf("") }
+    var inputKg by remember { mutableStateOf("") }
 
-    var pendingScanUri by remember { mutableStateOf<Uri?>(null) }
-    var showScanResultDialog by remember { mutableStateOf(false) }
-    var scannedWeightsText by remember { mutableStateOf("") }
-    var scannedNoPagText by remember { mutableStateOf("") }
-    var scannedCustomerText by remember { mutableStateOf("") }
-    var scannedDescriptionText by remember { mutableStateOf("") }
-    var scanRawText by remember { mutableStateOf("") }
-    var scanRowsText by remember { mutableStateOf("") }
-    var scanBusy by remember { mutableStateOf(false) }
-    var stowingSearchQuery by remember { mutableStateOf("") }
-    var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
-    var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
-    var sendingToN8n by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
 
-    suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
-        try {
-            val result = if (deleteTemp) {
-                BtbOcrScanner.scanAndDeleteTemp(context, uri)
-            } else {
-                // URI dari Galeri adalah milik aplikasi Galeri/MediaStore.
-                // Jangan dihapus setelah OCR selesai.
-                BtbOcrScanner.scan(context, uri)
-            }
+    val cargoList = remember { mutableStateListOf<CargoItem>() }
+    
+    // Menggunakan Double? agar item yang dihapus bernilai null (posisi tetap ada, tetapi kosong)
+    val currentKgEntries = remember { mutableStateListOf<Double?>() }
+    
+    // Total KG hanya menghitung item yang aktif (tidak null)
+    val currentActiveEntries = currentKgEntries.filterNotNull()
+    val currentTotalKg = currentActiveEntries.sum()
 
-            if (result.weights.isEmpty()) {
-                Toast.makeText(
-                    context,
-                    result.verificationMessage.ifBlank { "Angka KG belum terbaca." },
-                    Toast.LENGTH_LONG
-                ).show()
-            } else {
-                scannedWeightsText = result.weights.joinToString(", ") {
-                    if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
-                }
-                scannedNoPagText = result.noPag
-                scannedCustomerText = result.customer
-                scannedDescriptionText = result.description
-                scanRawText = result.rawText
-                scanRowsText = result.rows.mapIndexed { index, row -> "Baris ${index + 1}: ${if (row.isBlank()) "(tidak terbaca)" else row}" }.joinToString("\n")
-                showScanResultDialog = true
-            }
-        } catch (e: Exception) {
-            Toast.makeText(
-                context,
-                "Gagal membaca BTB: ${e.localizedMessage ?: "OCR error"}",
-                Toast.LENGTH_LONG
-            ).show()
-        }
-    }
+    // State Dialog Hapus
+    var deleteType by remember { mutableStateOf(DeleteType.NONE) }
+    var itemIndexToDelete by remember { mutableStateOf<Int?>(null) }
+    var kgIndexToDelete by remember { mutableStateOf<Int?>(null) }
+    var isSendingToN8n by remember { mutableStateOf(false) }
+    var n8nStatus by remember { mutableStateOf<String?>(null) }
 
-    val scanCameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicture()
-    ) { success ->
-        val uri = pendingScanUri
-        pendingScanUri = null
-
-        if (!success || uri == null) {
-            if (uri != null) BtbPhotoStorage.deletePhoto(context, uri.toString())
-            return@rememberLauncherForActivityResult
-        }
-
-        scanBusy = true
-        scanScope.launch {
-            try {
-                processBtbUri(uri, deleteTemp = true)
-            } finally {
-                scanBusy = false
-            }
-        }
-    }
-
-    // Memilih foto BTB yang sudah ada di Galeri/Google Photos/File Picker.
-    // Tidak membutuhkan izin READ_EXTERNAL_STORAGE karena Android memberikan
-    // akses sementara langsung ke URI yang dipilih pengguna.
-    val scanGalleryLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri == null || scanBusy) return@rememberLauncherForActivityResult
-
-        scanBusy = true
-        scanScope.launch {
-            try {
-                processBtbUri(uri, deleteTemp = false)
-            } finally {
-                scanBusy = false
-            }
-        }
-    }
-
-    fun scanBtbFromCamera() {
-        if (scanBusy) return
-        val uri = BtbPhotoStorage.createPhotoUri(context)
-        pendingScanUri = uri
-        scanCameraLauncher.launch(uri)
-    }
-
-    fun scanBtbFromGallery() {
-        if (scanBusy) return
-        scanGalleryLauncher.launch("image/*")
-    }
 
     LaunchedEffect(Unit) {
-        viewModel.loadCargoListFromPrefs(context)
+        val savedData = loadCargoListFromPrefs(context)
+        cargoList.clear()
+        cargoList.addAll(savedData)
     }
 
-    val importLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-
-        viewModel.importFromManifestExcel(
-            context = context,
-            uri = uri,
-            onSuccess = { message ->
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-            },
-            onError = { message ->
-                Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-            }
-        )
+    fun updateAndSaveCargoList() {
+        saveCargoListToPrefs(context, cargoList.toList())
     }
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -205,7 +147,7 @@ fun StowingInputScreen(
     ) { uri ->
         uri?.let {
             try {
-                ExcelUtils.writeCombinedCargoWorkbook(context, it, viewModel.cargoList)
+                ExcelUtils.writeCargoListToExcel(context, it, cargoList)
                 Toast.makeText(context, "Export Berhasil!", Toast.LENGTH_LONG).show()
             } catch (e: Exception) {
                 Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -213,265 +155,102 @@ fun StowingInputScreen(
         }
     }
 
-    val groupedCargo = remember(viewModel.cargoList.toList()) {
-        viewModel.cargoList.mapIndexed { originalIndex, item ->
+    // --- LOGIKA MENAMBAH ITEM (Mengisi Kotak Kosong Terlebih Dahulu) ---
+    fun addKgEntry() {
+        val kgVal = inputKg.toDoubleOrNull()
+        if (kgVal != null && kgVal > 0) {
+            // Cek apakah ada posisi yang kosong (null)
+            val emptyIndex = currentKgEntries.indexOfFirst { it == null }
+            
+            if (emptyIndex != -1) {
+                // Isi posisi kosong pertama yang ditemukan (misal posisi ke-3)
+                currentKgEntries[emptyIndex] = kgVal
+            } else {
+                // Jika tidak ada posisi kosong, tambahkan di posisi paling belakang
+                currentKgEntries.add(kgVal)
+            }
+            inputKg = ""
+        } else {
+            Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun saveCargoItem() {
+        if (noPag.isBlank() || customer.isBlank()) {
+            Toast.makeText(context, "Mohon isi NO PAG dan Customer", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (currentActiveEntries.isEmpty()) {
+            Toast.makeText(context, "Masukkan minimal 1 nilai KG", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        // Hanya mengambil item KG aktif
+        val formattedWeightList = currentActiveEntries.joinToString(", ") {
+            if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+        }
+
+        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) {
+            currentTotalKg.toInt().toString()
+        } else {
+            currentTotalKg.toString()
+        }
+
+        val newItem = CargoItem(
+            noPag = noPag.uppercase().trim(),
+            customer = customer.uppercase().trim(),
+            pcsQty = currentActiveEntries.size.toString(),
+            weight = formattedWeightList,
+            subTotal = formattedTotalKg
+        )
+
+        val index = editingIndex
+        if (index != null && index in cargoList.indices) {
+            cargoList[index] = newItem
+            Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
+        } else {
+            cargoList.add(0, newItem)
+            Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
+        }
+
+        updateAndSaveCargoList()
+
+        // Reset Form
+        noPag = ""
+        customer = ""
+        inputKg = ""
+        currentKgEntries.clear()
+        editingIndex = null
+    }
+
+    fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
+        editingIndex = indexInOriginalList
+        noPag = item.noPag
+        customer = item.customer
+        inputKg = ""
+        currentKgEntries.clear()
+
+        val parsedKgList = item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() }
+        currentKgEntries.addAll(parsedKgList)
+    }
+
+    val groupedCargo = remember(cargoList.toList()) {
+        cargoList.mapIndexed { originalIndex, item ->
             Pair(originalIndex, item)
         }.groupBy { it.second.noPag }
     }
 
-    val stowingPagOptions = remember(groupedCargo) {
-        listOf("SEMUA PAG") + groupedCargo.keys.toList()
-    }
-
-    // Pencarian + filter PAG khusus daftar Stowing Group. Hanya memfilter tampilan.
-    val filteredGroupedCargo = remember(groupedCargo, stowingSearchQuery, selectedStowingPag) {
-        val query = stowingSearchQuery.trim()
-        val pagFiltered = if (selectedStowingPag == "SEMUA PAG") {
-            groupedCargo
-        } else {
-            groupedCargo.filterKeys { it == selectedStowingPag }
-        }
-
-        if (query.isBlank()) {
-            pagFiltered
-        } else {
-            pagFiltered.mapNotNull { (pag, entries) ->
-                val filteredEntries = entries.filter { (_, item) ->
-                    item.noPag.contains(query, ignoreCase = true) ||
-                        item.customer.contains(query, ignoreCase = true) ||
-                        item.description.contains(query, ignoreCase = true) ||
-                        item.pti.contains(query, ignoreCase = true) ||
-                        item.weight.contains(query, ignoreCase = true)
-                }
-                when {
-                    pag.contains(query, ignoreCase = true) -> pag to entries
-                    filteredEntries.isNotEmpty() -> pag to filteredEntries
-                    else -> null
-                }
-            }.toMap()
-        }
-    }
-
-    val customerSuggestions = remember(viewModel.cargoList.toList(), viewModel.customer) {
-        viewModel.existingCustomers.filter {
-            viewModel.customer.isBlank() || it.contains(viewModel.customer.trim(), ignoreCase = true)
-        }
-    }
-    val descriptionSuggestions = remember(viewModel.cargoList.toList(), viewModel.customer, viewModel.description) {
-        viewModel.descriptionsForCustomer().filter {
-            viewModel.description.isBlank() || it.contains(viewModel.description.trim(), ignoreCase = true)
-        }
-    }
-    val ptiSuggestions = remember(viewModel.cargoList.toList(), viewModel.customer, viewModel.pti) {
-        viewModel.availablePtisForCustomer().filter {
-            viewModel.pti.isBlank() || it.contains(viewModel.pti.trim(), ignoreCase = true)
-        }
-    }
-
-    // --- DIALOG HASIL SCAN BTB ---
-    if (showScanResultDialog) {
-        AlertDialog(
-            onDismissRequest = { showScanResultDialog = false },
-            title = {
-                Text("Hasil Scan BTB", fontWeight = FontWeight.Bold)
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Periksa angka di bawah. Jika ada yang salah, koreksi sebelum memasukkan ke Form Stowing.",
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        "Data BTB yang terbaca (cocokkan sebelum digunakan):",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = scannedNoPagText,
-                            onValueChange = { scannedNoPagText = it },
-                            label = { Text("NO PAG") },
-                            placeholder = { Text("Jika terlihat") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                        OutlinedTextField(
-                            value = scannedCustomerText,
-                            onValueChange = { scannedCustomerText = it },
-                            label = { Text("Customer") },
-                            placeholder = { Text("Jika terlihat") },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                    OutlinedTextField(
-                        value = scannedDescriptionText,
-                        onValueChange = { scannedDescriptionText = it },
-                        label = { Text("Description / Jenis Barang") },
-                        placeholder = { Text("Jika terlihat") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    OutlinedTextField(
-                        value = scannedWeightsText,
-                        onValueChange = { scannedWeightsText = it },
-                        label = { Text("KG per koli") },
-                        placeholder = { Text("51, 51, 20, 51, 51, ...") },
-                        minLines = 4,
-                        maxLines = 8,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    val detectedCount = scannedWeightsText
-                        .replace("\n", ",")
-                        .split(",", ";", " ", "\n")
-                        .count { it.trim().toDoubleOrNull()?.let { value -> value > 0.0 } == true }
-
-                    Text(
-                        if (detectedCount > 0) "Terdeteksi $detectedCount koli" else "⚠ Belum ada koli yang terbaca",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (detectedCount > 0) Color(0xFF2E7D32) else Color(0xFFB00020)
-                    )
-
-                    if (scanRawText.isNotBlank()) {
-                        val verifiedTotal = scannedWeightsText
-                            .replace("\n", ",")
-                            .split(",", ";", " ", "\n")
-                            .mapNotNull { it.trim().toDoubleOrNull() }
-                            .filter { it > 0.0 }
-                            .fold(0.0) { acc, value -> acc + value }
-
-                        Text(
-                            "Verifikasi matematis: ${if (detectedCount > 0) String.format("%.0f", verifiedTotal) else "0"} KG",
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF2E7D32)
-                        )
-                    }
-
-                    if (scanRowsText.isNotBlank()) {
-                        Text(
-                            "Hasil per baris (periksa baris yang kosong atau tidak lengkap):",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                        Text(
-                            scanRowsText,
-                            fontSize = 10.sp,
-                            color = Color.Gray
-                        )
-                    }
-                    Text(
-                        "OCR tulisan tangan tetap dapat salah. Periksa NO PAG, Customer, Description dan semua angka sebelum menekan Gunakan Hasil.",
-                        fontSize = 11.sp,
-                        color = Color(0xFFB00020)
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        // V13.3 FIX: snapshot seluruh angka dari dialog sebelum dipindahkan.
-                        val values = scannedWeightsText
-                            .replace('\n', ',')
-                            .split(',', ';', ' ', '\t', '\r')
-                            .mapNotNull { token ->
-                                token.trim().replace(',', '.').toDoubleOrNull()
-                            }
-                            .filter { it.isFinite() && it > 0.0 }
-                            .toList()
-
-                        if (values.isEmpty()) {
-                            Toast.makeText(context, "Tidak ada angka KG yang valid.", Toast.LENGTH_SHORT).show()
-                        } else {
-                            var importedCount = viewModel.applyScannedWeights(values)
-
-                            // Retry deterministik bila state belum menerima seluruh item.
-                            if (importedCount != values.size) {
-                                importedCount = viewModel.applyScannedWeights(values)
-                            }
-
-                            // Terapkan teks BTB ke Form Stowing setelah pengguna memeriksa/koreksi.
-                            // Field kosong tidak menimpa input manual yang sudah ada.
-                            if (scannedNoPagText.isNotBlank()) viewModel.updateNoPag(scannedNoPagText)
-                            if (scannedCustomerText.isNotBlank()) viewModel.updateCustomer(scannedCustomerText)
-                            if (scannedDescriptionText.isNotBlank()) viewModel.updateDescription(scannedDescriptionText)
-
-                            val finalCount = viewModel.currentActiveEntries.size
-                            if (finalCount == values.size) {
-                                showScanResultDialog = false
-                                Toast.makeText(
-                                    context,
-                                    "Berhasil: $finalCount/${values.size} koli masuk ke Rincian Input KG",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Transfer KG belum lengkap: $finalCount/${values.size}. Coba tekan Gunakan Hasil lagi.",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    }
-                ) {
-                    Text("Gunakan Hasil")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showScanResultDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
-
-    // --- DIALOG WARNING VALIDASI SILANG MANIFEST vs STOWING ---
-    // Muncul setelah Import jika total KG/Pcs per Customer+Description+PTI
-    // antara Sheet Manifest dan data Stowing yang terbentuk tidak sama.
-    if (viewModel.manifestValidationWarning != null) {
-        AlertDialog(
-            onDismissRequest = { viewModel.dismissManifestValidationWarning() },
-            title = {
-                Text(
-                    "⚠ Selisih Manifest vs Stowing",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFB00020)
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "Data hasil import berbeda dengan Sheet Manifest. " +
-                            "Periksa kembali sebelum melanjutkan, kemungkinan ada NO PAG " +
-                            "yang salah pasang atau baris yang hilang/dobel:",
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        viewModel.manifestValidationWarning ?: "",
-                        fontSize = 12.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { viewModel.dismissManifestValidationWarning() }) {
-                    Text("Mengerti")
-                }
-            }
-        )
-    }
-
     // --- POP-UP DIALOG KONFIRMASI DELETE ---
-    if (viewModel.deleteType != DeleteType.NONE) {
+    if (deleteType != DeleteType.NONE) {
         AlertDialog(
-            onDismissRequest = { viewModel.dismissDeleteDialog() },
+            onDismissRequest = {
+                deleteType = DeleteType.NONE
+                itemIndexToDelete = null
+                kgIndexToDelete = null
+            },
             title = { Text("Konfirmasi Hapus", fontWeight = FontWeight.Bold) },
             text = {
-                val message = when (viewModel.deleteType) {
+                val message = when (deleteType) {
                     DeleteType.RESET_ALL -> "Apakah Anda yakin ingin menghapus SELURUH data stowing?"
                     DeleteType.CARGO_ITEM -> "Apakah Anda yakin ingin menghapus data customer ini?"
                     DeleteType.KG_ENTRY -> "Apakah Anda yakin ingin menghapus pecahan KG ini?"
@@ -482,16 +261,59 @@ fun StowingInputScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        viewModel.confirmDelete(context) { message ->
-                            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+                        when (deleteType) {
+                            DeleteType.RESET_ALL -> {
+                                cargoList.clear()
+                                updateAndSaveCargoList()
+                                editingIndex = null
+                                noPag = ""
+                                customer = ""
+                                inputKg = ""
+                                currentKgEntries.clear()
+                                Toast.makeText(context, "Semua data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                            }
+                            DeleteType.CARGO_ITEM -> {
+                                itemIndexToDelete?.let { idx ->
+                                    if (idx in cargoList.indices) {
+                                        if (editingIndex == idx) {
+                                            editingIndex = null
+                                            noPag = ""
+                                            customer = ""
+                                            inputKg = ""
+                                            currentKgEntries.clear()
+                                        }
+                                        cargoList.removeAt(idx)
+                                        updateAndSaveCargoList()
+                                        Toast.makeText(context, "Data berhasil dihapus", Toast.LENGTH_SHORT).show()
+                                    }
+                                }
+                            }
+                            DeleteType.KG_ENTRY -> {
+                                kgIndexToDelete?.let { idx ->
+                                    if (idx in currentKgEntries.indices) {
+                                        // Mengubah nilai item menjadi NULL agar posisinya tetap ada tapi tampil kosong
+                                        currentKgEntries[idx] = null
+                                    }
+                                }
+                            }
+                            DeleteType.NONE -> {}
                         }
+                        deleteType = DeleteType.NONE
+                        itemIndexToDelete = null
+                        kgIndexToDelete = null
                     }
                 ) {
                     Text("Hapus", color = Color.Red, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { viewModel.dismissDeleteDialog() }) {
+                TextButton(
+                    onClick = {
+                        deleteType = DeleteType.NONE
+                        itemIndexToDelete = null
+                        kgIndexToDelete = null
+                    }
+                ) {
                     Text("Batal")
                 }
             }
@@ -528,48 +350,30 @@ fun StowingInputScreen(
             }
 
             Row {
-                if (viewModel.cargoList.isNotEmpty()) {
-                    IconButton(onClick = { viewModel.showDeleteDialog(DeleteType.RESET_ALL) }) {
-                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Reset Data", tint = Color.Red)
-                    }
-                }
-
-                // =========================
-                // IMPORT EXCEL MANIFEST
-                // =========================
-                TextButton(
-                    onClick = {
-                        importLauncher.launch(
-                            arrayOf(
-                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                "application/vnd.ms-excel",
-                                "application/octet-stream"
-                            )
+                if (cargoList.isNotEmpty()) {
+                    IconButton(onClick = {
+                        deleteType = DeleteType.RESET_ALL
+                    }) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Reset Data",
+                            tint = Color.Red
                         )
                     }
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.FileOpen,
-                        contentDescription = "Import Excel Manifest",
-                        tint = Color(0xFF1565C0)
-                    )
-                    Spacer(modifier = Modifier.width(3.dp))
-                    Text(
-                        text = "Import",
-                        color = Color(0xFF1565C0),
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
                 }
 
                 IconButton(onClick = {
-                    if (viewModel.cargoList.isNotEmpty()) {
-                        exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
+                    if (cargoList.isNotEmpty()) {
+                        exportLauncher.launch("Stowing_Report_${System.currentTimeMillis()}.xlsx")
                     } else {
                         Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
                     }
                 }) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export 1 Excel", tint = Color(0xFF2E7D32))
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Export Excel",
+                        tint = Color(0xFF2E7D32)
+                    )
                 }
             }
         }
@@ -578,7 +382,7 @@ fun StowingInputScreen(
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(
-                containerColor = if (viewModel.editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)
+                containerColor = if (editingIndex != null) Color(0xFFFFF8E1) else Color(0xFFF3EDF7)
             ),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -589,14 +393,20 @@ fun StowingInputScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = if (viewModel.editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer, Description & KG",
+                        text = if (editingIndex != null) "Edit Data Stowing" else "Input PAG, Customer & KG",
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = if (viewModel.editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
+                        color = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF381E72)
                     )
 
-                    if (viewModel.editingIndex != null) {
-                        TextButton(onClick = { viewModel.cancelEdit() }) {
+                    if (editingIndex != null) {
+                        TextButton(onClick = {
+                            editingIndex = null
+                            noPag = ""
+                            customer = ""
+                            inputKg = ""
+                            currentKgEntries.clear()
+                        }) {
                             Text("Batal Edit", color = Color.Red, fontSize = 12.sp)
                         }
                     }
@@ -608,198 +418,30 @@ fun StowingInputScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (viewModel.existingPags.isNotEmpty()) {
-                        ExposedDropdownMenuBox(
-                            expanded = viewModel.expandedPag,
-                            onExpandedChange = { viewModel.updateExpandedPag(!viewModel.expandedPag) },
-                            modifier = Modifier.weight(1f)
-                        ) {
-                            OutlinedTextField(
-                                value = viewModel.noPag,
-                                onValueChange = { viewModel.updateNoPag(it) },
-                                label = { Text("NO PAG") },
-                                placeholder = { Text("001 MYI") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(
-                                    capitalization = KeyboardCapitalization.Characters,
-                                    imeAction = ImeAction.Next
-                                ),
-                                keyboardActions = KeyboardActions(
-                                    onNext = {
-                                        viewModel.commitNoPag()
-                                        closeAllDropdowns()
-                                        customerFocusRequester.requestFocus()
-                                    }
-                                ),
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPag) },
-                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = viewModel.expandedPag,
-                                onDismissRequest = { viewModel.updateExpandedPag(false) }
-                            ) {
-                                viewModel.existingPags.forEach { pag ->
-                                    DropdownMenuItem(
-                                        text = { Text(pag) },
-                                        onClick = {
-                                            viewModel.updateNoPag(pag)
-                                            viewModel.updateExpandedPag(false)
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    } else {
-                        OutlinedTextField(
-                            value = viewModel.noPag,
-                            onValueChange = { viewModel.updateNoPag(it) },
-                            label = { Text("NO PAG") },
-                            placeholder = { Text("001 MYI") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Characters,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onNext = {
-                                    viewModel.commitNoPag()
-                                    closeAllDropdowns()
-                                    customerFocusRequester.requestFocus()
-                                }
-                            ),
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-
-                    ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedCustomer && customerSuggestions.isNotEmpty(),
-                        onExpandedChange = { viewModel.updateExpandedCustomer(!viewModel.expandedCustomer) },
+                    OutlinedTextField(
+                        value = noPag,
+                        onValueChange = { noPag = it.uppercase() },
+                        label = { Text("NO PAG") },
+                        placeholder = { Text("001 MYI") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = viewModel.customer,
-                            onValueChange = { viewModel.updateCustomer(it) },
-                            label = { Text("Customer") },
-                            placeholder = { Text("ULIN") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Characters,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onNext = {
-                                    closeAllDropdowns()
-                                    descriptionFocusRequester.requestFocus()
-                                }
-                            ),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedCustomer) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(customerFocusRequester)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = viewModel.expandedCustomer && customerSuggestions.isNotEmpty(),
-                            onDismissRequest = { viewModel.updateExpandedCustomer(false) }
-                        ) {
-                            customerSuggestions.forEach { value ->
-                                DropdownMenuItem(
-                                    text = { Text(value) },
-                                    onClick = {
-                                        viewModel.updateCustomer(value)
-                                        viewModel.updateExpandedCustomer(false)
-                                    }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedDescription && descriptionSuggestions.isNotEmpty(),
-                        onExpandedChange = { viewModel.updateExpandedDescription(!viewModel.expandedDescription) },
+                    )
+                    OutlinedTextField(
+                        value = customer,
+                        onValueChange = { customer = it.uppercase() },
+                        label = { Text("Customer") },
+                        placeholder = { Text("ULIN") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Next
+                        ),
                         modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = viewModel.description,
-                            onValueChange = { viewModel.updateDescription(it) },
-                            label = { Text("Description") },
-                            placeholder = { Text("PINANG") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Characters,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onNext = {
-                                    closeAllDropdowns()
-                                    ptiFocusRequester.requestFocus()
-                                }
-                            ),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedDescription) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(descriptionFocusRequester)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = viewModel.expandedDescription && descriptionSuggestions.isNotEmpty(),
-                            onDismissRequest = { viewModel.updateExpandedDescription(false) }
-                        ) {
-                            descriptionSuggestions.forEach { value ->
-                                DropdownMenuItem(
-                                    text = { Text(value) },
-                                    onClick = {
-                                        viewModel.updateDescription(value)
-                                        viewModel.updateExpandedDescription(false)
-                                    }
-                                )
-                            }
-                        }
-                    }
-
-                    ExposedDropdownMenuBox(
-                        expanded = viewModel.expandedPti && ptiSuggestions.isNotEmpty(),
-                        onExpandedChange = { viewModel.updateExpandedPti(!viewModel.expandedPti) },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        OutlinedTextField(
-                            value = viewModel.pti,
-                            onValueChange = { viewModel.updatePti(it) },
-                            label = { Text("PTI (opsional)") },
-                            placeholder = { Text("001") },
-                            prefix = { Text("KAL") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                capitalization = KeyboardCapitalization.Characters,
-                                imeAction = ImeAction.Next
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onNext = {
-                                    viewModel.commitPti()
-                                    closeAllDropdowns()
-                                    kgFocusRequester.requestFocus()
-                                }
-                            ),
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = viewModel.expandedPti) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth().focusRequester(ptiFocusRequester)
-                        )
-                        ExposedDropdownMenu(
-                            expanded = viewModel.expandedPti && ptiSuggestions.isNotEmpty(),
-                            onDismissRequest = { viewModel.updateExpandedPti(false) }
-                        ) {
-                            ptiSuggestions.forEach { value ->
-                                DropdownMenuItem(
-                                    text = { Text(value) },
-                                    onClick = {
-                                        viewModel.updatePti(value)
-                                        viewModel.updateExpandedPti(false)
-                                    }
-                                )
-                            }
-                        }
-                    }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -810,8 +452,8 @@ fun StowingInputScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedTextField(
-                        value = viewModel.inputKg,
-                        onValueChange = { viewModel.updateInputKg(it) },
+                        value = inputKg,
+                        onValueChange = { inputKg = it },
                         label = { Text("Input Berat (KG)") },
                         placeholder = { Text("10") },
                         singleLine = true,
@@ -819,42 +461,12 @@ fun StowingInputScreen(
                             keyboardType = KeyboardType.Number,
                             imeAction = ImeAction.Done
                         ),
-                        keyboardActions = KeyboardActions(onDone = {
-                            viewModel.addKgEntry {
-                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
-                            }
-                        }),
-                        modifier = Modifier.weight(1f).focusRequester(kgFocusRequester)
+                        keyboardActions = KeyboardActions(onDone = { addKgEntry() }),
+                        modifier = Modifier.weight(1f)
                     )
 
                     Button(
-                        onClick = { scanBtbFromCamera() },
-                        enabled = !scanBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
-                    ) {
-                        Text("📷", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (scanBusy) "Scan..." else "Foto BTB")
-                    }
-
-                    Button(
-                        onClick = { scanBtbFromGallery() },
-                        enabled = !scanBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
-                    ) {
-                        Text("🖼️", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Galeri")
-                    }
-
-                    Button(
-                        onClick = {
-                            viewModel.addKgEntry {
-                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
-                            }
-                        },
+                        onClick = { addKgEntry() },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
                     ) {
@@ -867,33 +479,31 @@ fun StowingInputScreen(
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // --- RINCIAN INPUT KG ---
-                if (viewModel.currentKgEntries.isNotEmpty()) {
+                if (currentKgEntries.isNotEmpty()) {
                     Text(
-                        text = "Rincian Input KG (${viewModel.currentActiveEntries.size} Koli):",
+                        text = "Rincian Input KG (${currentActiveEntries.size} Koli):",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
-                    if (viewModel.lastScanImportedCount > 0) {
-                        Text(
-                            text = "Hasil scan terakhir: ${viewModel.lastScanImportedCount} koli berhasil dimasukkan",
-                            fontSize = 10.sp,
-                            color = Color(0xFF2E7D32),
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
                     Spacer(modifier = Modifier.height(4.dp))
 
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(5),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 140.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        itemsIndexed(viewModel.currentKgEntries) { index, itemVal ->
+                        itemsIndexed(currentKgEntries) { index, itemVal ->
                             if (itemVal != null) {
+                                // Tampilan Kotak jika ada nilai KG
                                 Box(
                                     modifier = Modifier
-                                        .background(Color(0xFFE8DEF8), shape = RoundedCornerShape(6.dp))
+                                        .background(
+                                            Color(0xFFE8DEF8),
+                                            shape = RoundedCornerShape(6.dp)
+                                        )
                                         .padding(vertical = 4.dp, horizontal = 4.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -908,17 +518,27 @@ fun StowingInputScreen(
                                             fontWeight = FontWeight.Bold
                                         )
                                         IconButton(
-                                            // Hapus pecahan KG langsung tanpa dialog konfirmasi.
-                                            // Konfirmasi hanya dipakai untuk data PAG/customer dan hapus semua data.
-                                            onClick = { viewModel.deleteKgEntry(index) },
+                                            onClick = {
+                                                kgIndexToDelete = index
+                                                deleteType = DeleteType.KG_ENTRY
+                                            },
                                             modifier = Modifier.size(14.dp)
                                         ) {
-                                            Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Hapus",
+                                                tint = Color.Red
+                                            )
                                         }
                                     }
                                 }
                             } else {
-                                Box(modifier = Modifier.height(28.dp).fillMaxWidth())
+                                // Tampilan Kotak Kosong (Mencadangkan ruang grid agar tidak bergeser)
+                                Box(
+                                    modifier = Modifier
+                                        .height(28.dp)
+                                        .fillMaxWidth()
+                                )
                             }
                         }
                     }
@@ -933,45 +553,33 @@ fun StowingInputScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Column {
-                            Text(text = "TOTAL", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                            Text(
-                                text = if (viewModel.currentTotalKg % 1.0 == 0.0) "${viewModel.currentTotalKg.toInt()} KG" else "${viewModel.currentTotalKg} KG",
-                                color = Color.Yellow,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text(text = "JUMLAH SELURUH PAG", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                            Text(
-                                text = "${groupedCargo.size} PAG",
-                                color = Color.Yellow,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
-                            )
-                        }
+                        Text(
+                            text = "TOTAL KG:",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            text = if (currentTotalKg % 1.0 == 0.0) "${currentTotalKg.toInt()} KG" else "$currentTotalKg KG",
+                            color = Color.Yellow,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
+                        )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
                 Button(
-                    onClick = {
-                        viewModel.saveCargoItem(
-                            context = context,
-                            onSuccess = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() },
-                            onError = { msg -> Toast.makeText(context, msg, Toast.LENGTH_SHORT).show() }
-                        )
-                    },
+                    onClick = { saveCargoItem() },
                     modifier = Modifier.fillMaxWidth(),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (viewModel.editingIndex != null) Color(0xFFE65100) else Color(0xFF2E7D32)
+                        containerColor = if (editingIndex != null) Color(0xFFE65100) else Color(0xFF2E7D32)
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Text(
-                        text = if (viewModel.editingIndex != null) "Update Data Stowing" else "Simpan ke Cargo Table",
+                        text = if (editingIndex != null) "Update Data Stowing" else "Simpan ke Cargo Table",
                         fontWeight = FontWeight.Bold
                     )
                 }
@@ -981,9 +589,8 @@ fun StowingInputScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         // --- DAFTAR CARGO TERGROUPING ---
-        // --- DAFTAR CARGO TERGROUPING ---
-        val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
-        val grandTotalPAG = groupedCargo.size
+        val grandTotalKg = cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        val grandTotalKoli = cargoList.sumOf { item -> item.pcsQty.toIntOrNull() ?: 0 }
 
         val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
             grandTotalKg.toLong().toString()
@@ -992,30 +599,26 @@ fun StowingInputScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color(0xFF381E72)
-                )
-                if (stowingSearchQuery.isNotBlank()) {
-                    Text(
-                        text = "Ditampilkan ${filteredGroupedCargo.size} PAG",
-                        fontSize = 11.sp,
-                        color = Color.Gray
-                    )
-                }
-            }
+            Text(
+                text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color(0xFF381E72)
+            )
 
-            if (viewModel.cargoList.isNotEmpty()) {
-                Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
+            if (cargoList.isNotEmpty()) {
+                Surface(
+                    color = Color(0xFF2E7D32),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
                     Text(
-                        text = "Total: $formattedGrandTotal KG",
+                        text = "Total: $formattedGrandTotal KG ($grandTotalKoli Koli)",
                         color = Color.White,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
@@ -1025,91 +628,91 @@ fun StowingInputScreen(
             }
         }
 
-        OutlinedTextField(
-            value = stowingSearchQuery,
-            onValueChange = { stowingSearchQuery = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Cari Stowing") },
-            label = { Text("Cari data Stowing") },
-            placeholder = { Text("PAG / Customer / Description / PTI") },
-            trailingIcon = {
-                if (stowingSearchQuery.isNotBlank()) {
-                    TextButton(onClick = { stowingSearchQuery = "" }) {
-                        Text("Hapus")
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF381E72),
-                unfocusedBorderColor = Color.LightGray
-            )
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        ExposedDropdownMenuBox(
-            expanded = stowingPagDropdownExpanded,
-            onExpandedChange = { stowingPagDropdownExpanded = !stowingPagDropdownExpanded },
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            OutlinedTextField(
-                value = selectedStowingPag,
-                onValueChange = {},
-                readOnly = true,
-                singleLine = true,
-                label = { Text("Pilih PAG yang ditampilkan") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = stowingPagDropdownExpanded)
-                },
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                    focusedBorderColor = Color(0xFF381E72),
-                    unfocusedBorderColor = Color.LightGray
-                )
-            )
-            ExposedDropdownMenu(
-                expanded = stowingPagDropdownExpanded,
-                onDismissRequest = { stowingPagDropdownExpanded = false }
-            ) {
-                stowingPagOptions.forEach { pag ->
-                    DropdownMenuItem(
-                        text = { Text(pag) },
-                        onClick = {
-                            selectedStowingPag = pag
-                            stowingPagDropdownExpanded = false
-                        }
-                    )
-                }
-            }
-        }
-
         Spacer(modifier = Modifier.height(8.dp))
 
-        Button(
-            onClick = {
-                sendingToN8n = true
-                scanScope.launch {
-                    val selected = if (selectedStowingPag.equals("SEMUA PAG", true)) null else selectedStowingPag
-                    val result = N8nClient.sendStowing(viewModel.cargoList.toList(), selected)
-                    sendingToN8n = false
-                    result.onSuccess {
-                        val target = selected ?: "SEMUA PAG"
-                        Toast.makeText(context, "Stowing $target berhasil dikirim ke n8n", Toast.LENGTH_LONG).show()
-                    }.onFailure {
-                        Toast.makeText(context, "Gagal kirim Stowing ke n8n: ${it.localizedMessage ?: "koneksi gagal"}", Toast.LENGTH_LONG).show()
+        if (cargoList.isNotEmpty()) {
+            Button(
+                onClick = {
+                    if (isSendingToN8n) return@Button
+
+                    isSendingToN8n = true
+                    n8nStatus = null
+
+                    coroutineScope.launch {
+                        val grouped = cargoList
+                            .filter { it.noPag.isNotBlank() }
+                            .groupBy { it.noPag.trim() }
+
+                        if (grouped.isEmpty()) {
+                            isSendingToN8n = false
+                            n8nStatus = "No PAG belum diisi."
+                            Toast.makeText(
+                                context,
+                                "No PAG belum diisi.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@launch
+                        }
+
+                        val results = withContext(Dispatchers.IO) {
+                            grouped.map { (pag, items) ->
+                                pag to N8nClient.sendStowing(pag, items)
+                            }
+                        }
+
+                        isSendingToN8n = false
+
+                        val failed = results.filter { !it.second.success }
+                        if (failed.isEmpty()) {
+                            n8nStatus =
+                                "Berhasil mengirim ${results.size} PAG ke n8n."
+                            Toast.makeText(
+                                context,
+                                n8nStatus,
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            val firstError = failed.first().second.message
+                            n8nStatus = firstError
+                            Toast.makeText(
+                                context,
+                                "Gagal kirim Stowing ke n8n: $firstError",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
                     }
-                }
-            },
-            enabled = viewModel.cargoList.isNotEmpty() && !sendingToN8n,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Text(
-                text = if (sendingToN8n) "Mengirim ke Laptop (n8n)..." else "Kirim Stowing ke Laptop (n8n)",
-                fontWeight = FontWeight.Bold
-            )
+                },
+                enabled = !isSendingToN8n,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(8.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1565C0)
+                )
+            ) {
+                Text(
+                    text = if (isSendingToN8n) {
+                        "Mengirim ke Laptop (n8n)..."
+                    } else {
+                        "Kirim Stowing ke Laptop (n8n)"
+                    },
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            n8nStatus?.let { status ->
+                Text(
+                    text = status,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp),
+                    fontSize = 12.sp,
+                    color = if (status.startsWith("Berhasil")) {
+                        Color(0xFF2E7D32)
+                    } else {
+                        Color(0xFFC62828)
+                    }
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
@@ -1118,12 +721,12 @@ fun StowingInputScreen(
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            items(filteredGroupedCargo.entries.toList()) { group ->
+            items(groupedCargo.entries.toList()) { group ->
                 val pagKey = group.key
                 val itemsInGroup = group.value
 
-                val groupTotalKg = itemsInGroup.sumOf { pair -> pair.second.subTotal.toDoubleOrNull() ?: 0.0 }
-                val groupTotalKoli = itemsInGroup.sumOf { pair -> pair.second.pcsQty.toIntOrNull() ?: 0 }
+                val groupTotalKg = itemsInGroup.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
+                val groupTotalKoli = itemsInGroup.sumOf { it.second.pcsQty.toIntOrNull() ?: 0 }
 
                 val formattedGroupKg = if (groupTotalKg % 1.0 == 0.0) {
                     groupTotalKg.toLong().toString()
@@ -1138,9 +741,17 @@ fun StowingInputScreen(
                     border = CardDefaults.outlinedCardBorder()
                 ) {
                     Column(modifier = Modifier.padding(12.dp)) {
-                        Text(text = "NO PAG: $pagKey", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF381E72))
+                        Text(
+                            text = "NO PAG: $pagKey",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = Color(0xFF381E72)
+                        )
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 8.dp),
+                            color = Color.LightGray
+                        )
 
                         itemsInGroup.forEachIndexed { subIndex, pair ->
                             val originalIndex = pair.first
@@ -1150,7 +761,7 @@ fun StowingInputScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .background(
-                                        if (viewModel.editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
+                                        if (editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
                                         shape = RoundedCornerShape(6.dp)
                                     )
                                     .padding(8.dp),
@@ -1164,29 +775,38 @@ fun StowingInputScreen(
                                         fontSize = 13.sp,
                                         color = Color(0xFF381E72)
                                     )
-                                    Text(text = "KG: ${item.weight}", fontSize = 11.sp, color = Color.DarkGray)
-                                    if (item.pti.isNotBlank()) {
-                                        Text(
-                                            text = "PTI: ${item.pti}",
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF5E35B1),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
+                                    Text(
+                                        text = "KG: ${item.weight}",
+                                        fontSize = 11.sp,
+                                        color = Color.DarkGray
+                                    )
                                 }
 
                                 Row {
                                     IconButton(
-                                        onClick = { viewModel.startEditCargoItem(originalIndex, item) },
+                                        onClick = { startEditCargoItem(originalIndex, item) },
                                         modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Data", tint = Color(0xFF0288D1), modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Edit,
+                                            contentDescription = "Edit Data",
+                                            tint = Color(0xFF0288D1),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                     IconButton(
-                                        onClick = { viewModel.showDeleteDialog(DeleteType.CARGO_ITEM, itemIdx = originalIndex) },
+                                        onClick = {
+                                            itemIndexToDelete = originalIndex
+                                            deleteType = DeleteType.CARGO_ITEM
+                                        },
                                         modifier = Modifier.size(28.dp)
                                     ) {
-                                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus Data", tint = Color(0xFFB3261E), modifier = Modifier.size(18.dp))
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Hapus Data",
+                                            tint = Color(0xFFB3261E),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -1206,8 +826,18 @@ fun StowingInputScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(text = "TOTAL PAG:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
-                            Text(text = "$formattedGroupKg KG", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color(0xFF2E7D32))
+                            Text(
+                                text = "TOTAL PAG ($groupTotalKoli Koli):",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = Color(0xFF1B5E20)
+                            )
+                            Text(
+                                text = "$formattedGroupKg KG",
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 14.sp,
+                                color = Color(0xFF2E7D32)
+                            )
                         }
                     }
                 }
