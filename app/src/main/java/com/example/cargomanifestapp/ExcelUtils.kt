@@ -5,6 +5,7 @@ import android.net.Uri
 import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
+import org.apache.poi.ss.usermodel.SheetVisibility
 import org.apache.poi.ss.usermodel.Workbook
 import org.apache.poi.xssf.usermodel.XSSFCellStyle
 import org.apache.poi.xssf.usermodel.XSSFSheet
@@ -39,6 +40,12 @@ object ExcelUtils {
                 workbook.getSheetAt(0),
                 cargoList
             )
+
+            // V8: simpan data mentah setiap input + NO PAG dalam sheet khusus
+            // agar file hasil export dapat di-import kembali tanpa menebak PAG.
+            val dataSheet = getOrCreateStowingDataSheet(workbook)
+            fillStowingDataSheet(dataSheet, cargoList)
+            workbook.setSheetVisibility(workbook.getSheetIndex(dataSheet), SheetVisibility.VERY_HIDDEN)
 
             saveWorkbook(
                 context,
@@ -136,6 +143,18 @@ object ExcelUtils {
                 pagWorkbook.close()
             }
 
+            // =============================================================
+            // V8 - DATA MASTER UNTUK IMPORT
+            // =============================================================
+            // Manifest tetap memakai template asli tanpa kolom NO PAG.
+            // Sheet STOWING_DATA menyimpan SATU BARIS = SATU INPUT lengkap
+            // termasuk NO PAG. Sheet ini menjadi sumber utama saat Import.
+            val stowingDataSheet = getOrCreateStowingDataSheet(workbook)
+            fillStowingDataSheet(stowingDataSheet, cargoList)
+            // 2 = hidden pada Apache POI. Pengguna tetap hanya melihat
+            // Manifest dan STOWINGAN PAG, tetapi Import dapat membacanya.
+            workbook.setSheetVisibility(workbook.getSheetIndex(stowingDataSheet), SheetVisibility.VERY_HIDDEN)
+
             saveWorkbook(
                 context,
                 uri,
@@ -145,6 +164,75 @@ object ExcelUtils {
         } finally {
             workbook.close()
         }
+    }
+
+    /**
+     * V8: membuat / mengambil sheet khusus data mentah Stowing.
+     * Sheet ini sengaja dipisahkan dari Manifest dan Stowing Checklist.
+     * Setiap CargoItem disimpan satu baris lengkap, termasuk NO PAG.
+     */
+    private fun getOrCreateStowingDataSheet(workbook: XSSFWorkbook): XSSFSheet {
+        val existing = workbook.getSheet("STOWING_DATA")
+        return existing ?: workbook.createSheet("STOWING_DATA")
+    }
+
+    /**
+     * V8: tulis data sumber Import.
+     * Tidak ada grouping. Urutan baris persis mengikuti cargoList.
+     */
+    private fun fillStowingDataSheet(
+        sheet: XSSFSheet,
+        cargoList: List<CargoItem>
+    ) {
+        // Bersihkan isi lama jika sheet pernah dibuat oleh proses sebelumnya.
+        for (r in 0..sheet.lastRowNum) {
+            sheet.getRow(r)?.let { row ->
+                for (c in 0..maxOf(7, row.lastCellNum.toInt() - 1)) {
+                    row.getCell(c)?.setBlank()
+                }
+            }
+        }
+
+        val headers = listOf(
+            "No",
+            "NO PAG",
+            "PTI",
+            "Customer",
+            "Description",
+            "Pcs/Cly",
+            "Weight Detail",
+            "Sub Total KG"
+        )
+
+        val header = sheet.getRow(0) ?: sheet.createRow(0)
+        headers.forEachIndexed { index, value ->
+            val cell = header.getCell(index) ?: header.createCell(index)
+            cell.setCellValue(value)
+        }
+
+        cargoList.forEachIndexed { index, item ->
+            val row = sheet.getRow(index + 1) ?: sheet.createRow(index + 1)
+            val values = listOf(
+                (index + 1).toString(),
+                item.noPag.trim(),
+                item.pti.trim(),
+                item.customer.trim(),
+                item.description.trim(),
+                item.pcsQty.trim(),
+                item.weight.trim(),
+                item.subTotal.trim()
+            )
+            values.forEachIndexed { col, value ->
+                val cell = row.getCell(col) ?: row.createCell(col)
+                cell.setCellValue(value)
+            }
+        }
+
+        val widths = intArrayOf(8, 18, 14, 20, 24, 12, 28, 16)
+        widths.forEachIndexed { col, width ->
+            sheet.setColumnWidth(col, width * 256)
+        }
+        sheet.createFreezePane(0, 1)
     }
 
     /**

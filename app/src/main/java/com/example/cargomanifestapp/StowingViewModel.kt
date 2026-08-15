@@ -205,10 +205,11 @@ class StowingViewModel : ViewModel() {
      *
      * SUMBER YANG DIBACA HANYA KOLOM YANG TERLIHAT:
      * - Sheet Manifest, kolom A:G untuk data per baris.
-     * - Sheet Manifest, bagian Stowing Checklist (H:M) untuk NO PAG.
+     * - Sheet STOWING_DATA untuk NO PAG pada file hasil Export V8.
+     * - Hanya sebagai fallback, file lama boleh membaca Stowing Checklist.
      *
-     * Tidak membaca kolom T, sheet metadata, hidden metadata, atau
-     * data tambahan lainnya.
+     * V8 tidak membaca kolom T atau metadata lama. STOWING_DATA adalah
+     * sheet data khusus yang memang dibuat oleh aplikasi sendiri.
      *
      * Manifest:
      *   1 baris Excel = 1 CargoItem.
@@ -309,22 +310,51 @@ class StowingViewModel : ViewModel() {
                             }
                         }
 
-                        val pagGroups = readVisibleStowingChecklist(
-                            manifestSheet,
-                            formatter
-                        )
+                        // V8: file hasil export aplikasi memiliki sheet khusus
+                        // STOWING_DATA. Sheet ini berisi satu baris per input + NO PAG,
+                        // sehingga tidak perlu menebak NO PAG dari checklist yang sudah
+                        // digabung.
+                        val stowingDataSheet = (0 until workbook.numberOfSheets)
+                            .map { workbook.getSheetAt(it) }
+                            .firstOrNull {
+                                it.sheetName.trim().equals("STOWING_DATA", ignoreCase = true)
+                            }
+
+                        val stowingData = if (stowingDataSheet != null) {
+                            readStowingDataSheet(stowingDataSheet, formatter)
+                        } else {
+                            emptyList()
+                        }
 
                         if (manifestItems.isEmpty()) {
                             emptyList()
-                        } else if (pagGroups.isEmpty()) {
-                            // Tetap import semua data Manifest. NO PAG kosong karena
-                            // memang tidak ada kolom PAG yang bisa dibaca.
-                            manifestItems
+                        } else if (stowingData.isNotEmpty()) {
+                            // PENTING: mapping berdasarkan urutan baris. Export V8
+                            // menulis Manifest dan STOWING_DATA dari cargoList yang sama,
+                            // sehingga baris ke-N pasti merupakan data input yang sama.
+                            manifestItems.mapIndexed { index, item ->
+                                val raw = stowingData.getOrNull(index)
+                                if (raw != null) {
+                                    item.copy(
+                                        noPag = normalizePag(raw.noPag)
+                                    )
+                                } else {
+                                    item
+                                }
+                            }
                         } else {
-                            applyVisiblePagGroups(
-                                manifestItems,
-                                pagGroups
+                            // Kompatibilitas file V7/lama: fallback membaca checklist
+                            // yang terlihat. Tidak digunakan untuk file V8.
+                            val pagGroups = readVisibleStowingChecklist(
+                                manifestSheet,
+                                formatter
                             )
+
+                            if (pagGroups.isEmpty()) {
+                                manifestItems
+                            } else {
+                                applyVisiblePagGroups(manifestItems, pagGroups)
+                            }
                         }
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
@@ -366,6 +396,60 @@ class StowingViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    private data class ImportedStowingData(
+        val noPag: String,
+        val pti: String,
+        val customer: String,
+        val description: String,
+        val pcsQty: String,
+        val weight: String,
+        val subTotal: String
+    )
+
+    /**
+     * V8: baca sheet STOWING_DATA yang dibuat oleh Export aplikasi.
+     * Hanya kolom sheet ini yang digunakan untuk NO PAG.
+     */
+    private fun readStowingDataSheet(
+        sheet: org.apache.poi.ss.usermodel.Sheet,
+        formatter: DataFormatter
+    ): List<ImportedStowingData> {
+        if (sheet.lastRowNum < 1) return emptyList()
+
+        val result = mutableListOf<ImportedStowingData>()
+        for (r in 1..sheet.lastRowNum) {
+            val row = sheet.getRow(r) ?: continue
+
+            fun text(col: Int): String = safeCellText(formatter, row.getCell(col))
+
+            val noPag = text(1)
+            val pti = text(2)
+            val customer = text(3)
+            val description = text(4)
+            val pcs = text(5)
+            val weight = text(6)
+            val subtotal = text(7)
+
+            if (noPag.isBlank() && pti.isBlank() && customer.isBlank() &&
+                description.isBlank() && pcs.isBlank() && weight.isBlank() &&
+                subtotal.isBlank()
+            ) continue
+
+            result.add(
+                ImportedStowingData(
+                    noPag = noPag,
+                    pti = pti,
+                    customer = customer,
+                    description = description,
+                    pcsQty = pcs,
+                    weight = weight,
+                    subTotal = subtotal
+                )
+            )
+        }
+        return result
     }
 
     private data class VisiblePagGroup(
