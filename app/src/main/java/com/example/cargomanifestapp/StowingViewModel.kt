@@ -325,7 +325,7 @@ class StowingViewModel : ViewModel() {
                             emptyList()
                         }
 
-                        if (stowingData.isNotEmpty()) {
+                        val imported: List<CargoItem> = if (stowingData.isNotEmpty()) {
                             /*
                              * File hasil Export aplikasi mempunyai STOWING_DATA sebagai
                              * sumber data cargo yang paling lengkap. Satu baris di sini
@@ -372,6 +372,8 @@ class StowingViewModel : ViewModel() {
                             } else {
                                 applyVisiblePagGroups(manifestItems, pagGroups)
                             }
+                        } else {
+                            emptyList()
                         }
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
@@ -389,7 +391,7 @@ class StowingViewModel : ViewModel() {
                         saveCargoListToPrefs(context)
                         resetForm()
 
-                        val pagCount = imported.count { it.noPag.isNotBlank() }
+                        val pagCount = imported.count { item -> item.noPag.isNotBlank() }
                         onSuccess(
                             "Import berhasil: ${imported.size} data Manifest" +
                                 if (pagCount > 0) {
