@@ -1091,11 +1091,10 @@ fun StowingInputScreen(
                 sendingToN8n = true
                 scanScope.launch {
                     val selected = if (selectedStowingPag.equals("SEMUA PAG", true)) null else selectedStowingPag
-                    val result = N8nClient.sendStowing(viewModel.cargoList.toList(), selected)
+                    val result = N8nClient.sendStowingExcel(context, viewModel.cargoList.toList())
                     sendingToN8n = false
                     result.onSuccess {
-                        val target = selected ?: "SEMUA PAG"
-                        Toast.makeText(context, "Stowing $target berhasil dikirim ke n8n", Toast.LENGTH_LONG).show()
+                        Toast.makeText(context, "Cargo_Manifest.xlsx berhasil dikirim ke laptop", Toast.LENGTH_LONG).show()
                     }.onFailure {
                         Toast.makeText(context, "Gagal kirim Stowing ke n8n: ${it.localizedMessage ?: "koneksi gagal"}", Toast.LENGTH_LONG).show()
                     }
@@ -1107,7 +1106,7 @@ fun StowingInputScreen(
             shape = RoundedCornerShape(8.dp)
         ) {
             Text(
-                text = if (sendingToN8n) "Mengirim ke Laptop (n8n)..." else "Kirim Stowing ke Laptop (n8n)",
+                text = if (sendingToN8n) "Membuat & mengirim Excel..." else "Kirim Excel ke Laptop (n8n)",
                 fontWeight = FontWeight.Bold
             )
         }

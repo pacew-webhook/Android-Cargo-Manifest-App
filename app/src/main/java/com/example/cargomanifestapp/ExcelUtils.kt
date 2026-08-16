@@ -12,6 +12,8 @@ import org.apache.poi.xssf.usermodel.XSSFSheet
 import org.apache.poi.xssf.usermodel.XSSFWorkbook
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.File
+import java.io.FileOutputStream
 
 /**
  * ExcelUtils_V15_DYNAMIC_PAG
@@ -119,6 +121,73 @@ object ExcelUtils {
 
             workbook.setForceFormulaRecalculation(true)
             saveWorkbook(context, uri, workbook)
+        } finally {
+            workbook.close()
+        }
+    }
+
+    /**
+     * Membuat workbook Stowing yang sama dengan Export Excel Android,
+     * tetapi langsung ditulis ke File lokal (dipakai sebelum upload ke n8n).
+     */
+    fun writeCombinedCargoWorkbookToFile(
+        context: Context,
+        file: File,
+        cargoList: List<CargoItem>
+    ) {
+        require(cargoList.isNotEmpty()) { "Data Stowing kosong" }
+
+        file.parentFile?.mkdirs()
+
+        val manifestInput = context.assets.open("template_manifest.xlsx")
+        val workbook = manifestInput.use { XSSFWorkbook(it) }
+
+        try {
+            val manifestSheet =
+                workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+
+            fillManifestSheet(workbook, manifestSheet, cargoList)
+
+            val pagInput = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
+            val pagWorkbook = pagInput.use { XSSFWorkbook(it) }
+
+            try {
+                val names = listOf(
+                    "STOWINGAN PAG",
+                    "PAG LOOT",
+                    "PAG DATA",
+                    "STOWING CHECK",
+                    "BARANG KOLIAN"
+                )
+
+                pagWorkbook.sheetIterator().asSequence().forEachIndexed { index, sourceSheet ->
+                    val targetName =
+                        names.getOrElse(index) { "PAG TEMPLATE ${index + 1}" }
+                    val targetSheet = workbook.createSheet(targetName)
+
+                    copySheet(sourceSheet, targetSheet, workbook)
+
+                    if (index == 0) {
+                        fillStowingPagSheet(targetSheet, cargoList)
+                    }
+                }
+            } finally {
+                pagWorkbook.close()
+            }
+
+            val stowingDataSheet = getOrCreateStowingDataSheet(workbook)
+            fillStowingDataSheet(stowingDataSheet, cargoList)
+
+            workbook.setSheetVisibility(
+                workbook.getSheetIndex(stowingDataSheet),
+                SheetVisibility.VERY_HIDDEN
+            )
+
+            workbook.setForceFormulaRecalculation(true)
+
+            FileOutputStream(file).use { output ->
+                workbook.write(output)
+            }
         } finally {
             workbook.close()
         }
