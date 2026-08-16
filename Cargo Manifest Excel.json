@@ -1,0 +1,219 @@
+{
+  "name": "Cargo Manifest Excel",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cargo/stowing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "96f2026e-20fc-490b-84ad-ed60c70c684e",
+      "name": "Webhook",
+      "webhookId": "da92d015-d508-4863-9794-997824c566de"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1200,
+        -128
+      ],
+      "id": "eafa435d-c542-4ac2-a2cb-d567b3e7680c",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "fileSelector": "C:\\n8n-data\\cargo\\template_manifest.xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        624,
+        64
+      ],
+      "id": "495eedd4-6957-478a-ae59-0f691632d7a5",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        176,
+        -144
+      ],
+      "id": "d9dd8077-4e48-424b-a57b-bb7268c0bc9b",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://10.18.242.83:5000/cargo/manifest",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  container: $json.container,\n  cargo: $json.cargo,\n  quantity: $json.quantity,\n  customer: $json.customer,\n  pti: $json.pti,\n  weight: $json.weight,\n  subTotal: $json.subTotal\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        400,
+        -144
+      ],
+      "id": "c4c99a10-22df-4c42-a5f2-af7c16e94cab",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "operation": "xlsx",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        784,
+        -112
+      ],
+      "id": "2f580d76-e2a0-4571-a140-c9e20d7aa075",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rows = $input.all().map(item => item.json);\n\n// =========================\n// HELPER\n// =========================\n\nfunction val(row, key) {\n  const value = row?.[key];\n\n  if (value === undefined || value === null) {\n    return \"\";\n  }\n\n  return String(value).trim();\n}\n\nfunction findRow(key, value) {\n  return rows.find(row => val(row, key) === value) || {};\n}\n\n// =========================\n// HEADER MANIFEST\n// =========================\n\nconst manifestRow = rows.find(row =>\n  val(row, \"__EMPTY\").includes(\"/XII/\")\n) || {};\n\nconst dateRow = findRow(\"__EMPTY_1\", \"DATE\");\nconst fromRow = findRow(\"__EMPTY_1\", \"FROM\");\nconst toRow = findRow(\"__EMPTY_1\", \"TO\");\n\nconst manifest = {\n  manifestNo: val(manifestRow, \"__EMPTY\"),\n\n  date: val(dateRow, \"__EMPTY_2\")\n    .replace(/^:\\s*/, \"\"),\n\n  from: val(fromRow, \"__EMPTY_2\")\n    .replace(/^:\\s*/, \"\"),\n\n  to: val(toRow, \"__EMPTY_2\")\n    .replace(/^:\\s*/, \"\"),\n\n  flightNo: val(fromRow, \"__EMPTY_6\")\n    .replace(/^:\\s*/, \"\")\n};\n\n// =========================\n// PREPARED BY\n// =========================\n\nconst preparedByRow = rows.find(row =>\n  val(row, \"__EMPTY\") === \"Prepared by :\"\n) || {};\n\nconst preparedBy =\n  val(preparedByRow, \"__EMPTY_1\") ||\n  val(preparedByRow, \"__EMPTY_2\") ||\n  \"\";\n\n// =========================\n// APPROVED BY\n// =========================\n\nconst approvedByRow = rows.find(row =>\n  val(row, \"__EMPTY_5\") === \"Approved by Acceptance:\"\n) || {};\n\nconst approvedBy =\n  val(approvedByRow, \"__EMPTY_6\") ||\n  val(approvedByRow, \"__EMPTY_7\") ||\n  \"\";\n\n// =========================\n// STOWING ITEMS\n// =========================\n\nconst stowingItems = [];\n\nfor (const row of rows) {\n  const no = val(row, \"__EMPTY_7\");\n\n  // Hanya baris nomor stowing: 1, 2, 3, dst.\n  if (/^\\d+$/.test(no)) {\n    stowingItems.push({\n      no: Number(no),\n      noPag: val(row, \"__EMPTY_8\"),\n      description: val(row, \"__EMPTY_9\"),\n      netWeight: val(row, \"__EMPTY_10\"),\n      grossWeight: val(row, \"__EMPTY_11\"),\n      customers: val(row, \"__EMPTY_12\")\n    });\n  }\n}\n\n// =========================\n// TOTAL WEIGHT\n// =========================\n\nconst totalWeightRow = rows.find(row =>\n  val(row, \"__EMPTY_7\") === \"TOTAL WEIGHT\"\n) || {};\n\nconst totalWeight = val(totalWeightRow, \"__EMPTY_11\");\n\n// =========================\n// RESPONSE\n// =========================\n\nreturn [{\n  json: {\n    success: true,\n\n    message: \"Manifest berhasil diproses\",\n\n    manifest,\n\n    stowing: {\n      totalWeight,\n      itemCount: stowingItems.length,\n      items: stowingItems\n    },\n\n    rawItemCount: rows.length\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1008,
+        48
+      ],
+      "id": "a3110f87-89ca-4fd6-9189-23acb4c58aea",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $json.body || {};\nconst items = body.items || [];\n\nreturn items\n  .filter(item =>\n    item.noPag &&\n    item.description &&\n    item.pcsQty !== undefined &&\n    item.pcsQty !== null\n  )\n  .map(item => ({\n    json: {\n      container: String(item.noPag),\n      cargo: String(item.description),\n      quantity: item.pcsQty,\n      customer: item.customer || \"\",\n      pti: item.pti || \"\",\n      weight: item.weight || \"\",\n      subTotal: item.subTotal || \"\"\n    }\n  }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        272,
+        -304
+      ],
+      "id": "2449f186-b13b-498b-8e29-673e14cbc7c0",
+      "name": "Code in JavaScript1"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "9c0e9e5d-0484-421d-a13e-dada849cf6eb",
+  "meta": {
+    "instanceId": "aff49bf1593ee95a395880ae199ac0cecb0622ab797708c2464e884ec6a7f376"
+  },
+  "nodeGroups": [],
+  "id": "NXGldz95P4jUdvxo",
+  "tags": []
+}
