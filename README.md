@@ -311,13 +311,298 @@ Untuk tahap integrasi n8n saat ini, hanya **Data Barang** yang dikirim dari Andr
 Header Manifest tetap dapat diisi manual:
 
 ```text
-AWB No
-Date
-A/C Reg
-From
-Flight No
-To
-FLT FREQ
-```
+Android Cargo Manifest & Stowing
 
-Dengan pendekatan ini, format Manifest yang sudah digunakan project tetap dipertahankan dan tidak perlu dibuat ulang.
+Aplikasi Android untuk mengelola data Cargo Manifest dan Stowing Cargo, dengan dukungan export Excel serta pengiriman data dari Android ke laptop melalui n8n.
+
+Overview
+
+Project ini dibuat untuk membantu proses pencatatan cargo di Android dan mengintegrasikan data dengan sistem di laptop.
+
+Data Stowing dapat digunakan melalui dua jalur:
+
+Android Form Stowing
+        │
+        ├──────────────► Export Excel Android
+        │
+        └──────────────► n8n
+                          │
+                          ▼
+                       Python
+                          │
+                          ▼
+                  Cargo_Manifest.xlsx
+
+Dengan pendekatan ini, Android tidak perlu mengirim file Excel. Android cukup mengirim data "cargoList" dalam format JSON, kemudian n8n meneruskan data tersebut ke Python di laptop untuk menghasilkan file Excel.
+
+Features
+
+- Cargo Manifest management
+- Stowing Cargo management
+- Input data PAG
+- Customer dan cargo information
+- PTI / quantity / weight management
+- Detail berat cargo
+- Export data ke Excel
+- Stowing checklist berdasarkan NO PAG
+- Pengelompokan data berdasarkan PAG
+- Dynamic handling untuk jumlah PAG
+- Android → n8n → Python integration
+- Automatic Excel generation di laptop
+
+System Architecture
+
+┌─────────────────────┐
+│      Android        │
+│  Cargo Manifest App │
+└──────────┬──────────┘
+           │
+           │ HTTP / JSON
+           ▼
+┌─────────────────────┐
+│        n8n          │
+│       :5678         │
+└──────────┬──────────┘
+           │
+           │ HTTP
+           ▼
+┌─────────────────────┐
+│   Python Server     │
+│       :5000         │
+└──────────┬──────────┘
+           │
+           ▼
+┌─────────────────────┐
+│ Cargo_Manifest.xlsx │
+└─────────────────────┘
+
+Network
+
+Android dan laptop harus berada pada jaringan Wi-Fi yang sama.
+
+Contoh:
+
+Laptop IP:
+10.18.242.83
+
+n8n:
+
+http://10.18.242.83:5678
+
+Python:
+
+http://127.0.0.1:5000
+
+Node n8n untuk Stowing menggunakan:
+
+http://127.0.0.1:5000/cargo/stowing
+
+Python Server
+
+Python server berada di:
+
+n8n-data/cargo/
+
+File utama:
+
+cargo_excel_server_FINAL_CHECKLIST_GROUP_BY_PAG_V2.py
+
+Endpoint:
+
+POST /cargo/stowing
+POST /cargo/manifest/items
+
+Output:
+
+Cargo_Manifest.xlsx
+
+Menjalankan Python Server
+
+Buka PowerShell:
+
+cd C:\n8n-data\cargo
+python cargo_excel_server_FINAL_CHECKLIST_GROUP_BY_PAG_V2.py
+
+Jika "python" tidak tersedia:
+
+py cargo_excel_server_FINAL_CHECKLIST_GROUP_BY_PAG_V2.py
+
+Server akan berjalan pada:
+
+http://0.0.0.0:5000
+
+Jangan tutup PowerShell selama server digunakan.
+
+Menjalankan n8n
+
+Buka PowerShell kedua:
+
+cd "C:\Users\asus4\AppData\Roaming\npm"
+
+Kemudian:
+
+$env:N8N_SECURE_COOKIE="false"
+.\n8n.cmd start
+
+n8n dapat dibuka dari laptop melalui:
+
+http://127.0.0.1:5678
+
+Android mengakses n8n menggunakan IP laptop:
+
+http://IP-LAPTOP:5678
+
+Contoh:
+
+http://10.18.242.83:5678
+
+n8n Workflow
+
+Workflow Stowing:
+
+Webhook Stowing
+       ↓
+Prepare Stowing Payload
+       ↓
+Send to Python Server
+       ↓
+Python Excel Server
+       ↓
+Cargo_Manifest.xlsx
+       ↓
+Response Android
+
+Data yang dikirim Android menggunakan JSON.
+
+Contoh struktur:
+
+{
+  "source": "android-stowing",
+  "selectedPag": "PAG 001",
+  "items": [
+    {
+      "noPag": "PAG 001",
+      "pti": "PTI001",
+      "customer": "CUSTOMER",
+      "description": "CARGO",
+      "pcsQty": 3,
+      "weight": "10,10,50",
+      "subTotal": 70
+    }
+  ]
+}
+
+Excel Logic
+
+Logika pembuatan Excel di laptop dibuat mengikuti konsep Export Excel pada Android.
+
+Data Stowing digunakan untuk menghasilkan:
+
+- "STOWING_DATA"
+- Stowing Checklist
+- STOWINGAN PAG
+- Total KG berdasarkan PAG
+- Detail KG cargo
+- Customer dan informasi cargo
+
+Prinsip utama:
+
+cargoList
+    ↓
+NO PAG
+    ↓
+Cargo Data
+    ↓
+Weight Detail
+    ↓
+Total PAG
+
+Folder Structure
+
+Android-Cargo-Manifest-App/
+│
+├── app/
+│   └── src/
+│       └── main/
+│
+├── n8n-data/
+│   ├── cargo/
+│   │   ├── cargo_excel_server_FINAL_CHECKLIST_GROUP_BY_PAG_V2.py
+│   │   └── Cargo_Manifest.xlsx
+│   │
+│   └── workflow/
+│       └── Cargo_Excel_Unified_FINAL_Checklist_Group_By_PAG.json
+│
+├── N8N_STOWING_SETUP.md
+└── README.md
+
+Troubleshooting
+
+n8n tidak bisa dibuka
+
+Cek port:
+
+netstat -ano | findstr :5678
+
+Jika tidak ada "LISTENING", jalankan kembali n8n:
+
+cd "C:\Users\asus4\AppData\Roaming\npm"
+$env:N8N_SECURE_COOKIE="false"
+.\n8n.cmd start
+
+Python tidak menerima data
+
+Cek port:
+
+netstat -ano | findstr :5000
+
+Kemudian jalankan:
+
+cd C:\n8n-data\cargo
+python cargo_excel_server_FINAL_CHECKLIST_GROUP_BY_PAG_V2.py
+
+Android tidak bisa mengakses n8n
+
+Pastikan Android dan laptop berada pada Wi-Fi yang sama.
+
+Cek IP laptop:
+
+ipconfig
+
+Gunakan IPv4 Address laptop sebagai alamat n8n.
+
+Contoh:
+
+http://10.18.242.83:5678
+
+Important Notes
+
+- Jangan menutup PowerShell Python selama fitur pengiriman data digunakan.
+- Jangan menutup PowerShell n8n selama workflow digunakan.
+- IP laptop dapat berubah ketika berpindah jaringan.
+- Jangan commit password, API key, token, credential n8n, atau data cargo asli ke repository publik.
+- Gunakan data contoh/dummy untuk repository GitHub publik.
+
+Project Status
+
+Current Status: Working
+
+Current integration:
+
+Android
+   ↓
+n8n
+   ↓
+Python
+   ↓
+Excel
+
+Tested flow:
+
+Android Stowing
+      ↓
+n8n Webhook
+      ↓
+Python Server :5000
+      ↓
+Cargo_Manifest.xlsx
