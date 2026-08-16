@@ -1,0 +1,80 @@
+{
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "cargo/stowing-excel",
+        "responseMode": "lastNode",
+        "options": {
+          "binaryData": true
+        }
+      },
+      "id": "1",
+      "name": "Webhook Stowing Excel",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        0
+      ],
+      "webhookId": "cargo-stowing-excel-v3"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "C:\\n8n-data\\cargo\\Cargo_Manifest.xlsx",
+        "dataPropertyName": "data"
+      },
+      "id": "2",
+      "name": "Save Cargo_Manifest.xlsx",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [
+        -120,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\":true,\"message\":\"Cargo_Manifest.xlsx berhasil disimpan di laptop\"}"
+      },
+      "id": "3",
+      "name": "Respond Android",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        160,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Stowing Excel": {
+      "main": [
+        [
+          {
+            "node": "Save Cargo_Manifest.xlsx",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Cargo_Manifest.xlsx": {
+      "main": [
+        [
+          {
+            "node": "Respond Android",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {}
+}
