@@ -58,8 +58,8 @@ fun MainMenuScreen(
                 painter = painterResource(id = R.drawable.logo_app),
                 contentDescription = "Logo Aplikasi",
                 modifier = Modifier
-                    .size(120.dp)
-                    .padding(bottom = 16.dp)
+                    .size(150.dp)
+                    .padding(bottom = 12.dp)
             )
 
             Text(
