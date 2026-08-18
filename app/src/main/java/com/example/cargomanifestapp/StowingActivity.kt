@@ -540,25 +540,44 @@ fun StowingInputScreen(
                             items = viewModel.btbReferenceList,
                             key = { it.id }
                         ) { btb ->
+                            val btbAlreadyUsed = viewModel.isBtbAlreadyUsed(btb.id)
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+                                enabled = !btbAlreadyUsed,
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (btbAlreadyUsed) Color(0xFFE8F5E9) else Color(0xFFF3EDF7)
+                                ),
                                 onClick = {
-                                    viewModel.applyBtbReference(btb)
-                                    showBtbPicker = false
-                                    Toast.makeText(
-                                        context,
-                                        "Data BTB ${btb.customerName} berhasil diambil ke Stowing",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
+                                    if (viewModel.applyBtbReference(btb)) {
+                                        showBtbPicker = false
+                                        Toast.makeText(
+                                            context,
+                                            "Data BTB ${btb.customerName} berhasil diambil ke Form Stowing. Tekan Simpan untuk menandai BTB sudah masuk Stowing Cargo.",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    } else {
+                                        Toast.makeText(
+                                            context,
+                                            "BTB ini sudah dimasukkan ke Stowing Cargo.",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
                                 }
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text(
                                         btb.customerName.ifBlank { "CUSTOMER" },
                                         fontWeight = FontWeight.Bold,
-                                        color = Color(0xFF381E72)
+                                        color = if (btbAlreadyUsed) Color(0xFF2E7D32) else Color(0xFF381E72)
                                     )
+                                    if (btbAlreadyUsed) {
+                                        Text(
+                                            "✅ Sudah masuk Stowing Cargo",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF2E7D32)
+                                        )
+                                    }
                                     Text(
                                         "${btb.jenisBarang.ifBlank { "-" }} | ${btb.jumlahKoli} Koli | Total ${btb.totalBerat.toCleanString()} KG",
                                         fontSize = 12.sp,

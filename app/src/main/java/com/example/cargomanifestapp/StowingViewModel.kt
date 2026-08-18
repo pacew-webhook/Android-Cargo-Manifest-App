@@ -31,6 +31,10 @@ class StowingViewModel : ViewModel() {
     private var editingOriginalKey: String? = null
     val currentPhotoUris = mutableStateListOf<String>()
     val btbReferenceList = mutableStateListOf<BtbFormData>()
+    // ID BTB yang sudah berhasil disimpan ke Stowing Cargo. Disimpan terpisah
+    // dari cargoList agar status tetap ada walaupun daftar BTB di-refresh.
+    private val usedBtbReferenceIds = mutableStateListOf<String>()
+    private var pendingBtbReferenceId: String? = null
 
     fun attachContext(context: Context) {
         if (attachedContext == null) attachedContext = context.applicationContext
@@ -47,6 +51,7 @@ class StowingViewModel : ViewModel() {
     private fun loadBtbReferences() {
         val context = attachedContext ?: return
         runCatching {
+            loadUsedBtbReferenceIds(context)
             val raw = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
                 .getString("items", "[]") ?: "[]"
             val array = JSONArray(raw)
@@ -75,28 +80,23 @@ class StowingViewModel : ViewModel() {
         }
     }
 
-    fun refreshBtbReferences() {
-        loadBtbReferences()
+    private fun loadUsedBtbReferenceIds(context: Context) {
+        val saved = context.getSharedPreferences("btb_reference_status", Context.MODE_PRIVATE)
+            .getStringSet("used_ids", emptySet())
+            ?: emptySet()
+        usedBtbReferenceIds.clear()
+        usedBtbReferenceIds.addAll(saved.filter { it.isNotBlank() })
     }
 
-    /**
-     * Mengambil BTB sebagai referensi ke Form Stowing.
-     * NO PAG sengaja tidak disentuh karena PAG ditentukan operator.
-     * Jika rincian KG masih kosong, daftar BTB menjadi rincian aktif.
-     * Jika sudah ada rincian manual, berat BTB ditambahkan agar data lama tidak hilang.
-     */
-    fun applyBtbReference(btb: BtbFormData) {
-        if (btb.customerName.isNotBlank()) updateCustomer(btb.customerName)
-        if (btb.jenisBarang.isNotBlank()) updateDescription(btb.jenisBarang)
-        if (btb.daftarTimbangan.isNotEmpty()) {
-            if (currentKgEntries.isEmpty()) {
-                currentKgEntries.addAll(btb.daftarTimbangan)
-            } else {
-                currentKgEntries.addAll(btb.daftarTimbangan)
-            }
-        }
-        persistDraft()
+    private fun saveUsedBtbReferenceIds(context: Context) {
+        context.getSharedPreferences("btb_reference_status", Context.MODE_PRIVATE)
+            .edit()
+            .putStringSet("used_ids", usedBtbReferenceIds.toSet())
+            .apply()
     }
+
+    fun isBtbAlreadyUsed(id: String): Boolean =
+        id.isNotBlank() && (id in usedBtbReferenceIds || id == pendingBtbReferenceId)
 
     private fun cargoKey(item: CargoItem): String =
         listOf(item.noPag, item.customer, item.description, item.pti)
@@ -1181,6 +1181,11 @@ class StowingViewModel : ViewModel() {
             cargoList.add(newItem)
             onSuccess("Data berhasil disimpan!")
         }
+
+        // BTB baru dianggap "sudah masuk Stowing Cargo" setelah data Cargo
+        // benar-benar berhasil disimpan. Jika operator batal sebelum Save,
+        // BTB tetap bisa dipilih lagi.
+        markPendingBtbAsUsed(context)
         saveCargoListToPrefs(context)
         savePhotosForItem(newItem)
         clearDraft()
@@ -1206,6 +1211,9 @@ class StowingViewModel : ViewModel() {
     }
 
     private fun resetForm() {
+        // Jika form dibatalkan/reset sebelum Save, BTB pending belum dianggap
+        // selesai dan boleh dipilih kembali.
+        pendingBtbReferenceId = null
         noPag = ""
         customer = ""
         description = ""
@@ -1253,6 +1261,8 @@ class StowingViewModel : ViewModel() {
         when (deleteType) {
             DeleteType.RESET_ALL -> {
                 cargoList.clear()
+                usedBtbReferenceIds.clear()
+                saveUsedBtbReferenceIds(context)
                 saveCargoListToPrefs(context)
                 resetForm()
                 onDeleted("Semua data berhasil dihapus")
