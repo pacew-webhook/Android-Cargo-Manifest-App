@@ -17,6 +17,17 @@ import java.io.File
 import java.io.FileOutputStream
 import org.json.JSONArray
 
+data class ManifestDetailItem(
+    val sourceKey: String,
+    val item: CargoItem
+)
+
+data class ManifestGroup(
+    val groupKey: String,
+    val summary: CargoItem,
+    val details: List<ManifestDetailItem>
+)
+
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
@@ -31,6 +42,11 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     // bukan lagi dari MutableStateFlow di memori yang hilang saat app ditutup.
     private val dao = CargoDatabase.getDatabase(application).cargoDao()
     private val stowingSource = MutableStateFlow<List<CargoItem>>(emptyList())
+    private val manifestGroupsState = MutableStateFlow<List<ManifestGroup>>(emptyList())
+    val manifestGroups: StateFlow<List<ManifestGroup>> = manifestGroupsState.asStateFlow()
+
+    private val manifestOverrides = MutableStateFlow<Map<String, CargoItem>>(emptyMap())
+    private val manifestOverridePrefsName = "manifest_overrides"
 
     init {
         refreshFromStowingPrefs(application)
@@ -75,29 +91,135 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
             val json = prefs.getString("saved_cargo_list", null)
-            val raw = mutableListOf<CargoItem>()
-            if (!json.isNullOrBlank()) {
-                runCatching {
-                    val array = JSONArray(json)
-                    for (i in 0 until array.length()) {
-                        val obj = array.getJSONObject(i)
-                        raw += CargoItem(
-                            noPag = obj.optString("noPag"),
-                            customer = obj.optString("customer"),
-                            description = obj.optString("description"),
-                            pti = obj.optString("pti"),
-                            pcsQty = obj.optString("pcsQty"),
-                            weight = obj.optString("weight"),
-                            subTotal = obj.optString("subTotal")
-                        )
-                    }
-                }.onFailure { it.printStackTrace() }
+            val raw = parseCargoJson(json)
+            val overrides = loadManifestOverrides(context)
+            manifestOverrides.value = overrides
+
+            val effectiveRaw = raw.mapIndexed { index, item ->
+                overrides[sourceKeyFor(item, index)] ?: item
             }
 
-            val manifest = ExcelUtils.groupManifestRows(raw)
             stowingSource.value = raw
+            rebuildManifest(effectiveRaw, raw.mapIndexed { index, item -> sourceKeyFor(item, index) })
+        }
+    }
+
+    private fun rebuildManifest(effectiveRaw: List<CargoItem>, originalKeys: List<String>) {
+        val grouped = linkedMapOf<String, MutableList<ManifestDetailItem>>()
+        effectiveRaw.forEachIndexed { index, item ->
+            val key = manifestGroupKey(item)
+            grouped.getOrPut(key) { mutableListOf() }
+                .add(ManifestDetailItem(originalKeys.getOrElse(index) { sourceKeyFor(item, index) }, item))
+        }
+
+        val groups = grouped.map { (key, details) ->
+            val items = details.map { it.item }
+            val first = items.first()
+            ManifestGroup(
+                groupKey = key,
+                summary = ExcelUtils.groupManifestRows(items).first().copy(id = key.hashCode().toLong()),
+                details = details
+            )
+        }
+        manifestGroupsState.value = groups
+
+        viewModelScope.launch(Dispatchers.IO) {
             dao.deleteAllCargo()
-            if (manifest.isNotEmpty()) dao.insertAll(manifest.map { it.copy(id = 0L) })
+            val summaries = groups.map { it.summary.copy(id = 0L) }
+            if (summaries.isNotEmpty()) dao.insertAll(summaries)
+        }
+    }
+
+    private fun parseCargoJson(json: String?): List<CargoItem> {
+        val raw = mutableListOf<CargoItem>()
+        if (!json.isNullOrBlank()) {
+            runCatching {
+                val array = JSONArray(json)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    raw += CargoItem(
+                        noPag = obj.optString("noPag"),
+                        customer = obj.optString("customer"),
+                        description = obj.optString("description"),
+                        pti = obj.optString("pti"),
+                        pcsQty = obj.optString("pcsQty"),
+                        weight = obj.optString("weight"),
+                        subTotal = obj.optString("subTotal")
+                    )
+                }
+            }.onFailure { it.printStackTrace() }
+        }
+        return raw
+    }
+
+    private fun manifestGroupKey(item: CargoItem): String =
+        listOf(item.pti, item.customer, item.description)
+            .joinToString("\u001F") { it.trim().lowercase() }
+
+    private fun sourceKeyFor(item: CargoItem, index: Int): String =
+        "${index}|${item.pti}|${item.customer}|${item.description}|${item.noPag}|${item.pcsQty}|${item.weight}|${item.subTotal}"
+
+    private fun loadManifestOverrides(context: Context): Map<String, CargoItem> {
+        val json = context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
+            .getString("items", null) ?: return emptyMap()
+        val result = mutableMapOf<String, CargoItem>()
+        runCatching {
+            val array = JSONArray(json)
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                val key = obj.optString("sourceKey")
+                if (key.isBlank()) continue
+                result[key] = CargoItem(
+                    noPag = obj.optString("noPag"),
+                    customer = obj.optString("customer"),
+                    description = obj.optString("description"),
+                    pti = obj.optString("pti"),
+                    pcsQty = obj.optString("pcsQty"),
+                    weight = obj.optString("weight"),
+                    subTotal = obj.optString("subTotal")
+                )
+            }
+        }
+        return result
+    }
+
+    /**
+     * Memperbarui SATU data asal di dalam kelompok Manifest.
+     *
+     * `edited.weight` berisi daftar KG per koli, misalnya "25, 30, 28".
+     * UI menghitung ulang pcsQty dan subTotal sebelum memanggil fungsi ini.
+     * Dengan demikian data PAG lain dalam kelompok yang sama tidak ikut berubah.
+     */
+    fun updateManifestDetail(context: Context, detail: ManifestDetailItem, edited: CargoItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = manifestOverrides.value.toMutableMap()
+            updated[detail.sourceKey] = edited
+            manifestOverrides.value = updated
+
+            val array = JSONArray()
+            updated.forEach { (key, item) ->
+                array.put(org.json.JSONObject().apply {
+                    put("sourceKey", key)
+                    put("noPag", item.noPag)
+                    put("customer", item.customer)
+                    put("description", item.description)
+                    put("pti", item.pti)
+                    put("pcsQty", item.pcsQty)
+                    put("weight", item.weight)
+                    put("subTotal", item.subTotal)
+                })
+            }
+            context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
+                .edit().putString("items", array.toString()).apply()
+
+            val raw = stowingSource.value
+            val effectiveRaw = raw.mapIndexed { index, item ->
+                updated[sourceKeyFor(item, index)] ?: item
+            }
+            rebuildManifest(effectiveRaw, raw.mapIndexed { index, item -> sourceKeyFor(item, index) })
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Data Manifest berhasil diperbarui", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -181,6 +303,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     fun clearAll() {
         viewModelScope.launch(Dispatchers.IO) {
             dao.deleteAllCargo()
+            manifestOverrides.value = emptyMap()
+            getApplication<Application>().getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
+                .edit().remove("items").apply()
+            manifestGroupsState.value = emptyList()
             withContext(Dispatchers.Main) {
                 _importedAwbNo.value = ""
                 _importedFlightNo.value = ""
