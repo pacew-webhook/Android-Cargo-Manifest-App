@@ -421,36 +421,14 @@ class StowingViewModel : ViewModel() {
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
 
-                if (imported.isEmpty()) {
-                    withContext(Dispatchers.Main) {
+                withContext(Dispatchers.Main) {
+                    if (imported.isEmpty()) {
                         onError(
                             "Tidak ada data Manifest yang dapat di-import. " +
                                 "Pastikan file Excel memiliki data pada kolom Manifest."
                         )
-                    }
-                } else {
-                    // Import Stowing menjadi sumber data Manifest juga.
-                    // Database Manifest diperbarui di thread IO sebelum UI
-                    // diberi pesan sukses, sehingga Manifest langsung membaca
-                    // data import yang sama.
-                    try {
-                        val dao = CargoDatabase.getDatabase(context).cargoDao()
-                        val manifestItems = groupImportedForManifest(imported)
-                        dao.deleteAllCargo()
-                        dao.insertAll(manifestItems.map { it.copy(id = 0L) })
-                    } catch (syncError: Throwable) {
-                        withContext(Dispatchers.Main) {
-                            onError(
-                                "Import Stowing berhasil, tetapi gagal menyinkronkan data ke Manifest Cargo. " +
-                                    (syncError.message?.takeIf { it.isNotBlank() } ?: syncError.javaClass.simpleName)
-                            )
-                        }
-                        return@launch
-                    }
-
-                    withContext(Dispatchers.Main) {
-                        // Data lama baru diganti setelah seluruh file selesai dibaca
-                        // dan database Manifest berhasil disinkronkan.
+                    } else {
+                        // Data lama baru diganti setelah seluruh file selesai dibaca.
                         cargoList.clear()
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
@@ -484,57 +462,6 @@ class StowingViewModel : ViewModel() {
                 }
             }
         }
-    }
-
-    /**
-     * Bentuk data import yang disimpan di Manifest Cargo.
-     *
-     * Stowing tetap menyimpan setiap input sebagai record terpisah, tetapi
-     * salinan ke database Manifest langsung digabung jika dan hanya jika
-     * PTI + NO PAG + Customer + Description sama.
-     *
-     * Pcs/Qty dan Sub Total dijumlahkan. Semua rincian KG digabung dan
-     * dipertahankan urutannya. Weight Pcs/Cly tetap kosong karena Manifest
-     * hanya menjadi ringkasan dari data Stowing.
-     */
-    private fun groupImportedForManifest(items: List<CargoItem>): List<CargoItem> {
-        fun key(value: String): String = value.trim().uppercase()
-
-        return items
-            .groupBy { item ->
-                listOf(
-                    key(item.pti),
-                    key(item.noPag),
-                    key(item.customer),
-                    key(item.description)
-                ).joinToString("\u001f")
-            }
-            .map { (_, group) ->
-                val totalPcs = group.sumOf {
-                    parseNumber(it.pcsQty)?.toInt() ?: 0
-                }
-                val totalKg = group.sumOf {
-                    parseNumber(it.subTotal) ?: 0.0
-                }
-
-                val weightDetails = group
-                    .flatMap { splitImportedWeightDetails(it.weight) }
-                    .joinToString(", ")
-
-                group.first().copy(
-                    pcsQty = totalPcs.toString(),
-                    weight = weightDetails,
-                    subTotal = formatWeight(totalKg)
-                )
-            }
-    }
-
-    private fun splitImportedWeightDetails(value: String): List<String> {
-        if (value.isBlank()) return emptyList()
-        return value
-            .split(Regex("\\s*[,;]\\s*"))
-            .map { it.trim() }
-            .filter { it.isNotBlank() }
     }
 
     private data class ImportedStowingData(
@@ -1096,116 +1023,18 @@ class StowingViewModel : ViewModel() {
         )
 
         val index = editingIndex
-        val oldItem = if (index != null && index in cargoList.indices) {
-            cargoList[index]
-        } else {
-            null
-        }
-
         if (index != null && index in cargoList.indices) {
             cargoList[index] = newItem
+            onSuccess("Data berhasil diperbarui!")
         } else {
             // V9: data baru selalu ditambahkan ke AKHIR daftar.
             // Dengan begitu data lama hasil Import tetap berada di atas
             // dan data baru akan menjadi baris baru di bawahnya saat Export Manifest.
             cargoList.add(newItem)
+            onSuccess("Data berhasil disimpan!")
         }
-
         saveCargoListToPrefs(context)
         resetForm()
-
-        // Satu input Stowing juga langsung disalin ke tabel data Manifest
-        // (Room: cargo_table). Saat edit, baris lama dicari berdasarkan isi
-        // data sebelumnya agar tidak membuat duplikat.
-        syncStowingToManifest(
-            context = context,
-            oldItem = oldItem,
-            newItem = newItem,
-            onSuccess = {
-                onSuccess(
-                    if (oldItem != null) {
-                        "Data berhasil diperbarui! Data juga diperbarui di Tabel Manifest."
-                    } else {
-                        "Data berhasil disimpan! Data juga masuk ke Tabel Manifest."
-                    }
-                )
-            },
-            onError = { error ->
-                // Data Stowing lokal tetap tersimpan. Hanya sinkronisasi ke
-                // tabel Manifest yang gagal.
-                onError(
-                    "Data Stowing berhasil disimpan, tetapi gagal menyalin ke Tabel Manifest.\n$error"
-                )
-            }
-        )
-    }
-
-    /**
-     * Sinkronisasi satu item Stowing -> tabel data Manifest.
-     *
-     * Mapping:
-     * - PTI        -> PTI
-     * - jumlah KG  -> Pcs / Qty
-     * - rincian KG -> Pcs/Qty Wt
-     * - total KG   -> Sub Total (Kg)
-     * - Description -> Description
-     * - Customer    -> Customer
-     * - NO PAG      -> NO PAG
-     *
-     * AWB dan Flight tidak diisi dari Stowing karena form Stowing memang
-     * tidak memiliki kedua field tersebut.
-     */
-    private fun syncStowingToManifest(
-        context: Context,
-        oldItem: CargoItem?,
-        newItem: CargoItem,
-        onSuccess: () -> Unit,
-        onError: (String) -> Unit
-    ) {
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                val dao = CargoDatabase.getDatabase(context).cargoDao()
-
-                val existing = if (oldItem != null) {
-                    dao.findExactCargo(
-                        pti = oldItem.pti,
-                        pcsQty = oldItem.pcsQty,
-                        weight = oldItem.weight,
-                        subTotal = oldItem.subTotal,
-                        description = oldItem.description,
-                        customer = oldItem.customer,
-                        noPag = oldItem.noPag
-                    )
-                } else {
-                    null
-                }
-
-                if (existing != null) {
-                    // Jangan menghapus AWB/Flight yang mungkin sudah ada pada
-                    // baris Manifest hasil import. Yang diubah hanya field Stowing.
-                    dao.updateCargo(
-                        newItem.copy(
-                            id = existing.id,
-                            awbNo = existing.awbNo,
-                            flightNo = existing.flightNo
-                        )
-                    )
-                } else {
-                    dao.insertCargo(newItem.copy(id = 0L))
-                }
-
-                withContext(Dispatchers.Main) {
-                    onSuccess()
-                }
-            } catch (t: Throwable) {
-                withContext(Dispatchers.Main) {
-                    onError(
-                        t.message?.takeIf { it.isNotBlank() }
-                            ?: t.javaClass.simpleName
-                    )
-                }
-            }
-        }
     }
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
@@ -1270,43 +1099,17 @@ class StowingViewModel : ViewModel() {
     fun confirmDelete(context: Context, onDeleted: (String) -> Unit) {
         when (deleteType) {
             DeleteType.RESET_ALL -> {
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        CargoDatabase.getDatabase(context).cargoDao().deleteAllCargo()
-                    } catch (_: Throwable) {
-                        // Data Stowing tetap dihapus walaupun tabel Manifest gagal dihapus.
-                    }
-                    withContext(Dispatchers.Main) {
-                        cargoList.clear()
-                        saveCargoListToPrefs(context)
-                        resetForm()
-                        onDeleted("Semua data berhasil dihapus")
-                    }
-                }
+                cargoList.clear()
+                saveCargoListToPrefs(context)
+                resetForm()
+                onDeleted("Semua data berhasil dihapus")
             }
             DeleteType.CARGO_ITEM -> {
                 itemIndexToDelete?.let { idx ->
                     if (idx in cargoList.indices) {
-                        val item = cargoList[idx]
                         if (editingIndex == idx) resetForm()
                         cargoList.removeAt(idx)
                         saveCargoListToPrefs(context)
-
-                        viewModelScope.launch(Dispatchers.IO) {
-                            try {
-                                CargoDatabase.getDatabase(context).cargoDao().deleteExactCargo(
-                                    pti = item.pti,
-                                    pcsQty = item.pcsQty,
-                                    weight = item.weight,
-                                    subTotal = item.subTotal,
-                                    description = item.description,
-                                    customer = item.customer,
-                                    noPag = item.noPag
-                                )
-                            } catch (_: Throwable) {
-                                // Jangan batalkan penghapusan Stowing jika sinkronisasi Manifest gagal.
-                            }
-                        }
                         onDeleted("Data berhasil dihapus")
                     }
                 }

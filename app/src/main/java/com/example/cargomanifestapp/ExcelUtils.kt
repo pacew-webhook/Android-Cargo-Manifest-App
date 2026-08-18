@@ -257,43 +257,44 @@ object ExcelUtils {
     }
 
     /**
-     * Group Manifest rows using the same cargo identity used by the app:
-     * PTI + NO PAG + Customer + Description.
-     *
-     * Multiple Stowing inputs with the same identity become ONE Manifest row.
-     * Pcs/Qty and Sub Total are summed, while the individual KG values are
-     * combined internally. The Manifest Weight Pcs/Cly column is intentionally
-     * left blank in the Excel export.
+     * Manifest-only aggregation. Stowing export/checklist remains unchanged.
+     * Rows are merged only when PTI + NO PAG + Customer + Description match.
      */
     fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
-        return cargoList
-            .groupBy {
-                listOf(
-                    normalize(it.pti),
-                    normalize(it.noPag),
-                    normalize(it.customer),
-                    normalize(it.description)
-                ).joinToString("\u001f")
-            }
-            .map { (_, items) ->
-                val totalPcs = items.sumOf { parseWeight(it.pcsQty) }
-                val totalWeight = items.sumOf { parseWeight(it.subTotal) }
-                items.first().copy(
-                    pcsQty = formatNumber(totalPcs),
-                    // Weight Pcs/Cly is deliberately blank in the Manifest Excel.
-                    weight = "",
-                    subTotal = formatNumber(totalWeight)
-                )
-            }
-    }
+        data class Key(
+            val pti: String,
+            val noPag: String,
+            val customer: String,
+            val description: String
+        )
 
-    private fun splitWeightDetails(value: String): List<Double> {
-        if (value.isBlank()) return emptyList()
-        return value
-            .split(Regex("\\s*[,;]\\s*"))
-            .mapNotNull { token ->
-                parseWeight(token).takeIf { it > 0.0 }
+        val groups = linkedMapOf<Key, MutableList<CargoItem>>()
+        cargoList.forEach { item ->
+            val key = Key(
+                normalize(item.pti),
+                normalize(item.noPag),
+                normalize(item.customer),
+                normalize(item.description)
+            )
+            groups.getOrPut(key) { mutableListOf() }.add(item)
+        }
+
+        return groups.values.map { items ->
+            val first = items.first()
+            val pcs = items.sumOf { parseWeight(it.pcsQty) }
+            val kg = items.sumOf { parseWeight(it.subTotal) }
+            val weights = items.flatMap {
+                it.weight.split(',', ';', '|')
+                    .map { token -> token.trim() }
+                    .filter { token -> token.isNotBlank() }
             }
+            first.copy(
+                id = 0L,
+                pcsQty = formatNumber(pcs),
+                weight = weights.joinToString(", "),
+                subTotal = formatNumber(kg)
+            )
+        }
     }
 
     private fun fillManifestSheet(
@@ -301,6 +302,7 @@ object ExcelUtils {
         sheet: XSSFSheet,
         cargoList: List<CargoItem>
     ) {
+        val manifestRows = groupManifestRows(cargoList)
         val startRow = 13
 
         // Baris total asli template (0-based).
@@ -310,28 +312,27 @@ object ExcelUtils {
         // Baris total Manifest asli template (0-based).
         val baseManifestTotalRow = 44
 
-        val manifestRows = groupManifestRows(cargoList)
-
-        /*
-         * STOWING CHECKLIST mengikuti logika export Stowing Cargo:
-         * satu baris untuk setiap kombinasi NO PAG + Customer + Description.
-         *
-         * Jadi dua input dengan PAG yang sama tetapi Description atau Customer
-         * berbeda TIDAK boleh dicampur. Sebaliknya, input yang identik pada
-         * ketiga field tersebut digabung dan total KG dijumlahkan.
-         */
         val groupedStowing = cargoList
             .filter { it.noPag.isNotBlank() }
-            .groupBy {
-                listOf(
-                    normalize(it.noPag),
-                    normalize(it.customer),
-                    normalize(it.description)
-                ).joinToString("\u001f")
-            }
+            .groupBy { normalize(it.noPag) }
             .map { (_, items) ->
                 val totalNet = items.sumOf { parseWeight(it.subTotal) }
+
+                val customers = items
+                    .map { it.customer.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
+
+                val descriptions = items
+                    .map { it.description.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
+
                 items.first().copy(
+                    customer = customers.joinToString(" / "),
+                    description = descriptions.joinToString(" / "),
                     subTotal = formatNumber(totalNet)
                 )
             }
