@@ -13,6 +13,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -66,6 +67,8 @@ fun CargoAppScreen(
     var pti by remember { mutableStateOf("") }
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
+    var editWeightInput by remember { mutableStateOf("") }
+    var editWeightEntries by remember { mutableStateOf<List<String>>(emptyList()) }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
@@ -108,6 +111,8 @@ fun CargoAppScreen(
         pti = ""
         pcsQty = ""
         weight = ""
+        editWeightInput = ""
+        editWeightEntries = emptyList()
         description = ""
         customer = ""
         noPag = ""
@@ -254,7 +259,8 @@ fun CargoAppScreen(
                 )
                 OutlinedTextField(
                     value = pcsQty,
-                    onValueChange = { pcsQty = it },
+                    onValueChange = { if (selectedCargoId == null) pcsQty = it },
+                    readOnly = selectedCargoId != null,
                     label = { Text("Pcs / Qty") },
                     keyboardOptions = numberNextKeyboardOptions,
                     keyboardActions = nextKeyboardActions,
@@ -264,29 +270,129 @@ fun CargoAppScreen(
             }
             Spacer(modifier = Modifier.height(6.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = weight,
-                    onValueChange = { weight = it },
-                    label = { Text("Pcs/Qty Wt") },
-                    keyboardOptions = numberNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
+            if (selectedCargoId == null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = weight,
+                        onValueChange = { weight = it },
+                        label = { Text("Pcs/Qty Wt") },
+                        keyboardOptions = numberNextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = subTotalInput,
+                        onValueChange = { subTotalInput = it },
+                        readOnly = false,
+                        label = { Text("Sub Total (Kg)") },
+                        placeholder = { Text(calculatedSubTotal.ifEmpty { "Manual/Auto" }) },
+                        keyboardOptions = numberNextKeyboardOptions,
+                        keyboardActions = nextKeyboardActions,
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            } else {
+                Text(
+                    text = "Rincian Pcs/Qty Wt (${editWeightEntries.size} Koli):",
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 13.sp
                 )
+                Spacer(modifier = Modifier.height(4.dp))
+
+                LazyRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp)
+                ) {
+                    items(editWeightEntries.size) { index ->
+                        val entry = editWeightEntries[index]
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFFE8DEF8)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = entry,
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Medium
+                                )
+                                IconButton(
+                                    onClick = {
+                                        editWeightEntries = editWeightEntries.toMutableList().also { it.removeAt(index) }
+                                    },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Delete,
+                                        contentDescription = "Hapus berat",
+                                        tint = Color(0xFFB3261E),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = editWeightInput,
+                        onValueChange = { editWeightInput = it },
+                        label = { Text("Tambah Berat (KG)") },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Number,
+                            imeAction = ImeAction.Done
+                        ),
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            val value = editWeightInput.trim()
+                            if (value.toDoubleOrNull() != null && value.toDouble() > 0) {
+                                editWeightEntries = editWeightEntries + value
+                                editWeightInput = ""
+                            } else {
+                                Toast.makeText(context, "Masukkan berat KG yang valid", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.height(52.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A8D40)),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("+ KG", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                val editTotal = editWeightEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
+                val editTotalText = if (editTotal % 1.0 == 0.0) editTotal.toInt().toString() else editTotal.toString()
+                Text(
+                    text = "TOTAL: $editTotalText KG   •   JUMLAH KOLI: ${editWeightEntries.size}",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF3F207A)
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
                 OutlinedTextField(
-                    value = subTotalInput,
-                    onValueChange = { subTotalInput = it },
-                    readOnly = false,
+                    value = editTotalText,
+                    onValueChange = {},
+                    readOnly = true,
                     label = { Text("Sub Total (Kg)") },
-                    placeholder = { Text(calculatedSubTotal.ifEmpty { "Manual/Auto" }) },
-                    keyboardOptions = numberNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
                     singleLine = true,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
             Spacer(modifier = Modifier.height(6.dp))
@@ -366,14 +472,36 @@ fun CargoAppScreen(
                             )
                             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                         } else {
+                            val finalEntries = editWeightEntries
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                            val finalWeight = if (finalEntries.isNotEmpty()) {
+                                finalEntries.joinToString(", ")
+                            } else {
+                                weight
+                            }
+                            val finalPcsQty = if (finalEntries.isNotEmpty()) {
+                                finalEntries.size.toString()
+                            } else {
+                                pcsQty
+                            }
+                            val finalSubTotal = if (finalEntries.isNotEmpty()) {
+                                finalEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
+                                    .let { total ->
+                                        if (total % 1.0 == 0.0) total.toInt().toString() else total.toString()
+                                    }
+                            } else {
+                                subTotal
+                            }
+
                             val updatedItem = CargoItem(
                                 id = selectedCargoId!!,
                                 awbNo = awbNo,
                                 flightNo = flightNo,
                                 pti = finalPti,
-                                pcsQty = pcsQty,
-                                weight = weight,
-                                subTotal = subTotal,
+                                pcsQty = finalPcsQty,
+                                weight = finalWeight,
+                                subTotal = finalSubTotal,
                                 description = description,
                                 customer = customer,
                                 noPag = finalPag
@@ -493,7 +621,12 @@ fun CargoAppScreen(
                         .clickable {
                             selectedCargoId = item.id
                             pti = item.pti.removePrefix("KAL").trim()
-                            pcsQty = item.pcsQty
+                            editWeightEntries = item.weight
+                                .split(",")
+                                .map { it.trim() }
+                                .filter { it.isNotBlank() }
+                            editWeightInput = ""
+                            pcsQty = editWeightEntries.size.toString().ifBlank { item.pcsQty }
                             weight = item.weight
                             subTotalInput = item.subTotal
                             description = item.description

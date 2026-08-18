@@ -54,6 +54,33 @@ interface CargoDao {
         noPag: String
     ): CargoItem?
 
+    @Query(
+        """
+        DELETE FROM cargo_table
+        WHERE id = (
+            SELECT id FROM cargo_table
+            WHERE pti = :pti
+              AND pcsQty = :pcsQty
+              AND weight = :weight
+              AND subTotal = :subTotal
+              AND description = :description
+              AND customer = :customer
+              AND noPag = :noPag
+            ORDER BY id DESC
+            LIMIT 1
+        )
+        """
+    )
+    suspend fun deleteExactCargo(
+        pti: String,
+        pcsQty: String,
+        weight: String,
+        subTotal: String,
+        description: String,
+        customer: String,
+        noPag: String
+    )
+
     @Query("DELETE FROM cargo_table")
     suspend fun deleteAllCargo()
 }

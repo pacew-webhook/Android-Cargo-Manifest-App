@@ -1197,17 +1197,43 @@ class StowingViewModel : ViewModel() {
     fun confirmDelete(context: Context, onDeleted: (String) -> Unit) {
         when (deleteType) {
             DeleteType.RESET_ALL -> {
-                cargoList.clear()
-                saveCargoListToPrefs(context)
-                resetForm()
-                onDeleted("Semua data berhasil dihapus")
+                viewModelScope.launch(Dispatchers.IO) {
+                    try {
+                        CargoDatabase.getDatabase(context).cargoDao().deleteAllCargo()
+                    } catch (_: Throwable) {
+                        // Data Stowing tetap dihapus walaupun tabel Manifest gagal dihapus.
+                    }
+                    withContext(Dispatchers.Main) {
+                        cargoList.clear()
+                        saveCargoListToPrefs(context)
+                        resetForm()
+                        onDeleted("Semua data berhasil dihapus")
+                    }
+                }
             }
             DeleteType.CARGO_ITEM -> {
                 itemIndexToDelete?.let { idx ->
                     if (idx in cargoList.indices) {
+                        val item = cargoList[idx]
                         if (editingIndex == idx) resetForm()
                         cargoList.removeAt(idx)
                         saveCargoListToPrefs(context)
+
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                CargoDatabase.getDatabase(context).cargoDao().deleteExactCargo(
+                                    pti = item.pti,
+                                    pcsQty = item.pcsQty,
+                                    weight = item.weight,
+                                    subTotal = item.subTotal,
+                                    description = item.description,
+                                    customer = item.customer,
+                                    noPag = item.noPag
+                                )
+                            } catch (_: Throwable) {
+                                // Jangan batalkan penghapusan Stowing jika sinkronisasi Manifest gagal.
+                            }
+                        }
                         onDeleted("Data berhasil dihapus")
                     }
                 }
