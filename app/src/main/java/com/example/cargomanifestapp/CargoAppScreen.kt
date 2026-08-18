@@ -5,6 +5,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -207,11 +209,21 @@ fun CargoAppScreen(
             ) {
                 items(cargoList, key = { it.id }) { item ->
                     Card(
-                        modifier = Modifier.width(340.dp),
+                        // Semua kartu dibuat dengan ukuran yang sama agar tampilan
+                        // slider horizontal rapi. Detail panjang dapat di-scroll
+                        // di dalam kartu tanpa mengubah tinggi kartu lain.
+                        modifier = Modifier
+                            .width(340.dp)
+                            .height(280.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Column(modifier = Modifier.padding(14.dp)) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .verticalScroll(rememberScrollState())
+                                .padding(14.dp)
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,

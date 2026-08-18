@@ -321,12 +321,22 @@ object ExcelUtils {
 
     /**
      * Manifest-only aggregation. Stowing export/checklist remains unchanged.
-     * Rows are merged only when PTI + NO PAG + Customer + Description match.
+     *
+     * Aturan penggabungan Manifest:
+     * - PTI sama
+     * - Customer sama
+     * - Description sama
+     *
+     * NO PAG TIDAK menjadi kunci penggabungan. Jika ketiga data di atas sama,
+     * semua baris digabung menjadi satu data Manifest. NO PAG yang berbeda
+     * tetap disimpan sebagai daftar pada baris/kartu Manifest tersebut.
+     *
+     * Data Stowing/Checklist tetap menggunakan cargoList mentah sehingga tidak
+     * ikut terkena penggabungan ini.
      */
     fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
         data class Key(
             val pti: String,
-            val noPag: String,
             val customer: String,
             val description: String
         )
@@ -335,7 +345,6 @@ object ExcelUtils {
         cargoList.forEach { item ->
             val key = Key(
                 normalize(item.pti),
-                normalize(item.noPag),
                 normalize(item.customer),
                 normalize(item.description)
             )
@@ -351,8 +360,15 @@ object ExcelUtils {
                     .map { token -> token.trim() }
                     .filter { token -> token.isNotBlank() }
             }
+
+            val noPags = items
+                .map { it.noPag.trim() }
+                .filter { it.isNotBlank() }
+                .distinctBy { normalize(it) }
+
             first.copy(
                 id = 0L,
+                noPag = noPags.joinToString(" / "),
                 pcsQty = formatNumber(pcs),
                 weight = weights.joinToString(", "),
                 subTotal = formatNumber(kg)
