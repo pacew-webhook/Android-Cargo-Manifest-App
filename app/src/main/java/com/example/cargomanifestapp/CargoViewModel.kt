@@ -282,152 +282,48 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // A. GROUPING MANIFEST: gunakan logika yang sama dengan export
-                // Stowing/ExcelUtils. Data dengan PTI + NO PAG + Customer +
-                // Description yang sama menjadi satu baris Manifest.
-                val groupedManifest = ExcelUtils.groupManifestRows(rawList)
-
-                // B. GROUPING STOWING: Gabungkan item dengan NO PAG yang sama
-                val groupedStowing = rawList.filter { it.noPag.isNotBlank() }
-                    .groupBy { "${it.noPag.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}" }
-                    .map { (_, items) ->
-                        val totalNet = items.sumOf { parseDoubleOrZero(it.subTotal) }
-                        val firstItem = items.first()
-                        firstItem.copy(subTotal = formatNumber(totalNet))
-                    }
-
-                val inputStream = context.assets.open("template_manifest.xlsx")
-                val workbook: Workbook = WorkbookFactory.create(inputStream)
-                val sheet = workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
-                inputStream.close()
-
-                val startRow = 13 // Baris 14 di Excel (0-indexed)
-                val templateDataCapacity = 24 // Kapasitas default baris 14 s/d 37
-
-                val finalAwb = if (awbNo.isNotBlank()) awbNo else _importedAwbNo.value
-                val finalFlight = if (flightNo.isNotBlank()) flightNo else _importedFlightNo.value
-
-                sheet.getRow(2)?.getCell(6)?.setCellValue(finalAwb)
-                sheet.getRow(8)?.getCell(6)?.setCellValue(finalFlight)
-
-                val maxRows = maxOf(groupedManifest.size, groupedStowing.size)
-                val sampleRow = sheet.getRow(startRow)
-
-                // 1. CLEANSING TOTAL: Bersihkan seluruh isi sel dari baris 14 sampai 38
-                // (Kolom 0 s/d 12 = kolom cetak/terlihat. Kolom HIDDEN_PAG_COLUMN (T) ikut
-                // dibersihkan karena dipakai untuk menyimpan NO PAG per baris manifest
-                // secara tersembunyi -- lihat penjelasan di HIDDEN_PAG_COLUMN.)
-                for (r in startRow until (startRow + templateDataCapacity + 1)) {
-                    val targetRow = sheet.getRow(r)
-                    if (targetRow != null) {
-                        for (c in 0..12) {
-                            val cell = targetRow.getCell(c)
-                            if (cell != null) {
-                                cell.setCellValue("")
-                            }
-                        }
-                        val hiddenCell = targetRow.getCell(HIDDEN_PAG_COLUMN)
-                        if (hiddenCell != null) {
-                            hiddenCell.setCellValue("")
-                        }
-                    }
-                }
-                // Pastikan kolom penyimpan NO PAG ini betul-betul tidak pernah terlihat
-                // di Excel (bukan sekadar lebar 0 -- pakai flag hidden asli Excel).
-                sheet.setColumnHidden(HIDDEN_PAG_COLUMN, true)
-
-                // 2. SHIFT ROWS JIKA DATA LEBIH DARI KAPASITAS TEMPLATE
-                if (maxRows > templateDataCapacity) {
-                    val extraRowsNeeded = maxRows - templateDataCapacity
-                    sheet.shiftRows(37, sheet.lastRowNum, extraRowsNeeded, true, true)
-                }
-
-                var totalManifestPcs = 0.0
-                var totalManifestWeight = 0.0
-                var totalStowingNet = 0.0
-                var totalStowingGross = 0.0
-
-                // 3. ISI DATA TERAGREGASI KE EXCEL
-                for (i in 0 until maxRows) {
-                    val rowIdx = startRow + i
-                    var row = sheet.getRow(rowIdx)
-                    if (row == null) {
-                        row = sheet.createRow(rowIdx)
-                        sampleRow?.let { row.height = it.height }
-                    }
-
-                    // A. ISI SISI MANIFEST
-                    if (i < groupedManifest.size) {
-                        val item = groupedManifest[i]
-                        val pcs = parseDoubleOrZero(item.pcsQty)
-                        val subTotal = parseDoubleOrZero(item.subTotal)
-
-                        totalManifestPcs += pcs
-                        totalManifestWeight += subTotal
-
-                        setStyledNumericCell(row, 0, (i + 1).toDouble(), sampleRow?.getCell(0))
-                        setStyledTextCell(row, 1, item.pti, sampleRow?.getCell(1))
-                        setStyledNumericCell(row, 2, pcs, sampleRow?.getCell(2))
-                        setStyledNumericCell(row, 3, parseDoubleOrZero(item.weight), sampleRow?.getCell(3))
-                        setStyledNumericCell(row, 4, subTotal, sampleRow?.getCell(4))
-                        setStyledTextCell(row, 5, item.description, sampleRow?.getCell(5))
-                        setStyledTextCell(row, 6, item.customer, sampleRow?.getCell(6))
-                        // Kolom tersembunyi (HIDDEN_PAG_COLUMN): simpan NO PAG asli per
-                        // baris manifest ini -- TANPA style dari sampleRow, supaya tidak
-                        // ikut lebar/format kolom lain -- jadi kalau file ini di-import lagi
-                        // ke app, NO PAG tiap item terbaca persis (tidak lagi menebak lewat
-                        // posisi baris blok Stowing), dan kolomnya tetap hidden di Excel.
-                        val hiddenCell = row.getCell(HIDDEN_PAG_COLUMN) ?: row.createCell(HIDDEN_PAG_COLUMN)
-                        hiddenCell.setCellValue(item.noPag)
-                    }
-
-                    // B. ISI SISI STOWING CHECKLIST
-                    if (i < groupedStowing.size) {
-                        val stowing = groupedStowing[i]
-                        val net = parseDoubleOrZero(stowing.subTotal)
-                        val gross = net + 125.0 // Tare kontainer
-
-                        totalStowingNet += net
-                        totalStowingGross += gross
-
-                        setStyledNumericCell(row, 7, (i + 1).toDouble(), sampleRow?.getCell(7))
-                        setStyledTextCell(row, 8, stowing.noPag, sampleRow?.getCell(8))
-                        setStyledTextCell(row, 9, stowing.description, sampleRow?.getCell(9))
-                        setStyledNumericCell(row, 10, net, sampleRow?.getCell(10))
-                        setStyledNumericCell(row, 11, gross, sampleRow?.getCell(11))
-                        setStyledTextCell(row, 12, stowing.customer, sampleRow?.getCell(12))
-                    }
-                }
-
-                // 4. SET BARIS TOTAL AKTUAL
-                val totalRowIdx = if (maxRows <= templateDataCapacity) 37 else (startRow + maxRows)
-                val totalRow = sheet.getRow(totalRowIdx) ?: sheet.createRow(totalRowIdx)
-
-                setNumericCell(totalRow, 2, totalManifestPcs)
-                setNumericCell(totalRow, 4, totalManifestWeight)
-
-                if (groupedStowing.isNotEmpty()) {
-                    setNumericCell(totalRow, 10, totalStowingNet)
-                    setNumericCell(totalRow, 11, totalStowingGross)
-                }
-
+                /*
+                 * SATU-SATUNYA jalur export sekarang adalah ExcelUtils.
+                 * Jangan lagi membangun sheet Manifest/Stowing Checklist di sini.
+                 * Dengan demikian export dari Manifest Cargo memakai logika yang
+                 * sama persis dengan export Stowing Cargo:
+                 *
+                 * - sumber data = cargoList Stowing
+                 * - Manifest digabung berdasarkan PTI + NO PAG + Customer + Description
+                 * - Pcs/Cly dan Sub Total dijumlahkan
+                 * - Weight Pcs/Cly dikosongkan
+                 * - STOWING CHECK digabung berdasarkan NO PAG + Customer + Description
+                 */
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
-                val outputStream = FileOutputStream(file)
-                workbook.write(outputStream)
-                outputStream.close()
-                workbook.close()
+                ExcelUtils.writeCombinedCargoWorkbookToFile(
+                    context = context,
+                    file = file,
+                    cargoList = rawList
+                )
 
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.provider",
+                    file
+                )
+
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                        setDataAndType(
+                            uri,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(intent)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                    Toast.makeText(
+                        context,
+                        "Gagal Export: ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
                 }
             }
         }
