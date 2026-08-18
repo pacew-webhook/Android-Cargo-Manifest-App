@@ -76,7 +76,7 @@ fun CargoAppScreen(
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(
                 onClick = { viewModel.exportToExcel(context, "", "") },
-                Modifier.weight(1f),
+                modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
                 shape = RoundedCornerShape(20.dp)
             ) { Text("Export Excel", fontWeight = FontWeight.Bold) }
@@ -93,7 +93,7 @@ fun CargoAppScreen(
                     }
                 },
                 enabled = groups.isNotEmpty() && !isSendingToN8n,
-                Modifier.weight(1f),
+                modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
                 shape = RoundedCornerShape(20.dp)
             ) { Text(if (isSendingToN8n) "Mengirim..." else "Kirim ke Laptop (n8n)", fontWeight = FontWeight.Bold) }
@@ -146,7 +146,7 @@ fun CargoAppScreen(
 @Composable
 private fun ManifestSummaryCard(group: ManifestGroup, onClick: () -> Unit) {
     Card(
-        Modifier.width(340.dp).height(280.dp),
+        modifier = Modifier.width(340.dp).height(280.dp),
         onClick = onClick,
         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
         shape = RoundedCornerShape(14.dp)
