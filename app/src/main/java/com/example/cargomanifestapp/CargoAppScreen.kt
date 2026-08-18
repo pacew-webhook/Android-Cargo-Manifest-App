@@ -41,12 +41,17 @@ fun CargoAppScreen(
     var selectedGroup by remember { mutableStateOf<ManifestGroup?>(null) }
     var selectedDetail by remember { mutableStateOf<ManifestDetailItem?>(null) }
     var validationErrors by remember { mutableStateOf<List<String>?>(null) }
+    var lootTargetKg by remember { mutableStateOf(viewModel.getLootTargetKg(context)) }
+    var showLootTargetDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
     val totalPcs = groups.sumOf { it.summary.pcsQty.toDoubleOrNull()?.toInt() ?: 0 }
     val totalWeight = groups.sumOf { it.summary.subTotal.toDoubleOrNull() ?: 0.0 }
     val totalWeightText = if (totalWeight % 1.0 == 0.0) totalWeight.toInt().toString() else totalWeight.toString()
+    val lootTargetText = if (lootTargetKg > 0.0) formatLootKg(lootTargetKg) else "BELUM DIATUR"
+    val lootProgress = if (lootTargetKg > 0.0) (totalWeight / lootTargetKg * 100.0).coerceAtLeast(0.0) else 0.0
+    val lootTargetReached = lootTargetKg > 0.0 && totalWeight >= lootTargetKg
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -74,6 +79,48 @@ fun CargoAppScreen(
                     Text("Total Pcs: $totalPcs", fontWeight = FontWeight.SemiBold)
                     Text("Total: $totalWeightText KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                 }
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("TARGET LOOT", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF3F207A))
+                        Text(
+                            if (lootTargetKg > 0.0) "$lootTargetText KG" else "Belum diatur",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        if (lootTargetKg > 0.0) {
+                            Text(
+                                "Progress: ${formatLootPercent(lootProgress)}%",
+                                fontSize = 12.sp,
+                                color = if (lootTargetReached) Color(0xFF2E7D32) else Color(0xFF6750A4)
+                            )
+                        }
+                    }
+                    OutlinedButton(onClick = { showLootTargetDialog = true }) {
+                        Text(if (lootTargetKg > 0.0) "Ubah Target" else "Atur Target")
+                    }
+                }
+
+                if (lootTargetKg > 0.0) {
+                    Spacer(Modifier.height(6.dp))
+                    LinearProgressIndicator(
+                        progress = { (lootProgress / 100.0).coerceIn(0.0, 1.0).toFloat() },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        if (lootTargetReached) "✓ TARGET LOOT TERCAPAI" else "Target masih kurang ${formatLootKg(lootTargetKg - totalWeight)} KG",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (lootTargetReached) Color(0xFF2E7D32) else Color(0xFF8A4B08)
+                    )
+                }
+
                 Spacer(Modifier.height(8.dp))
                 val status = viewModel.validateManifestData()
                 Surface(
@@ -145,6 +192,18 @@ fun CargoAppScreen(
         }
     }
 
+    if (showLootTargetDialog) {
+        LootTargetDialog(
+            currentTargetKg = lootTargetKg,
+            onDismiss = { showLootTargetDialog = false },
+            onSave = { target ->
+                viewModel.setLootTargetKg(context, target)
+                lootTargetKg = target
+                showLootTargetDialog = false
+            }
+        )
+    }
+
     validationErrors?.let { errors ->
         AlertDialog(
             onDismissRequest = { validationErrors = null },
@@ -180,6 +239,86 @@ fun CargoAppScreen(
             }
         )
     }
+}
+
+@Composable
+private fun LootTargetDialog(
+    currentTargetKg: Double,
+    onDismiss: () -> Unit,
+    onSave: (Double) -> Unit
+) {
+    var input by remember { mutableStateOf(if (currentTargetKg > 0.0) formatLootKg(currentTargetKg) else "") }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Target LOOT") },
+        text = {
+            Column {
+                Text(
+                    "Masukkan target LOOT dalam KG. Contoh: 10000 atau 10.000",
+                    fontSize = 13.sp,
+                    color = Color.Gray
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = {
+                        input = it
+                        error = null
+                    },
+                    label = { Text("Target LOOT (KG)") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Decimal,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(onDone = {
+                        val value = parseLootTarget(input)
+                        if (value <= 0.0) error = "Target harus lebih dari 0 KG." else onSave(value)
+                    }),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                error?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = Color(0xFFB00020), fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val value = parseLootTarget(input)
+                if (value <= 0.0) error = "Target harus lebih dari 0 KG." else onSave(value)
+            }) {
+                Text("Simpan")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Batal") }
+        }
+    )
+}
+
+private fun parseLootTarget(value: String): Double {
+    val raw = value.trim().replace(" ", "")
+    if (raw.isBlank()) return 0.0
+    return runCatching {
+        when {
+            raw.contains('.') && raw.contains(',') -> raw.replace(".", "").replace(',', '.')
+            raw.count { it == '.' } == 1 && raw.substringAfter('.').length == 3 -> raw.replace(".", "")
+            raw.count { it == ',' } == 1 && raw.substringAfter(',').length == 3 -> raw.replace(",", "")
+            else -> raw.replace(',', '.')
+        }.toDouble()
+    }.getOrDefault(0.0)
+}
+
+private fun formatLootKg(value: Double): String {
+    if (value % 1.0 == 0.0) return String.format(java.util.Locale.US, "%,d", value.toLong()).replace(',', '.')
+    return String.format(java.util.Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
+}
+
+private fun formatLootPercent(value: Double): String {
+    return if (value % 1.0 == 0.0) value.toInt().toString() else String.format(java.util.Locale.US, "%.1f", value)
 }
 
 @Composable
