@@ -2,175 +2,49 @@ package com.example.cargomanifestapp
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusDirection
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 // ==========================================
-// TAMPILAN HALAMAN MANIFEST CARGO
+// HALAMAN MANIFEST CARGO
 // ==========================================
-@OptIn(ExperimentalMaterial3Api::class)
+// Manifest sekarang bersifat READ-ONLY dan menjadi tampilan data yang
+// berasal dari Form Stowing Cargo. Tidak ada lagi form input Manifest.
 @Composable
 fun CargoAppScreen(
     viewModel: CargoViewModel,
     onBackToMenu: () -> Unit = {}
 ) {
-    // Menangani tombol kembali fisik / gestur agar tidak langsung keluar app
-    BackHandler {
-        onBackToMenu()
-    }
+    BackHandler { onBackToMenu() }
 
     val context = LocalContext.current
-    val focusManager = LocalFocusManager.current
     val cargoList by viewModel.cargoList.collectAsState()
-
-    val ptiFocusRequester = remember { FocusRequester() }
-
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        uri?.let {
-            viewModel.importFromExcel(context, it)
-        }
-    }
-
-    var selectedCargoId by remember { mutableStateOf<Long?>(null) }
-
-    var awbNo by remember { mutableStateOf("") }
-    var flightNo by remember { mutableStateOf("") }
-
-    var pti by remember { mutableStateOf("") }
-    var pcsQty by remember { mutableStateOf("") }
-    var weight by remember { mutableStateOf("") }
-    var editWeightInput by remember { mutableStateOf("") }
-    var editWeightEntries by remember { mutableStateOf<List<String?>>(emptyList()) }
-    var description by remember { mutableStateOf("") }
-    var customer by remember { mutableStateOf("") }
-    var noPag by remember { mutableStateOf("") }
-
-    var subTotalInput by remember { mutableStateOf("") }
-
-    val calculatedSubTotal = remember(pcsQty, weight) {
-        val pcs = pcsQty.toDoubleOrNull() ?: 0.0
-        val wt = weight.toDoubleOrNull() ?: 0.0
-        val result = pcs * wt
-        if (result > 0.0) {
-            if (result % 1.0 == 0.0) result.toInt().toString() else result.toString()
-        } else {
-            ""
-        }
-    }
-
-    val subTotal = if (subTotalInput.isNotBlank()) subTotalInput else calculatedSubTotal
-
-    var itemToDelete by remember { mutableStateOf<CargoItem?>(null) }
-    var showDeleteAllDialog by remember { mutableStateOf(false) }
     var isSendingToN8n by remember { mutableStateOf(false) }
 
-    val textNextKeyboardOptions = KeyboardOptions(
-        capitalization = KeyboardCapitalization.Characters,
-        keyboardType = KeyboardType.Text,
-        imeAction = ImeAction.Next
-    )
-
-    val numberNextKeyboardOptions = KeyboardOptions(
-        keyboardType = KeyboardType.Number,
-        imeAction = ImeAction.Next
-    )
-
-    val nextKeyboardActions = KeyboardActions(
-        onNext = { focusManager.moveFocus(FocusDirection.Next) }
-    )
-
-    fun clearInputForm() {
-        pti = ""
-        pcsQty = ""
-        weight = ""
-        editWeightInput = ""
-        editWeightEntries = emptyList()
-        description = ""
-        customer = ""
-        noPag = ""
-        subTotalInput = ""
-        selectedCargoId = null
-    }
-
-    itemToDelete?.let { item ->
-        AlertDialog(
-            onDismissRequest = { itemToDelete = null },
-            title = { Text("Konfirmasi Hapus") },
-            text = { Text("Apakah Anda yakin ingin menghapus data PTI ${item.pti}?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        if (selectedCargoId == item.id) {
-                            clearInputForm()
-                        }
-                        viewModel.deleteCargo(item)
-                        itemToDelete = null
-                        Toast.makeText(context, "Data berhasil dihapus!", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("Hapus", color = Color(0xFFB3261E))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { itemToDelete = null }) {
-                    Text("Batal")
-                }
-            }
-        )
-    }
-
-    if (showDeleteAllDialog) {
-        AlertDialog(
-            onDismissRequest = { showDeleteAllDialog = false },
-            title = { Text("Hapus Semua Data") },
-            text = { Text("Apakah Anda yakin ingin menghapus seluruh data pada tabel?") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        viewModel.clearAll()
-                        clearInputForm()
-                        showDeleteAllDialog = false
-                        Toast.makeText(context, "Semua data berhasil dihapus!", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("Hapus Semua", color = Color(0xFFB3261E))
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDeleteAllDialog = false }) {
-                    Text("Batal")
-                }
-            }
-        )
+    val totalWeight = cargoList.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
+    val totalPcs = cargoList.sumOf { it.pcsQty.toIntOrNull() ?: 0 }
+    val totalWeightText = if (totalWeight % 1.0 == 0.0) {
+        totalWeight.toInt().toString()
+    } else {
+        totalWeight.toString()
     }
 
     Column(
@@ -178,10 +52,11 @@ fun CargoAppScreen(
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // Header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp),
+                .padding(bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(onClick = onBackToMenu) {
@@ -199,496 +74,190 @@ fun CargoAppScreen(
             )
         }
 
-        Column(
-            modifier = Modifier.fillMaxWidth()
+        // Penjelasan bahwa Manifest hanya menampilkan data dari Stowing.
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+            shape = RoundedCornerShape(16.dp)
         ) {
-            Text(
-                text = "Header Penerbangan",
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = awbNo,
-                    onValueChange = { awbNo = it.uppercase() },
-                    label = { Text("AWB No") },
-                    keyboardOptions = textNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = flightNo,
-                    onValueChange = { flightNo = it.uppercase() },
-                    label = { Text("Flight No") },
-                    keyboardOptions = textNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = if (selectedCargoId == null) "Input Data Barang" else "Edit Data Barang",
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = if (selectedCargoId == null) Color.Unspecified else Color(0xFF006A60)
-            )
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = pti,
-                    onValueChange = { pti = it.uppercase() },
-                    label = { Text("PTI") },
-                    placeholder = { Text("Contoh: 001") },
-                    keyboardOptions = textNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier
-                        .weight(1f)
-                        .focusRequester(ptiFocusRequester)
-                )
-                OutlinedTextField(
-                    value = pcsQty,
-                    onValueChange = { if (selectedCargoId == null) pcsQty = it },
-                    readOnly = selectedCargoId != null,
-                    label = { Text("Pcs / Qty") },
-                    keyboardOptions = numberNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-
-            if (selectedCargoId == null) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = weight,
-                        onValueChange = { weight = it },
-                        label = { Text("Pcs/Qty Wt") },
-                        keyboardOptions = numberNextKeyboardOptions,
-                        keyboardActions = nextKeyboardActions,
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    OutlinedTextField(
-                        value = subTotalInput,
-                        onValueChange = { subTotalInput = it },
-                        readOnly = false,
-                        label = { Text("Sub Total (Kg)") },
-                        placeholder = { Text(calculatedSubTotal.ifEmpty { "Manual/Auto" }) },
-                        keyboardOptions = numberNextKeyboardOptions,
-                        keyboardActions = nextKeyboardActions,
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            } else {
+            Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Rincian Pcs/Qty Wt (${editWeightEntries.count { !it.isNullOrBlank() }} Koli):",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-
-                LazyRow(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp)
-                ) {
-                    items(editWeightEntries.size) { index ->
-                        val entry = editWeightEntries[index]
-                        if (entry.isNullOrBlank()) {
-                            // Slot yang dihapus sengaja tetap dipertahankan agar posisi KG tidak bergeser.
-                            Surface(
-                                modifier = Modifier.width(76.dp).height(40.dp),
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFE8DEF8)
-                            ) { }
-                        } else {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = Color(0xFFE8DEF8)
-                            ) {
-                                Row(
-                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = entry,
-                                        fontSize = 13.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        modifier = Modifier.widthIn(min = 22.dp)
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            editWeightEntries = editWeightEntries.toMutableList().also { it[index] = null }
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Default.Delete,
-                                            contentDescription = "Hapus berat",
-                                            tint = Color(0xFFB3261E),
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    OutlinedTextField(
-                        value = editWeightInput,
-                        onValueChange = { editWeightInput = it },
-                        label = { Text("Tambah Berat (KG)") },
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Done
-                        ),
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = {
-                            val value = editWeightInput.trim()
-                            if (value.toDoubleOrNull() != null && value.toDouble() > 0) {
-                                val updated = editWeightEntries.toMutableList()
-                                val emptyIndex = updated.indexOfFirst { it.isNullOrBlank() }
-                                if (emptyIndex >= 0) {
-                                    updated[emptyIndex] = value
-                                } else {
-                                    updated.add(value)
-                                }
-                                editWeightEntries = updated
-                                editWeightInput = ""
-                            } else {
-                                Toast.makeText(context, "Masukkan berat KG yang valid", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.height(52.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A8D40)),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("+ KG", fontWeight = FontWeight.Bold)
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-                val activeEditEntries = editWeightEntries.filterNotNull().filter { it.isNotBlank() }
-                val editTotal = activeEditEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
-                val editTotalText = if (editTotal % 1.0 == 0.0) editTotal.toInt().toString() else editTotal.toString()
-                Text(
-                    text = "TOTAL: $editTotalText KG   •   JUMLAH KOLI: ${activeEditEntries.size}",
+                    text = "Data Manifest",
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF3F207A)
                 )
-
-                Spacer(modifier = Modifier.height(6.dp))
-                OutlinedTextField(
-                    value = editTotalText,
-                    onValueChange = {},
-                    readOnly = true,
-                    label = { Text("Sub Total (Kg)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-
-            OutlinedTextField(
-                value = description,
-                onValueChange = { description = it.uppercase() },
-                label = { Text("Description") },
-                keyboardOptions = textNextKeyboardOptions,
-                keyboardActions = nextKeyboardActions,
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = customer,
-                    onValueChange = { inputCustomer ->
-                        val uppercaseInput = inputCustomer.uppercase()
-                        customer = uppercaseInput
-
-                        if (selectedCargoId == null) {
-                            val existingItem = cargoList.find { it.customer.trim().equals(uppercaseInput.trim(), ignoreCase = true) }
-                            if (existingItem != null) {
-                                pti = existingItem.pti.removePrefix("KAL").trim()
-                            }
-                        }
-                    },
-                    label = { Text("Customer") },
-                    keyboardOptions = textNextKeyboardOptions,
-                    keyboardActions = nextKeyboardActions,
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-                OutlinedTextField(
-                    value = noPag,
-                    onValueChange = { noPag = it.uppercase() },
-                    label = { Text("NO PAG") },
-                    placeholder = { Text("Contoh: 002") },
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Characters,
-                        keyboardType = KeyboardType.Text,
-                        imeAction = ImeAction.Done
-                    ),
-                    keyboardActions = KeyboardActions(
-                        onDone = {
-                            ptiFocusRequester.requestFocus()
-                        }
-                    ),
-                    singleLine = true,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Button(
-                onClick = {
-                    if (pti.isNotBlank() && pcsQty.isNotBlank()) {
-                        val finalPti = if (pti.startsWith("KAL")) pti else "KAL$pti"
-                        val finalPag = if (noPag.isBlank() || noPag.startsWith("PAG")) noPag else "PAG$noPag"
-
-                        if (selectedCargoId == null) {
-                            viewModel.addCargo(
-                                awbNo = awbNo,
-                                flightNo = flightNo,
-                                pti = finalPti,
-                                pcsQty = pcsQty,
-                                weight = weight,
-                                subTotal = subTotal,
-                                description = description,
-                                customer = customer,
-                                noPag = finalPag
-                            )
-                            Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
-                        } else {
-                            val finalEntries = editWeightEntries.map { it?.trim().orEmpty() }
-                            val activeFinalEntries = finalEntries.filter { it.isNotBlank() }
-                            // Pertahankan slot kosong agar posisi KG yang dihapus tidak bergeser.
-                            val finalWeight = if (finalEntries.isNotEmpty()) {
-                                finalEntries.joinToString(", ")
-                            } else {
-                                weight
-                            }
-                            val finalPcsQty = if (activeFinalEntries.isNotEmpty()) {
-                                activeFinalEntries.size.toString()
-                            } else {
-                                pcsQty
-                            }
-                            val finalSubTotal = if (activeFinalEntries.isNotEmpty()) {
-                                activeFinalEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
-                                    .let { total ->
-                                        if (total % 1.0 == 0.0) total.toInt().toString() else total.toString()
-                                    }
-                            } else {
-                                subTotal
-                            }
-
-                            val updatedItem = CargoItem(
-                                id = selectedCargoId!!,
-                                awbNo = awbNo,
-                                flightNo = flightNo,
-                                pti = finalPti,
-                                pcsQty = finalPcsQty,
-                                weight = finalWeight,
-                                subTotal = finalSubTotal,
-                                description = description,
-                                customer = customer,
-                                noPag = finalPag
-                            )
-                            viewModel.updateCargo(updatedItem)
-                            Toast.makeText(context, "Data berhasil diperbarui!", Toast.LENGTH_SHORT).show()
-                        }
-
-                        clearInputForm()
-                        ptiFocusRequester.requestFocus()
-                    } else {
-                        Toast.makeText(context, "Mohon isi PTI dan Pcs/Qty!", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(46.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (selectedCargoId == null) Color(0xFF6750A4) else Color(0xFF006A60)
-                ),
-                shape = RoundedCornerShape(24.dp)
-            ) {
+                Spacer(modifier = Modifier.height(4.dp))
                 Text(
-                    text = if (selectedCargoId == null) "Simpan Ke Database" else "Update Data",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
+                    text = "Data di bawah otomatis mengikuti input dari Form Stowing Cargo.",
+                    fontSize = 13.sp,
+                    color = Color(0xFF49454F)
                 )
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Total Data: ${cargoList.size}",
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF49454F)
+                    )
+                    Text(
+                        text = "Total Pcs: $totalPcs",
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF49454F)
+                    )
+                    Text(
+                        text = "Total: $totalWeightText KG",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF2E7D32)
+                    )
+                }
             }
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
+        // Tombol yang tetap relevan untuk data Manifest.
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text(
-                text = "Tabel Data (${cargoList.size})",
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                Button(
-                    onClick = {
-                        filePickerLauncher.launch("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("Import Excel", fontSize = 11.sp)
-                }
-                Button(
-                    onClick = { viewModel.exportToExcel(context, awbNo, flightNo) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("Export Excel", fontSize = 11.sp)
-                }
-                Button(
-                    onClick = {
-                        if (cargoList.isNotEmpty()) {
-                            showDeleteAllDialog = true
+            Button(
+                onClick = { viewModel.exportToExcel(context, "", "") },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6750A4)),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text("Export Excel", fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+                onClick = {
+                    if (!isSendingToN8n) {
+                        isSendingToN8n = true
+                        viewModel.sendManifestToN8n { result ->
+                            isSendingToN8n = false
+                            result.onSuccess {
+                                Toast.makeText(
+                                    context,
+                                    "Data Manifest berhasil dikirim ke n8n",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }.onFailure { error ->
+                                Toast.makeText(
+                                    context,
+                                    "Gagal kirim ke n8n: ${error.localizedMessage}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                    contentPadding = PaddingValues(horizontal = 8.dp)
-                ) {
-                    Text("Hapus Semua", fontSize = 11.sp)
-                }
+                    }
+                },
+                enabled = cargoList.isNotEmpty() && !isSendingToN8n,
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Text(
+                    if (isSendingToN8n) "Mengirim..." else "Kirim ke Laptop (n8n)",
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        Button(
-            onClick = {
-                if (!isSendingToN8n) {
-                    isSendingToN8n = true
-                    viewModel.sendManifestToN8n { result ->
-                        isSendingToN8n = false
-                        result.onSuccess {
-                            Toast.makeText(context, "Data Manifest berhasil dikirim ke n8n", Toast.LENGTH_LONG).show()
-                        }.onFailure { error ->
-                            Toast.makeText(context, "Gagal kirim ke n8n: ${error.localizedMessage}", Toast.LENGTH_LONG).show()
-                        }
-                    }
-                }
-            },
-            enabled = cargoList.isNotEmpty() && !isSendingToN8n,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(46.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-            shape = RoundedCornerShape(24.dp)
-        ) {
-            Text(
-                text = if (isSendingToN8n) "Mengirim ke Laptop..." else "Kirim ke Laptop (n8n)",
-                color = Color.White,
-                fontWeight = FontWeight.Bold
-            )
-        }
+        Text(
+            text = "Data dari Form Stowing Cargo (${cargoList.size})",
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = Color(0xFF3F207A)
+        )
 
         Spacer(modifier = Modifier.height(6.dp))
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(cargoList) { item ->
-                val isSelected = selectedCargoId == item.id
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            selectedCargoId = item.id
-                            pti = item.pti.removePrefix("KAL").trim()
-                            editWeightEntries = item.weight
-                                .split(",", limit = Int.MAX_VALUE)
-                                .map { token -> token.trim().takeIf { it.isNotBlank() } }
-                            editWeightInput = ""
-                            pcsQty = editWeightEntries.count { !it.isNullOrBlank() }.toString().ifBlank { item.pcsQty }
-                            weight = item.weight
-                            subTotalInput = item.subTotal
-                            description = item.description
-                            customer = item.customer
-                            noPag = item.noPag.removePrefix("PAG").trim()
-                            ptiFocusRequester.requestFocus()
-                        },
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) Color(0xFFE8DEF8) else Color(0xFFF3EDF7)
-                    ),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+        if (cargoList.isEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Text(
+                    text = "Belum ada data. Silakan input data melalui Form Stowing Cargo.",
+                    modifier = Modifier.padding(16.dp),
+                    color = Color.Gray
+                )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(cargoList, key = { it.id }) { item ->
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+                        shape = RoundedCornerShape(14.dp)
                     ) {
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "PTI: ${item.pti}",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 16.sp,
+                                    color = Color(0xFF3F207A)
+                                )
+                                Text(
+                                    text = "${item.subTotal} KG",
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
                             Text(
-                                text = "PTI: ${item.pti}",
-                                fontWeight = FontWeight.Bold,
+                                text = "NO PAG: ${item.noPag.ifBlank { "-" }}",
+                                fontWeight = FontWeight.SemiBold,
                                 color = Color(0xFF49454F)
                             )
                             Text(
-                                text = "Pcs: ${item.pcsQty} | SubTotal: ${item.subTotal} Kg",
-                                fontSize = 13.sp,
-                                color = Color.Gray
+                                text = "Customer: ${item.customer.ifBlank { "-" }}",
+                                color = Color(0xFF49454F)
                             )
-                        }
-
-                        Button(
-                            onClick = {
-                                itemToDelete = item
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFB3261E)),
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Text("Hapus", fontSize = 12.sp)
+                            Text(
+                                text = "Description: ${item.description.ifBlank { "-" }}",
+                                color = Color(0xFF49454F)
+                            )
+                            Text(
+                                text = "Pcs / Qty: ${item.pcsQty.ifBlank { "0" }}",
+                                color = Color(0xFF49454F)
+                            )
+                            Text(
+                                text = "Rincian KG: ${formatWeightForDisplay(item.weight)}",
+                                color = Color(0xFF49454F)
+                            )
                         }
                     }
                 }
             }
         }
     }
-} 
+}
+
+private fun formatWeightForDisplay(weight: String): String {
+    if (weight.isBlank()) return "-"
+
+    return weight
+        .split(",", limit = Int.MAX_VALUE)
+        .map { token -> token.trim().ifBlank { "-" } }
+        .joinToString("  |  ")
+}
