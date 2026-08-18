@@ -43,6 +43,7 @@ fun CargoAppScreen(
     var validationErrors by remember { mutableStateOf<List<String>?>(null) }
     var lootTargetKg by remember { mutableStateOf(viewModel.getLootTargetKg(context)) }
     var showLootTargetDialog by remember { mutableStateOf(false) }
+    var showCustomerPriorityDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
@@ -120,6 +121,14 @@ fun CargoAppScreen(
                         fontWeight = FontWeight.Bold,
                         color = if (lootTargetReached) Color(0xFF2E7D32) else Color(0xFF8A4B08)
                     )
+                }
+
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { showCustomerPriorityDialog = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("⚙ Prioritas Customer", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(Modifier.height(8.dp))
@@ -205,6 +214,19 @@ fun CargoAppScreen(
         )
     }
 
+    if (showCustomerPriorityDialog) {
+        CustomerPriorityDialog(
+            customers = viewModel.getKnownCustomers(),
+            savedPriority = viewModel.getCustomerPriority(context),
+            onDismiss = { showCustomerPriorityDialog = false },
+            onSave = { priority ->
+                viewModel.saveCustomerPriority(context, priority)
+                showCustomerPriorityDialog = false
+                Toast.makeText(context, "Prioritas Customer disimpan", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
     validationErrors?.let { errors ->
         AlertDialog(
             onDismissRequest = { validationErrors = null },
@@ -240,6 +262,67 @@ fun CargoAppScreen(
             }
         )
     }
+}
+
+@Composable
+private fun CustomerPriorityDialog(
+    customers: List<String>,
+    savedPriority: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (List<String>) -> Unit
+) {
+    val orderedCustomers = remember(customers, savedPriority) {
+        val known = customers.distinctBy { it.lowercase() }
+        savedPriority.filter { saved -> known.any { it.equals(saved, ignoreCase = true) } } +
+            known.filter { candidate -> savedPriority.none { it.equals(candidate, ignoreCase = true) } }
+    }
+    var order by remember(orderedCustomers) { mutableStateOf(orderedCustomers) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Prioritas Customer") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                Text(
+                    "Atur urutan Customer. Urutan ini hanya dipakai untuk baris Manifest saat Export Excel. Form Stowing tidak berubah.",
+                    fontSize = 13.sp, color = Color.Gray
+                )
+                Spacer(Modifier.height(10.dp))
+                if (order.isEmpty()) {
+                    Text("Belum ada Customer.", color = Color.Gray)
+                } else {
+                    order.forEachIndexed { index, customer ->
+                        Card(
+                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(
+                                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("${index + 1}.", fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
+                                Text(customer, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                                TextButton(
+                                    enabled = index > 0,
+                                    onClick = { order = order.toMutableList().also { list ->
+                                        val item = list.removeAt(index); list.add(index - 1, item)
+                                    } }
+                                ) { Text("↑") }
+                                TextButton(
+                                    enabled = index < order.lastIndex,
+                                    onClick = { order = order.toMutableList().also { list ->
+                                        val item = list.removeAt(index); list.add(index + 1, item)
+                                    } }
+                                ) { Text("↓") }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(order) }) { Text("Simpan") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
+    )
 }
 
 @Composable

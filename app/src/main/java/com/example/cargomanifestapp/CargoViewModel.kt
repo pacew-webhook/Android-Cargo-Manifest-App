@@ -33,6 +33,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     companion object {
         private const val LOOT_TARGET_PREFS = "manifest_settings"
         private const val LOOT_TARGET_KEY = "target_loot_kg"
+        private const val CUSTOMER_PRIORITY_KEY = "customer_priority_order"
 
         // Kolom ke-20 (index 19, 0-based -> kolom "T"). Dipilih jauh di luar area
         // tabel yang dipakai template (kolom terpakai cuma sampai R/index17), dan
@@ -104,6 +105,32 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             .edit()
             .putString(LOOT_TARGET_KEY, targetKg.toString())
             .apply()
+    }
+
+    /** Urutan prioritas Customer hanya dipakai untuk urutan baris Manifest saat Export. */
+    fun getCustomerPriority(context: Context): List<String> {
+        val raw = context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .getString(CUSTOMER_PRIORITY_KEY, "") ?: ""
+        return raw.split("\u001F")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+    }
+
+    fun saveCustomerPriority(context: Context, customers: List<String>) {
+        context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(CUSTOMER_PRIORITY_KEY, customers.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.joinToString("\u001F"))
+            .apply()
+    }
+
+    fun getKnownCustomers(): List<String> {
+        return manifestGroupsState.value
+            .flatMap { group -> group.details.map { it.item.customer } + group.summary.customer }
+            .flatMap { it.split("/") }
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
     }
 
     fun refreshFromStowingPrefs(context: Context) {
@@ -608,7 +635,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
-                ExcelUtils.writeManifestWorkbookToFile(context, file, rawStowing)
+                ExcelUtils.writeManifestWorkbookToFile(context, file, rawStowing, getCustomerPriority(context))
                 archiveCurrentData(context)
 
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)

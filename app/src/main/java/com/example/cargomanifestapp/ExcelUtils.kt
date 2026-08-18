@@ -196,7 +196,8 @@ object ExcelUtils {
     fun writeManifestWorkbookToFile(
         context: Context,
         file: File,
-        cargoList: List<CargoItem>
+        cargoList: List<CargoItem>,
+        customerPriority: List<String> = emptyList()
     ) {
         require(cargoList.isNotEmpty()) { "Data Stowing kosong" }
 
@@ -209,7 +210,7 @@ object ExcelUtils {
             val manifestSheet =
                 workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-            fillManifestSheet(workbook, manifestSheet, cargoList)
+            fillManifestSheet(workbook, manifestSheet, cargoList, customerPriority)
 
             val pagInput = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
             val pagWorkbook = pagInput.use { XSSFWorkbook(it) }
@@ -334,6 +335,19 @@ object ExcelUtils {
      * Data Stowing/Checklist tetap menggunakan cargoList mentah sehingga tidak
      * ikut terkena penggabungan ini.
      */
+    private fun sortManifestRowsByCustomerPriority(
+        rows: List<CargoItem>,
+        priority: List<String>
+    ): List<CargoItem> {
+        if (priority.isEmpty()) return rows
+        val rank = priority.mapIndexed { index, customer -> normalize(customer) to index }.toMap()
+        val fallback = priority.size
+        return rows.withIndex()
+            .sortedWith(compareBy<IndexedValue<CargoItem>> { rank[normalize(it.value.customer)] ?: fallback }
+                .thenBy { it.index })
+            .map { it.value }
+    }
+
     fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
         data class Key(
             val pti: String,
@@ -664,9 +678,12 @@ object ExcelUtils {
     private fun fillManifestSheet(
         workbook: XSSFWorkbook,
         sheet: XSSFSheet,
-        cargoList: List<CargoItem>
+        cargoList: List<CargoItem>,
+        customerPriority: List<String> = emptyList()
     ) {
-        val manifestRows = groupManifestRows(cargoList)
+        val manifestRows = sortManifestRowsByCustomerPriority(
+            groupManifestRows(cargoList), customerPriority
+        )
         val startRow = 13
 
         // Baris total asli template (0-based).
