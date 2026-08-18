@@ -3,7 +3,7 @@ package com.example.cargomanifestapp
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -196,15 +196,18 @@ fun CargoAppScreen(
                 )
             }
         } else {
-            LazyColumn(
+            // Kartu data dibuat horizontal seperti bagian "Stock Almost Empty"
+            // pada contoh: geser ke kiri/kanan untuk melihat data berikutnya.
+            LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(horizontal = 2.dp)
             ) {
                 items(cargoList, key = { it.id }) { item ->
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.width(340.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
                         shape = RoundedCornerShape(14.dp)
                     ) {
