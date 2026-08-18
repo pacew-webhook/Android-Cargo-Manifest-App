@@ -421,14 +421,36 @@ class StowingViewModel : ViewModel() {
                     }
                 } ?: throw IllegalStateException("File tidak dapat dibuka")
 
-                withContext(Dispatchers.Main) {
-                    if (imported.isEmpty()) {
+                if (imported.isEmpty()) {
+                    withContext(Dispatchers.Main) {
                         onError(
                             "Tidak ada data Manifest yang dapat di-import. " +
                                 "Pastikan file Excel memiliki data pada kolom Manifest."
                         )
-                    } else {
-                        // Data lama baru diganti setelah seluruh file selesai dibaca.
+                    }
+                } else {
+                    // Import Stowing menjadi sumber data Manifest juga.
+                    // Database Manifest diperbarui di thread IO sebelum UI
+                    // diberi pesan sukses, sehingga Manifest langsung membaca
+                    // data import yang sama.
+                    try {
+                        val dao = CargoDatabase.getDatabase(context).cargoDao()
+                        val manifestItems = groupImportedForManifest(imported)
+                        dao.deleteAllCargo()
+                        dao.insertAll(manifestItems.map { it.copy(id = 0L) })
+                    } catch (syncError: Throwable) {
+                        withContext(Dispatchers.Main) {
+                            onError(
+                                "Import Stowing berhasil, tetapi gagal menyinkronkan data ke Manifest Cargo. " +
+                                    (syncError.message?.takeIf { it.isNotBlank() } ?: syncError.javaClass.simpleName)
+                            )
+                        }
+                        return@launch
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        // Data lama baru diganti setelah seluruh file selesai dibaca
+                        // dan database Manifest berhasil disinkronkan.
                         cargoList.clear()
                         cargoList.addAll(imported)
                         saveCargoListToPrefs(context)
@@ -462,6 +484,57 @@ class StowingViewModel : ViewModel() {
                 }
             }
         }
+    }
+
+    /**
+     * Bentuk data import yang disimpan di Manifest Cargo.
+     *
+     * Stowing tetap menyimpan setiap input sebagai record terpisah, tetapi
+     * salinan ke database Manifest langsung digabung jika dan hanya jika
+     * PTI + NO PAG + Customer + Description sama.
+     *
+     * Pcs/Qty dan Sub Total dijumlahkan. Semua rincian KG digabung dan
+     * dipertahankan urutannya. Weight Pcs/Cly tetap kosong karena Manifest
+     * hanya menjadi ringkasan dari data Stowing.
+     */
+    private fun groupImportedForManifest(items: List<CargoItem>): List<CargoItem> {
+        fun key(value: String): String = value.trim().uppercase()
+
+        return items
+            .groupBy { item ->
+                listOf(
+                    key(item.pti),
+                    key(item.noPag),
+                    key(item.customer),
+                    key(item.description)
+                ).joinToString("\u001f")
+            }
+            .map { (_, group) ->
+                val totalPcs = group.sumOf {
+                    parseNumber(it.pcsQty)?.toInt() ?: 0
+                }
+                val totalKg = group.sumOf {
+                    parseNumber(it.subTotal) ?: 0.0
+                }
+
+                val weightDetails = group
+                    .flatMap { splitImportedWeightDetails(it.weight) }
+                    .joinToString(", ")
+
+                group.first().copy(
+                    pcsQty = totalPcs.toString(),
+                    weight = weightDetails,
+                    subTotal = formatWeight(totalKg)
+                )
+            }
+    }
+
+    private fun splitImportedWeightDetails(value: String): List<String> {
+        if (value.isBlank()) return emptyList()
+        return value
+            .split(Regex("\\s*[,;]\\s*"))
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
     }
 
     private data class ImportedStowingData(
