@@ -66,9 +66,13 @@ class StowingViewModel : ViewModel() {
                         if (value.isFinite() && value > 0.0) weights.add(value)
                     }
                 }
+                val id = obj.optString("id")
+                if (obj.optBoolean("usedInStowing", false) && id.isNotBlank() && id !in usedBtbReferenceIds) {
+                    usedBtbReferenceIds.add(id)
+                }
                 btbReferenceList.add(
                     BtbFormData(
-                        id = obj.optString("id"),
+                        id = id,
                         hariTanggal = obj.optString("hariTanggal"),
                         customerName = obj.optString("customerName"),
                         trademarks = obj.optString("trademarks"),
@@ -116,7 +120,7 @@ class StowingViewModel : ViewModel() {
         val id = btb.id.trim()
         if (id.isBlank() || isBtbAlreadyUsed(id)) return false
 
-        if (btb.customerName.isNotBlank()) updateCustomer(btb.customerName)
+        if (btb.trademarks.isNotBlank()) updateCustomer(btb.trademarks)
         if (btb.jenisBarang.isNotBlank()) updateDescription(btb.jenisBarang)
         if (btb.daftarTimbangan.isNotEmpty()) {
             currentKgEntries.addAll(btb.daftarTimbangan)
@@ -135,8 +139,26 @@ class StowingViewModel : ViewModel() {
 
         if (id !in usedBtbReferenceIds) {
             usedBtbReferenceIds.add(id)
-            saveUsedBtbReferenceIds(context)
         }
+        saveUsedBtbReferenceIds(context)
+
+        // Simpan juga status langsung pada data BTB yang menjadi sumber
+        // Ambil Data BTB. Dengan begitu daftar BTB dan daftar Stowing
+        // membaca status yang sama, walaupun lifecycle layar berbeda.
+        runCatching {
+            val prefs = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+            val raw = prefs.getString("items", "[]") ?: "[]"
+            val array = JSONArray(raw)
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                if (obj.optString("id").trim() == id) {
+                    obj.put("usedInStowing", true)
+                    break
+                }
+            }
+            prefs.edit().putString("items", array.toString()).apply()
+        }
+
         pendingBtbReferenceId = null
     }
 
@@ -1305,6 +1327,15 @@ class StowingViewModel : ViewModel() {
                 cargoList.clear()
                 usedBtbReferenceIds.clear()
                 saveUsedBtbReferenceIds(context)
+                runCatching {
+                    val prefs = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+                    val raw = prefs.getString("items", "[]") ?: "[]"
+                    val array = JSONArray(raw)
+                    for (i in 0 until array.length()) {
+                        array.optJSONObject(i)?.put("usedInStowing", false)
+                    }
+                    prefs.edit().putString("items", array.toString()).apply()
+                }
                 saveCargoListToPrefs(context)
                 resetForm()
                 onDeleted("Semua data berhasil dihapus")

@@ -22,6 +22,9 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -84,6 +87,46 @@ fun BtbScreen(onBackClick: () -> Unit) {
     val photoUris = remember { mutableStateListOf<Uri>() }
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var usedBtbIds by remember { mutableStateOf<Set<String>>(emptySet()) }
+
+    fun reloadBtbStowingStatus() {
+        val statusPrefs = context.getSharedPreferences("btb_reference_status", Context.MODE_PRIVATE)
+        val idsFromStatusPrefs = statusPrefs
+            .getStringSet("used_ids", emptySet())
+            ?.filter { it.isNotBlank() }
+            ?.toSet()
+            ?: emptySet()
+
+        // Sumber kedua adalah flag yang tersimpan bersama data BTB.
+        // Ini membuat status tetap terbaca walaupun SharedPreferences status
+        // dan daftar BTB pernah tersinkron pada waktu yang berbeda.
+        val idsFromBtbData = runCatching {
+            val raw = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+                .getString("items", "[]") ?: "[]"
+            val array = org.json.JSONArray(raw)
+            buildSet {
+                for (i in 0 until array.length()) {
+                    val obj = array.optJSONObject(i) ?: continue
+                    val id = obj.optString("id").trim()
+                    if (id.isNotBlank() && obj.optBoolean("usedInStowing", false)) add(id)
+                }
+            }
+        }.getOrDefault(emptySet())
+
+        usedBtbIds = idsFromStatusPrefs + idsFromBtbData
+    }
+
+    // Status BTB dibaca ulang saat layar BTB kembali aktif, sehingga setelah
+    // BTB dipakai di Stowing Cargo tanda cek langsung terlihat di daftar BTB.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) reloadBtbStowingStatus()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        reloadBtbStowingStatus()
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     fun persistBtbReferenceList(list: List<BtbFormData>) {
         val array = org.json.JSONArray()
@@ -93,6 +136,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                 put("hariTanggal", btb.hariTanggal)
                 put("customerName", btb.customerName)
                 put("trademarks", btb.trademarks)
+                put("usedInStowing", btb.id in usedBtbIds)
                 put("jenisBarang", btb.jenisBarang)
                 put("weights", org.json.JSONArray().apply { btb.daftarTimbangan.forEach { put(it) } })
             })
@@ -461,7 +505,9 @@ fun BtbScreen(onBackClick: () -> Unit) {
             items(savedBtbList) { btb ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (btb.id in usedBtbIds) Color(0xFFE8F5E9) else Color.White
+                    ),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Row(
@@ -469,8 +515,17 @@ fun BtbScreen(onBackClick: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        val btbAlreadyInStowing = btb.id.isNotBlank() && btb.id in usedBtbIds
                         Column(modifier = Modifier.weight(1f)) {
                             Text("${btb.customerName} (${btb.trademarks.ifEmpty { "-" }})", fontWeight = FontWeight.Bold)
+                            if (btbAlreadyInStowing) {
+                                Text(
+                                    "☑ Sudah masuk Stowing Cargo",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFF2E7D32)
+                                )
+                            }
                             Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
                             Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
