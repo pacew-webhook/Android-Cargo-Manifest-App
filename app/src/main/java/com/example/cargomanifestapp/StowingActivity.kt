@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -81,7 +82,35 @@ fun StowingInputScreen(
     val descriptionFocusRequester = remember { FocusRequester() }
     val ptiFocusRequester = remember { FocusRequester() }
     val kgFocusRequester = remember { FocusRequester() }
+    val kgGridState = rememberLazyGridState()
+    var scrollToKgIndex by remember { mutableStateOf<Int?>(null) }
     var showBtbPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(scrollToKgIndex) {
+        val targetIndex = scrollToKgIndex ?: return@LaunchedEffect
+        if (targetIndex >= 0 && targetIndex < viewModel.currentKgEntries.size) {
+            // Tunggu satu frame agar item KG yang baru sudah masuk ke grid,
+            // lalu langsung arahkan tampilan ke item terakhir yang ditambahkan.
+            kotlinx.coroutines.yield()
+            kgGridState.animateScrollToItem(targetIndex)
+        }
+        scrollToKgIndex = null
+    }
+
+    fun addKgAndScroll() {
+        val beforeActiveCount = viewModel.currentActiveEntries.size
+        val firstEmptyIndex = viewModel.currentKgEntries.indexOfFirst { it == null }
+        val targetIndex = if (firstEmptyIndex >= 0) firstEmptyIndex else viewModel.currentKgEntries.size
+
+        viewModel.addKgEntry {
+            Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
+        }
+
+        // Hanya scroll jika KG benar-benar berhasil ditambahkan.
+        if (viewModel.currentActiveEntries.size > beforeActiveCount) {
+            scrollToKgIndex = targetIndex
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.refreshBtbReferences()
@@ -942,9 +971,7 @@ fun StowingInputScreen(
                             imeAction = ImeAction.Done
                         ),
                         keyboardActions = KeyboardActions(onDone = {
-                            viewModel.addKgEntry {
-                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
-                            }
+                            addKgAndScroll()
                         }),
                         modifier = Modifier.weight(1f).focusRequester(kgFocusRequester)
                     )
@@ -973,9 +1000,7 @@ fun StowingInputScreen(
 
                     Button(
                         onClick = {
-                            viewModel.addKgEntry {
-                                Toast.makeText(context, "Masukkan angka KG yang valid", Toast.LENGTH_SHORT).show()
-                            }
+                            addKgAndScroll()
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
                         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
@@ -1021,6 +1046,7 @@ fun StowingInputScreen(
 
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(5),
+                        state = kgGridState,
                         modifier = Modifier.fillMaxWidth().heightIn(max = 140.dp),
                         horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
