@@ -305,6 +305,7 @@ private fun CustomerPriorityDialog(
                     Text("Belum ada Customer.", color = Color.Gray)
                 } else {
                     order.forEachIndexed { index, customer ->
+                        key(customer) {
                         val isDragging = draggingCustomer == customer
                         Card(
                             Modifier
@@ -371,6 +372,7 @@ private fun CustomerPriorityDialog(
                                 Text("${index + 1}.", fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
                                 Text(customer, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                             }
+                        }
                         }
                     }
                 }
