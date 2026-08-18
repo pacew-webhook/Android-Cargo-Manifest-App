@@ -24,7 +24,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleOwner
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusDirection
@@ -87,7 +87,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     val photoUris = remember { mutableStateListOf<Uri>() }
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val lifecycleOwner = context as? LifecycleOwner
     var usedBtbIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     fun reloadBtbStowingStatus() {
