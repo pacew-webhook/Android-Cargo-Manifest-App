@@ -2,16 +2,20 @@ package com.example.cargomanifestapp
 
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.items as gridItems
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -218,28 +222,43 @@ private fun ManifestEditDialog(
     var customer by remember { mutableStateOf(original.customer) }
     var description by remember { mutableStateOf(original.description) }
 
-    // Sama seperti Form Stowing Cargo: KG disimpan sebagai daftar nilai per koli.
-    // Enter pada field KG mempunyai fungsi yang sama dengan "+ KG": menambah baris KG baru.
+    // Model input KG dibuat sama dengan Form Stowing Cargo:
+    // 1 field "Input Berat (KG)" + tombol "+ KG" + rincian KG dalam grid.
     val initialWeights = remember(original.weight) {
         original.weight
             .split(",", ";", "\n")
             .mapNotNull { it.trim().replace(',', '.').toDoubleOrNull() }
             .filter { it.isFinite() && it > 0.0 }
-            .map { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }
-            .toMutableStateList()
+            .map { it }
     }
     val kgEntries = remember {
-        initialWeights.ifEmpty { mutableListOf("") }.toMutableStateList()
+        initialWeights.map { it }.toMutableStateList<Double?>().also {
+            if (it.isEmpty()) it.add(null)
+        }
     }
-
-    val totalKg = kgEntries.sumOf { it.replace(',', '.').toDoubleOrNull() ?: 0.0 }
-    val totalKgText = if (totalKg % 1.0 == 0.0) {
-        totalKg.toInt().toString()
-    } else {
-        totalKg.toString()
-    }
-
+    var inputKg by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
+
+    fun formatKg(value: Double): String =
+        if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
+
+    fun addKgFromInput(): Boolean {
+        val kg = inputKg.replace(',', '.').toDoubleOrNull()
+        if (kg == null || !kg.isFinite() || kg <= 0.0) {
+            errorText = "Masukkan angka KG yang valid."
+            return false
+        }
+        val emptyIndex = kgEntries.indexOfFirst { it == null }
+        if (emptyIndex >= 0) kgEntries[emptyIndex] = kg
+        else kgEntries.add(kg)
+        inputKg = ""
+        errorText = null
+        return true
+    }
+
+    val activeWeights = kgEntries.filterNotNull().filter { it.isFinite() && it > 0.0 }
+    val totalKg = activeWeights.sum()
+    val totalKgText = formatKg(totalKg)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -247,7 +266,7 @@ private fun ManifestEditDialog(
         text = {
             Column(
                 Modifier
-                    .heightIn(max = 560.dp)
+                    .heightIn(max = 620.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 EditField("PTI", pti) { pti = it }
@@ -256,73 +275,139 @@ private fun ManifestEditDialog(
                 EditField("Description", description) { description = it }
 
                 Spacer(Modifier.height(10.dp))
+
+                // === SAMA SEPERTI FORM STOWING CARGO ===
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = inputKg,
+                        onValueChange = {
+                            inputKg = it
+                            errorText = null
+                        },
+                        label = { Text("Input Berat (KG)") },
+                        placeholder = { Text("10") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(onDone = {
+                            addKgFromInput()
+                        }),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    Button(
+                        onClick = { addKgFromInput() },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Tambah KG")
+                        Spacer(Modifier.width(4.dp))
+                        Text("+ KG")
+                    }
+                }
+
+                Spacer(Modifier.height(10.dp))
+
                 Text(
-                    "Rincian Input KG",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF3F207A)
+                    text = "Rincian Input KG (${activeWeights.size} Koli):",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Masukkan KG satu per satu. Tekan Enter pada KG terakhir untuk menambah baris.",
-                    fontSize = 12.sp,
+                    text = "Masukkan berat satu per satu. Tekan Enter atau + KG untuk menambah.",
+                    fontSize = 10.sp,
                     color = Color.Gray
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(4.dp))
 
-                kgEntries.forEachIndexed { index, value ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 3.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = value,
-                            onValueChange = { kgEntries[index] = it },
-                            label = { Text("Koli ${index + 1}") },
-                            suffix = { Text("KG") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(
-                                keyboardType = KeyboardType.Decimal,
-                                imeAction = ImeAction.Done
-                            ),
-                            keyboardActions = KeyboardActions(
-                                onDone = {
-                                    // Enter/Next selalu berfungsi sebagai "+ KG".
-                                    // Tambahkan satu baris baru setelah nilai valid.
-                                    val kg = kgEntries[index]
-                                        .replace(',', '.')
-                                        .toDoubleOrNull()
-                                    if (kg != null && kg > 0.0) {
-                                        kgEntries.add("")
-                                    } else {
-                                        errorText = "Isi KG Koli ${index + 1} dengan angka lebih dari 0."
+                // Grid dibuat 5 kolom seperti Form Stowing Cargo.
+                androidx.compose.foundation.lazy.grid.LazyVerticalGrid(
+                    columns = androidx.compose.foundation.lazy.grid.GridCells.Fixed(5),
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    gridItems(kgEntries.size) { index ->
+                        val itemVal = kgEntries[index]
+                        if (itemVal != null) {
+                            androidx.compose.foundation.layout.Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(
+                                        Color(0xFFE8DEF8),
+                                        shape = RoundedCornerShape(6.dp)
+                                    )
+                                    .padding(vertical = 4.dp, horizontal = 4.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = formatKg(itemVal),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            // Sama dengan Form Stowing: slot dikosongkan,
+                                            // tidak menggeser posisi KG lainnya.
+                                            kgEntries[index] = null
+                                        },
+                                        modifier = Modifier.size(18.dp)
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Delete,
+                                            contentDescription = "Hapus KG",
+                                            tint = Color.Red,
+                                            modifier = Modifier.size(14.dp)
+                                        )
                                     }
                                 }
-                            )
-                        )
-
-                        if (kgEntries.size > 1) {
-                            TextButton(
-                                onClick = { kgEntries.removeAt(index) },
-                                modifier = Modifier.width(54.dp)
-                            ) {
-                                Text("Hapus", fontSize = 10.sp, color = Color.Red)
                             }
+                        } else {
+                            Spacer(Modifier.height(28.dp).fillMaxWidth())
                         }
                     }
                 }
 
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Total Koli: ${kgEntries.count { it.replace(',', '.').toDoubleOrNull()?.let { v -> v > 0.0 } == true }}",
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "Total KG: $totalKgText KG",
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF2E7D32)
-                )
+                Spacer(Modifier.height(8.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFF381E72), shape = RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("TOTAL", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Text(
+                            "$totalKgText KG",
+                            color = Color.Yellow,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
+                        )
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("JUMLAH KOLI", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        Text(
+                            "${activeWeights.size} KOLI",
+                            color = Color.Yellow,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 16.sp
+                        )
+                    }
+                }
 
                 errorText?.let {
                     Spacer(Modifier.height(5.dp))
@@ -332,32 +417,24 @@ private fun ManifestEditDialog(
         },
         confirmButton = {
             Button(onClick = {
-                val validWeights = kgEntries.mapNotNull {
-                    it.replace(',', '.').toDoubleOrNull()?.takeIf { value -> value > 0.0 }
-                }
-
+                val validWeights = kgEntries.filterNotNull().filter { it.isFinite() && it > 0.0 }
                 if (validWeights.isEmpty()) {
                     errorText = "Masukkan minimal 1 nilai KG."
                     return@Button
                 }
 
-                val formattedWeights = validWeights.joinToString(", ") {
-                    if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
-                }
+                val formattedWeights = validWeights.joinToString(", ") { formatKg(it) }
+                val sum = validWeights.sum()
 
                 onSave(
                     original.copy(
-                        pti = pti,
-                        noPag = noPag,
-                        customer = customer,
-                        description = description,
+                        pti = pti.trim(),
+                        noPag = noPag.trim(),
+                        customer = customer.trim(),
+                        description = description.trim(),
                         pcsQty = validWeights.size.toString(),
                         weight = formattedWeights,
-                        subTotal = if (validWeights.sum() % 1.0 == 0.0) {
-                            validWeights.sum().toInt().toString()
-                        } else {
-                            validWeights.sum().toString()
-                        }
+                        subTotal = formatKg(sum)
                     )
                 )
             }) {
