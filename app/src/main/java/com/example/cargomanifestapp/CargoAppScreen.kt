@@ -51,7 +51,8 @@ fun CargoAppScreen(
     val totalWeightText = if (totalWeight % 1.0 == 0.0) totalWeight.toInt().toString() else totalWeight.toString()
     val lootTargetText = if (lootTargetKg > 0.0) formatLootKg(lootTargetKg) else "BELUM DIATUR"
     val lootProgress = if (lootTargetKg > 0.0) (totalWeight / lootTargetKg * 100.0).coerceAtLeast(0.0) else 0.0
-    val lootTargetReached = lootTargetKg > 0.0 && totalWeight >= lootTargetKg
+    val lootTargetReached: Boolean = lootTargetKg.toDouble() > 0.0 &&
+        totalWeight.toDouble().compareTo(lootTargetKg.toDouble()) >= 0
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -197,7 +198,7 @@ fun CargoAppScreen(
             currentTargetKg = lootTargetKg,
             onDismiss = { showLootTargetDialog = false },
             onSave = { target ->
-                viewModel.setLootTargetKg(context, target)
+                viewModel.setLootTargetKg(context, target.toDouble())
                 lootTargetKg = target
                 showLootTargetDialog = false
             }

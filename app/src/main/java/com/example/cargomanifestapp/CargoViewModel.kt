@@ -31,6 +31,9 @@ data class ManifestGroup(
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     companion object {
+        private const val LOOT_TARGET_PREFS = "manifest_settings"
+        private const val LOOT_TARGET_KEY = "target_loot_kg"
+
         // Kolom ke-20 (index 19, 0-based -> kolom "T"). Dipilih jauh di luar area
         // tabel yang dipakai template (kolom terpakai cuma sampai R/index17), dan
         // di-hide eksplisit saat export (lihat sheet.setColumnHidden), supaya NO PAG
@@ -87,6 +90,22 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
      * Manifest membaca Stowing sebagai master. Data mentah Stowing tetap disimpan
      * apa adanya; hanya salinannya untuk Manifest yang digabung.
      */
+    /** Target LOOT diinput manual oleh operator dan disimpan permanen di perangkat. */
+    fun getLootTargetKg(context: Context): Double {
+        return context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .getString(LOOT_TARGET_KEY, "0")
+            ?.replace(",", ".")
+            ?.toDoubleOrNull()
+            ?: 0.0
+    }
+
+    fun setLootTargetKg(context: Context, targetKg: Double) {
+        context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(LOOT_TARGET_KEY, targetKg.toString())
+            .apply()
+    }
+
     fun refreshFromStowingPrefs(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
