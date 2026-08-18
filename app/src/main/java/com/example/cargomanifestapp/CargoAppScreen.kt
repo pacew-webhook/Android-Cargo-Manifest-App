@@ -7,6 +7,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -68,7 +69,7 @@ fun CargoAppScreen(
     var pcsQty by remember { mutableStateOf("") }
     var weight by remember { mutableStateOf("") }
     var editWeightInput by remember { mutableStateOf("") }
-    var editWeightEntries by remember { mutableStateOf<List<String>>(emptyList()) }
+    var editWeightEntries by remember { mutableStateOf<List<String?>>(emptyList()) }
     var description by remember { mutableStateOf("") }
     var customer by remember { mutableStateOf("") }
     var noPag by remember { mutableStateOf("") }
@@ -298,7 +299,7 @@ fun CargoAppScreen(
                 }
             } else {
                 Text(
-                    text = "Rincian Pcs/Qty Wt (${editWeightEntries.size} Koli):",
+                    text = "Rincian Pcs/Qty Wt (${editWeightEntries.count { !it.isNullOrBlank() }} Koli):",
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp
                 )
@@ -311,31 +312,41 @@ fun CargoAppScreen(
                 ) {
                     items(editWeightEntries.size) { index ->
                         val entry = editWeightEntries[index]
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = Color(0xFFE8DEF8)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                        if (entry.isNullOrBlank()) {
+                            // Slot yang dihapus sengaja tetap dipertahankan agar posisi KG tidak bergeser.
+                            Surface(
+                                modifier = Modifier.width(76.dp).height(40.dp),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFE8DEF8)
+                            ) { }
+                        } else {
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color(0xFFE8DEF8)
                             ) {
-                                Text(
-                                    text = entry,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                IconButton(
-                                    onClick = {
-                                        editWeightEntries = editWeightEntries.toMutableList().also { it.removeAt(index) }
-                                    },
-                                    modifier = Modifier.size(28.dp)
+                                Row(
+                                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Delete,
-                                        contentDescription = "Hapus berat",
-                                        tint = Color(0xFFB3261E),
-                                        modifier = Modifier.size(18.dp)
+                                    Text(
+                                        text = entry,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        modifier = Modifier.widthIn(min = 22.dp)
                                     )
+                                    IconButton(
+                                        onClick = {
+                                            editWeightEntries = editWeightEntries.toMutableList().also { it[index] = null }
+                                        },
+                                        modifier = Modifier.size(28.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Delete,
+                                            contentDescription = "Hapus berat",
+                                            tint = Color(0xFFB3261E),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -362,7 +373,14 @@ fun CargoAppScreen(
                         onClick = {
                             val value = editWeightInput.trim()
                             if (value.toDoubleOrNull() != null && value.toDouble() > 0) {
-                                editWeightEntries = editWeightEntries + value
+                                val updated = editWeightEntries.toMutableList()
+                                val emptyIndex = updated.indexOfFirst { it.isNullOrBlank() }
+                                if (emptyIndex >= 0) {
+                                    updated[emptyIndex] = value
+                                } else {
+                                    updated.add(value)
+                                }
+                                editWeightEntries = updated
                                 editWeightInput = ""
                             } else {
                                 Toast.makeText(context, "Masukkan berat KG yang valid", Toast.LENGTH_SHORT).show()
@@ -377,10 +395,11 @@ fun CargoAppScreen(
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
-                val editTotal = editWeightEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
+                val activeEditEntries = editWeightEntries.filterNotNull().filter { it.isNotBlank() }
+                val editTotal = activeEditEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
                 val editTotalText = if (editTotal % 1.0 == 0.0) editTotal.toInt().toString() else editTotal.toString()
                 Text(
-                    text = "TOTAL: $editTotalText KG   •   JUMLAH KOLI: ${editWeightEntries.size}",
+                    text = "TOTAL: $editTotalText KG   •   JUMLAH KOLI: ${activeEditEntries.size}",
                     fontWeight = FontWeight.Bold,
                     color = Color(0xFF3F207A)
                 )
@@ -472,21 +491,21 @@ fun CargoAppScreen(
                             )
                             Toast.makeText(context, "Data berhasil disimpan!", Toast.LENGTH_SHORT).show()
                         } else {
-                            val finalEntries = editWeightEntries
-                                .map { it.trim() }
-                                .filter { it.isNotBlank() }
+                            val finalEntries = editWeightEntries.map { it?.trim().orEmpty() }
+                            val activeFinalEntries = finalEntries.filter { it.isNotBlank() }
+                            // Pertahankan slot kosong agar posisi KG yang dihapus tidak bergeser.
                             val finalWeight = if (finalEntries.isNotEmpty()) {
                                 finalEntries.joinToString(", ")
                             } else {
                                 weight
                             }
-                            val finalPcsQty = if (finalEntries.isNotEmpty()) {
-                                finalEntries.size.toString()
+                            val finalPcsQty = if (activeFinalEntries.isNotEmpty()) {
+                                activeFinalEntries.size.toString()
                             } else {
                                 pcsQty
                             }
-                            val finalSubTotal = if (finalEntries.isNotEmpty()) {
-                                finalEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
+                            val finalSubTotal = if (activeFinalEntries.isNotEmpty()) {
+                                activeFinalEntries.sumOf { it.toDoubleOrNull() ?: 0.0 }
                                     .let { total ->
                                         if (total % 1.0 == 0.0) total.toInt().toString() else total.toString()
                                     }
@@ -622,11 +641,10 @@ fun CargoAppScreen(
                             selectedCargoId = item.id
                             pti = item.pti.removePrefix("KAL").trim()
                             editWeightEntries = item.weight
-                                .split(",")
-                                .map { it.trim() }
-                                .filter { it.isNotBlank() }
+                                .split(",", limit = Int.MAX_VALUE)
+                                .map { token -> token.trim().takeIf { it.isNotBlank() } }
                             editWeightInput = ""
-                            pcsQty = editWeightEntries.size.toString().ifBlank { item.pcsQty }
+                            pcsQty = editWeightEntries.count { !it.isNullOrBlank() }.toString().ifBlank { item.pcsQty }
                             weight = item.weight
                             subTotalInput = item.subTotal
                             description = item.description
