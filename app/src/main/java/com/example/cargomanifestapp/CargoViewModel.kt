@@ -192,96 +192,104 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun updateManifestDetail(context: Context, detail: ManifestDetailItem, edited: CargoItem) {
         viewModelScope.launch(Dispatchers.IO) {
-            /*
-             * FIX SINKRONISASI MANIFEST <-> STOWING:
-             * Manifest bukan menyimpan master data sendiri. Master-nya adalah
-             * saved_cargo_list milik Form Stowing. Versi sebelumnya hanya menulis
-             * manifest_overrides, sehingga tampilan Manifest berubah tetapi Form
-             * Stowing tetap memakai KG lama.
-             *
-             * sourceKey selalu diawali index data asli ("index|..."). Gunakan index
-             * tersebut untuk mengganti tepat 1 CargoItem pada master Stowing, lalu
-             * simpan kembali saved_cargo_list. Dengan begitu KG, pcsQty, subTotal,
-             * PTI, Customer, Description dan NO PAG berubah bersama-sama.
-             */
+            // FASE 1: Manifest dan Stowing memakai sumber data yang sama.
+            // Perubahan dari Edit Manifest langsung ditulis kembali ke
+            // saved_cargo_list, bukan hanya ke manifest_overrides.
             val raw = stowingSource.value.toMutableList()
-            val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
-
-            val targetIndex = when {
-                sourceIndex != null && sourceIndex in raw.indices -> sourceIndex
-                else -> raw.indexOfFirst { item ->
-                    item.noPag == detail.item.noPag &&
-                        item.pti == detail.item.pti &&
-                        item.customer == detail.item.customer &&
-                        item.description == detail.item.description &&
-                        item.weight == detail.item.weight &&
-                        item.subTotal == detail.item.subTotal
-                }
+            val sourceIndex = raw.indices.firstOrNull {
+                sourceKeyFor(raw[it], it) == detail.sourceKey
             }
 
-            if (targetIndex >= 0 && targetIndex < raw.size) {
-                raw[targetIndex] = edited
-
-                // Simpan master Stowing yang sudah diedit.
-                val jsonArray = JSONArray()
-                raw.forEach { item ->
-                    jsonArray.put(org.json.JSONObject().apply {
-                        put("noPag", item.noPag)
-                        put("customer", item.customer)
-                        put("description", item.description)
-                        put("pti", item.pti)
-                        put("pcsQty", item.pcsQty)
-                        put("weight", item.weight)
-                        put("subTotal", item.subTotal)
-                    })
-                }
-                context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
-                    .edit()
-                    .putString("saved_cargo_list", jsonArray.toString())
-                    .apply()
-
-                // Master sudah berubah, jadi override lama tidak diperlukan lagi.
-                val updated = manifestOverrides.value.toMutableMap()
-                updated.remove(detail.sourceKey)
-                manifestOverrides.value = updated
-
-                val overrideArray = JSONArray()
-                updated.forEach { (key, item) ->
-                    overrideArray.put(org.json.JSONObject().apply {
-                        put("sourceKey", key)
-                        put("noPag", item.noPag)
-                        put("customer", item.customer)
-                        put("description", item.description)
-                        put("pti", item.pti)
-                        put("pcsQty", item.pcsQty)
-                        put("weight", item.weight)
-                        put("subTotal", item.subTotal)
-                    })
-                }
-                context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
-                    .edit().putString("items", overrideArray.toString()).apply()
-
-                // Gunakan data master yang baru sebagai sumber Manifest.
-                stowingSource.value = raw
-                rebuildManifest(raw, raw.mapIndexed { index, item -> sourceKeyFor(item, index) })
-
+            if (sourceIndex == null) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        getApplication(),
-                        "Data Manifest & Form Stowing berhasil disinkronkan",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    Toast.makeText(getApplication(), "Data asal tidak ditemukan. Refresh data lalu coba lagi.", Toast.LENGTH_LONG).show()
                 }
-            } else {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        getApplication(),
-                        "Gagal menemukan data asal Stowing untuk diperbarui",
-                        Toast.LENGTH_LONG
-                    ).show()
-                }
+                return@launch
+            }
+
+            raw[sourceIndex] = edited
+            val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+            val jsonArray = JSONArray()
+            raw.forEach { item ->
+                jsonArray.put(org.json.JSONObject().apply {
+                    put("noPag", item.noPag)
+                    put("customer", item.customer)
+                    put("description", item.description)
+                    put("pti", item.pti)
+                    put("pcsQty", item.pcsQty)
+                    put("weight", item.weight)
+                    put("subTotal", item.subTotal)
+                })
+            }
+            prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
+
+            // Override lama dibersihkan agar tidak ada dua sumber data.
+            manifestOverrides.value = emptyMap()
+            context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
+                .edit().remove("items").apply()
+
+            stowingSource.value = raw
+            val keys = raw.indices.map { sourceKeyFor(raw[it], it) }
+            rebuildManifest(raw, keys)
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Data Manifest & Form Stowing berhasil disinkronkan", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    data class ValidationResult(val valid: Boolean, val errors: List<String>)
+
+    fun validateManifestData(): ValidationResult {
+        val errors = mutableListOf<String>()
+        val raw = stowingSource.value
+        if (raw.isEmpty()) return ValidationResult(false, listOf("Belum ada data Stowing."))
+
+        raw.forEachIndexed { index, item ->
+            val label = item.noPag.ifBlank { "Baris ${index + 1}" }
+            if (item.noPag.isBlank()) errors += "$label: NO PAG kosong"
+            if (item.customer.isBlank()) errors += "$label: Customer kosong"
+            if (item.description.isBlank()) errors += "$label: Description kosong"
+            val weights = item.weight.split(",", ";", "\n")
+                .mapNotNull { it.trim().replace(',', '.').toDoubleOrNull() }
+                .filter { it > 0.0 && it.isFinite() }
+            val pcs = item.pcsQty.toIntOrNull() ?: 0
+            val subtotal = parseDoubleOrZero(item.subTotal)
+            val sum = weights.sum()
+            if (weights.size != pcs) errors += "$label: ${weights.size} rincian KG tetapi PCS ${item.pcsQty}"
+            if (kotlin.math.abs(sum - subtotal) > 0.01) {
+                errors += "$label: rincian ${formatNumber(sum)} KG ≠ subtotal ${item.subTotal} KG"
+            }
+        }
+
+        val manifestKg = raw.sumOf { parseDoubleOrZero(it.subTotal) }
+        val groupKg = manifestGroupsState.value.sumOf { parseDoubleOrZero(it.summary.subTotal) }
+        if (kotlin.math.abs(manifestKg - groupKg) > 0.01) {
+            errors += "Total Manifest ${formatNumber(manifestKg)} KG ≠ total tampilan ${formatNumber(groupKg)} KG"
+        }
+        return ValidationResult(errors.isEmpty(), errors.distinct())
+    }
+
+    fun archiveCurrentData(context: Context) {
+        val prefs = context.getSharedPreferences("cargo_archive", Context.MODE_PRIVATE)
+        val archives = JSONArray(prefs.getString("items", "[]") ?: "[]")
+        val snapshot = org.json.JSONObject().apply {
+            put("timestamp", System.currentTimeMillis())
+            put("count", stowingSource.value.size)
+            put("totalKg", stowingSource.value.sumOf { parseDoubleOrZero(it.subTotal) })
+            put("data", JSONArray().apply {
+                stowingSource.value.forEach { item ->
+                    put(org.json.JSONObject().apply {
+                        put("noPag", item.noPag); put("customer", item.customer); put("description", item.description)
+                        put("pti", item.pti); put("pcsQty", item.pcsQty); put("weight", item.weight); put("subTotal", item.subTotal)
+                    })
+                }
+            })
+        }
+        val newArchives = JSONArray()
+        newArchives.put(snapshot)
+        for (i in 0 until minOf(19, archives.length())) newArchives.put(archives.getJSONObject(i))
+        prefs.edit().putString("items", newArchives.toString()).apply()
     }
 
     fun setSearchQuery(query: String) {
@@ -536,6 +544,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
                 ExcelUtils.writeManifestWorkbookToFile(context, file, rawStowing)
+                archiveCurrentData(context)
 
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
                 withContext(Dispatchers.Main) {

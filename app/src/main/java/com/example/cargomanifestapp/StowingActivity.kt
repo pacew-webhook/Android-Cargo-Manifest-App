@@ -39,20 +39,10 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.activity.viewModels
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
 class StowingActivity : ComponentActivity() {
-    private val stowingViewModel: StowingViewModel by viewModels()
-
-    override fun onResume() {
-        super.onResume()
-        // Manifest dapat mengedit master saved_cargo_list. Reload saat Form
-        // Stowing kembali aktif agar perubahan Manifest langsung terlihat.
-        stowingViewModel.loadCargoListFromPrefs(this)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -61,7 +51,7 @@ class StowingActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    StowingInputScreen(onBack = { finish() }, viewModel = stowingViewModel)
+                    StowingInputScreen(onBack = { finish() })
                 }
             }
         }
@@ -75,6 +65,7 @@ fun StowingInputScreen(
     viewModel: StowingViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    LaunchedEffect(Unit) { viewModel.attachContext(context) }
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
     val descriptionFocusRequester = remember { FocusRequester() }
@@ -96,6 +87,7 @@ fun StowingInputScreen(
     var scannedDescriptionText by remember { mutableStateOf("") }
     var scanRawText by remember { mutableStateOf("") }
     var scanRowsText by remember { mutableStateOf("") }
+    var scannedPhotoUri by remember { mutableStateOf("") }
     var scanBusy by remember { mutableStateOf(false) }
     var stowingSearchQuery by remember { mutableStateOf("") }
     var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
@@ -112,6 +104,7 @@ fun StowingInputScreen(
                 BtbOcrScanner.scan(context, uri)
             }
 
+            scannedPhotoUri = uri.toString()
             if (result.weights.isEmpty()) {
                 Toast.makeText(
                     context,
@@ -152,7 +145,7 @@ fun StowingInputScreen(
         scanBusy = true
         scanScope.launch {
             try {
-                processBtbUri(uri, deleteTemp = true)
+                processBtbUri(uri, deleteTemp = false)
             } finally {
                 scanBusy = false
             }
@@ -410,6 +403,7 @@ fun StowingInputScreen(
                             if (scannedNoPagText.isNotBlank()) viewModel.updateNoPag(scannedNoPagText)
                             if (scannedCustomerText.isNotBlank()) viewModel.updateCustomer(scannedCustomerText)
                             if (scannedDescriptionText.isNotBlank()) viewModel.updateDescription(scannedDescriptionText)
+                            if (scannedPhotoUri.isNotBlank()) viewModel.attachBtbPhoto(scannedPhotoUri)
 
                             val finalCount = viewModel.currentActiveEntries.size
                             if (finalCount == values.size) {
@@ -613,6 +607,15 @@ fun StowingInputScreen(
                 }
 
                 Spacer(modifier = Modifier.height(8.dp))
+                if (viewModel.currentPhotoUris.isNotEmpty()) {
+                    Text(
+                        text = "📷 Foto BTB terhubung: ${viewModel.currentPhotoUris.size}",
+                        fontSize = 11.sp,
+                        color = Color(0xFF2E7D32),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),

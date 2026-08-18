@@ -22,6 +22,87 @@ enum class DeleteType {
 
 class StowingViewModel : ViewModel() {
 
+    private var attachedContext: Context? = null
+    private var draftLoaded = false
+    private var editingOriginalKey: String? = null
+    val currentPhotoUris = mutableStateListOf<String>()
+
+    fun attachContext(context: Context) {
+        if (attachedContext == null) attachedContext = context.applicationContext
+        if (!draftLoaded) {
+            draftLoaded = true
+            loadDraft()
+        }
+    }
+
+    private fun cargoKey(item: CargoItem): String =
+        listOf(item.noPag, item.customer, item.description, item.pti).joinToString("\u001F") { it.trim().uppercase() }
+
+    private fun persistDraft() {
+        val context = attachedContext ?: return
+        val obj = JSONObject().apply {
+            put("noPag", noPag); put("customer", customer); put("description", description); put("pti", pti); put("inputKg", inputKg)
+            put("weights", JSONArray().apply { currentKgEntries.forEach { put(it ?: JSONObject.NULL) } })
+            put("photos", JSONArray().apply { currentPhotoUris.forEach { put(it) } })
+        }
+        context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).edit().putString("draft", obj.toString()).apply()
+    }
+
+    private fun loadDraft() {
+        val context = attachedContext ?: return
+        val raw = context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).getString("draft", null) ?: return
+        runCatching {
+            val obj = JSONObject(raw)
+            noPag = obj.optString("noPag")
+            customer = obj.optString("customer")
+            description = obj.optString("description")
+            pti = obj.optString("pti")
+            inputKg = obj.optString("inputKg")
+            currentKgEntries.clear()
+            val weights = obj.optJSONArray("weights")
+            if (weights != null) for (i in 0 until weights.length()) {
+                currentKgEntries.add(if (weights.isNull(i)) null else weights.optDouble(i))
+            }
+            currentPhotoUris.clear()
+            val photos = obj.optJSONArray("photos")
+            if (photos != null) for (i in 0 until photos.length()) currentPhotoUris.add(photos.optString(i))
+        }
+    }
+
+    fun clearDraft() {
+        attachedContext?.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE)?.edit()?.remove("draft")?.apply()
+    }
+
+    fun attachBtbPhoto(uri: String) {
+        if (uri.isBlank()) return
+        if (uri !in currentPhotoUris) currentPhotoUris.add(uri)
+        persistDraft()
+    }
+
+    fun removeBtbPhoto(uri: String) {
+        currentPhotoUris.remove(uri)
+        persistDraft()
+    }
+
+    private fun savePhotosForItem(item: CargoItem) {
+        val context = attachedContext ?: return
+        val prefs = context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+        val all = JSONObject(prefs.getString("items", "{}") ?: "{}")
+        editingOriginalKey?.let { old -> if (old != cargoKey(item)) all.remove(old) }
+        all.put(cargoKey(item), JSONArray(currentPhotoUris))
+        prefs.edit().putString("items", all.toString()).apply()
+    }
+
+    private fun loadPhotosForItem(item: CargoItem) {
+        currentPhotoUris.clear()
+        val context = attachedContext ?: return
+        runCatching {
+            val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE).getString("items", "{}") ?: "{}")
+            val photos = all.optJSONArray(cargoKey(item)) ?: return
+            for (i in 0 until photos.length()) currentPhotoUris.add(photos.optString(i))
+        }
+    }
+
     // --- STATE FORM INPUT ---
     var noPag by mutableStateOf("")
         private set
@@ -170,8 +251,9 @@ class StowingViewModel : ViewModel() {
         // harus tetap mempertahankan Space yang baru diketik.
         val result = stripPagPrefixWhileTyping(value)
         noPag = result.uppercase()
+        persistDraft()
     }
-    fun commitNoPag() { noPag = stripPagPrefix(noPag).uppercase() }
+    fun commitNoPag() { noPag = stripPagPrefix(noPag).uppercase(); persistDraft() }
     fun updateCustomer(value: String) {
         customer = value.uppercase()
         expandedCustomer = true
@@ -180,14 +262,15 @@ class StowingViewModel : ViewModel() {
         val customerPtis = ptisForCustomer(customer)
         if (descriptions.size == 1) description = descriptions.first()
         if (customerPtis.size == 1) pti = stripPtiPrefix(customerPtis.first())
+        persistDraft()
     }
-    fun updateDescription(value: String) { description = value.uppercase() }
-    fun updatePti(value: String) { pti = stripPtiPrefix(value).uppercase() }
-    fun commitPti() { pti = stripPtiPrefix(pti).uppercase() }
+    fun updateDescription(value: String) { description = value.uppercase(); persistDraft() }
+    fun updatePti(value: String) { pti = stripPtiPrefix(value).uppercase(); persistDraft() }
+    fun commitPti() { pti = stripPtiPrefix(pti).uppercase(); persistDraft() }
     fun updateExpandedCustomer(expanded: Boolean) { expandedCustomer = expanded }
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
-    fun updateInputKg(value: String) { inputKg = value }
+    fun updateInputKg(value: String) { inputKg = value; persistDraft() }
     fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
 
     // --- LOCAL STORAGE ---
@@ -969,6 +1052,7 @@ class StowingViewModel : ViewModel() {
 
         inputKg = ""
         lastScanImportedCount = currentKgEntries.count { it != null }
+        persistDraft()
         return lastScanImportedCount
     }
 
@@ -979,6 +1063,7 @@ class StowingViewModel : ViewModel() {
             if (emptyIndex != -1) currentKgEntries[emptyIndex] = kgVal
             else currentKgEntries.add(kgVal)
             inputKg = ""
+            persistDraft()
         } else onInvalidInput()
     }
 
@@ -1034,11 +1119,15 @@ class StowingViewModel : ViewModel() {
             onSuccess("Data berhasil disimpan!")
         }
         saveCargoListToPrefs(context)
+        savePhotosForItem(newItem)
+        clearDraft()
         resetForm()
     }
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
         editingIndex = indexInOriginalList
+        editingOriginalKey = cargoKey(item)
+        loadPhotosForItem(item)
         noPag = stripPagPrefix(item.noPag)
         customer = item.customer
         description = item.description
@@ -1060,6 +1149,8 @@ class StowingViewModel : ViewModel() {
         pti = ""
         inputKg = ""
         currentKgEntries.clear()
+        currentPhotoUris.clear()
+        editingOriginalKey = null
         editingIndex = null
         expandedCustomer = false
         expandedDescription = false
@@ -1081,6 +1172,7 @@ class StowingViewModel : ViewModel() {
             currentKgEntries[index] = null
             lastScanImportedCount = 0
             inputKg = ""
+            persistDraft()
         }
     }
 
