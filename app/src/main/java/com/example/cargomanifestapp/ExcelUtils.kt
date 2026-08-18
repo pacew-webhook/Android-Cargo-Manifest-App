@@ -256,6 +256,53 @@ object ExcelUtils {
         sheet.createFreezePane(0, 1)
     }
 
+    /**
+     * Group Manifest rows using the same cargo identity used by the app:
+     * PTI + NO PAG + Customer + Description.
+     *
+     * Multiple Stowing inputs with the same identity become ONE Manifest row.
+     * Pcs/Qty and Sub Total are summed, while the individual KG values are
+     * combined in the weight-detail string. The visible Manifest Weight Pcs/Cly
+     * column is represented by the average KG per piece.
+     */
+    fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
+        return cargoList
+            .groupBy {
+                listOf(
+                    normalize(it.pti),
+                    normalize(it.noPag),
+                    normalize(it.customer),
+                    normalize(it.description)
+                ).joinToString("\u001f")
+            }
+            .map { (_, items) ->
+                val totalPcs = items.sumOf { parseWeight(it.pcsQty) }
+                val totalWeight = items.sumOf { parseWeight(it.subTotal) }
+                val combinedWeights = items
+                    .flatMap { splitWeightDetails(it.weight) }
+                    .joinToString(", ")
+
+                items.first().copy(
+                    pcsQty = formatNumber(totalPcs),
+                    weight = if (totalPcs > 0.0) {
+                        formatNumber(totalWeight / totalPcs)
+                    } else {
+                        combinedWeights.ifBlank { items.first().weight }
+                    },
+                    subTotal = formatNumber(totalWeight)
+                )
+            }
+    }
+
+    private fun splitWeightDetails(value: String): List<Double> {
+        if (value.isBlank()) return emptyList()
+        return value
+            .split(Regex("\\s*[,;]\\s*"))
+            .mapNotNull { token ->
+                parseWeight(token).takeIf { it > 0.0 }
+            }
+    }
+
     private fun fillManifestSheet(
         workbook: XSSFWorkbook,
         sheet: XSSFSheet,
@@ -270,7 +317,7 @@ object ExcelUtils {
         // Baris total Manifest asli template (0-based).
         val baseManifestTotalRow = 44
 
-        val manifestRows = cargoList.toList()
+        val manifestRows = groupManifestRows(cargoList)
 
         val groupedStowing = cargoList
             .filter { it.noPag.isNotBlank() }

@@ -282,22 +282,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
 
-                // A. GROUPING MANIFEST: Gabungkan item dengan PTI + Description + Customer + NO PAG yang sama.
-                // NO PAG ikut disertakan di key supaya item dengan PTI/Deskripsi/Customer sama
-                // tapi beda kontainer (NO PAG) TIDAK ikut tergabung dan kehilangan info PAG-nya.
-                val groupedManifest = rawList.groupBy { 
-                    "${it.pti.trim().uppercase()}_${it.description.trim().uppercase()}_${it.customer.trim().uppercase()}_${it.noPag.trim().uppercase()}" 
-                }.map { (_, items) ->
-                    val totalPcs = items.sumOf { parseDoubleOrZero(it.pcsQty) }
-                    val totalWeight = items.sumOf { parseDoubleOrZero(it.subTotal) }
-                    val firstItem = items.first()
-                    
-                    firstItem.copy(
-                        pcsQty = formatNumber(totalPcs),
-                        subTotal = formatNumber(totalWeight),
-                        weight = if (totalPcs > 0) formatNumber(totalWeight / totalPcs) else firstItem.weight
-                    )
-                }
+                // A. GROUPING MANIFEST: gunakan logika yang sama dengan export
+                // Stowing/ExcelUtils. Data dengan PTI + NO PAG + Customer +
+                // Description yang sama menjadi satu baris Manifest.
+                val groupedManifest = ExcelUtils.groupManifestRows(rawList)
 
                 // B. GROUPING STOWING: Gabungkan item dengan NO PAG yang sama
                 val groupedStowing = rawList.filter { it.noPag.isNotBlank() }
