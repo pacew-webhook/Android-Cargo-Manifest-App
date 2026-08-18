@@ -32,6 +32,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 
 @Composable
 fun CargoAppScreen(
@@ -282,10 +283,13 @@ private fun CustomerPriorityDialog(
             known.filter { candidate -> savedPriority.none { it.equals(candidate, ignoreCase = true) } }
     }
     var order by remember(orderedCustomers) { mutableStateOf(orderedCustomers) }
-    var draggingIndex by remember { mutableStateOf(-1) }
-    var dragOffsetY by remember { mutableStateOf(0f) }
+    var draggingCustomer by remember { mutableStateOf<String?>(null) }
+    var dragStartIndex by remember { mutableStateOf(-1) }
+    var dragTotalY by remember { mutableStateOf(0f) }
+    var dragVisualOffsetY by remember { mutableStateOf(0f) }
     val density = LocalDensity.current
-    val reorderThresholdPx = with(density) { 56.dp.toPx() }
+    // One reorder slot = card content height (56dp) + vertical spacing (6dp).
+    val rowHeightPx = with(density) { 62.dp.toPx() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -301,51 +305,59 @@ private fun CustomerPriorityDialog(
                     Text("Belum ada Customer.", color = Color.Gray)
                 } else {
                     order.forEachIndexed { index, customer ->
-                        val isDragging = draggingIndex == index
+                        val isDragging = draggingCustomer == customer
                         Card(
                             Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 3.dp)
                                 .zIndex(if (isDragging) 1f else 0f)
                                 .then(
-                                    if (isDragging) Modifier.offset { IntOffset(0, dragOffsetY.toInt()) }
+                                    if (isDragging) Modifier.offset { IntOffset(0, dragVisualOffsetY.roundToInt()) }
                                     else Modifier
                                 )
-                                .pointerInput(order, index) {
+                                .pointerInput(customer) {
                                     detectDragGesturesAfterLongPress(
                                         onDragStart = {
-                                            draggingIndex = index
-                                            dragOffsetY = 0f
+                                            draggingCustomer = customer
+                                            dragStartIndex = order.indexOf(customer)
+                                            dragTotalY = 0f
+                                            dragVisualOffsetY = 0f
                                         },
                                         onDragCancel = {
-                                            draggingIndex = -1
-                                            dragOffsetY = 0f
+                                            draggingCustomer = null
+                                            dragStartIndex = -1
+                                            dragTotalY = 0f
+                                            dragVisualOffsetY = 0f
                                         },
                                         onDragEnd = {
-                                            draggingIndex = -1
-                                            dragOffsetY = 0f
+                                            draggingCustomer = null
+                                            dragStartIndex = -1
+                                            dragTotalY = 0f
+                                            dragVisualOffsetY = 0f
                                         },
                                         onDrag = { change, dragAmount ->
                                             change.consume()
-                                            if (draggingIndex != index) return@detectDragGesturesAfterLongPress
+                                            if (draggingCustomer != customer || dragStartIndex < 0) return@detectDragGesturesAfterLongPress
 
-                                            dragOffsetY += dragAmount.y
-                                            val threshold = reorderThresholdPx
-                                            if (dragOffsetY <= -threshold && index > 0) {
+                                            dragTotalY += dragAmount.y
+                                            val maxIndex = order.lastIndex
+                                            val targetIndex = (dragStartIndex + (dragTotalY / rowHeightPx).roundToInt())
+                                                .coerceIn(0, maxIndex)
+                                            val currentIndex = order.indexOf(customer)
+
+                                            if (targetIndex != currentIndex) {
                                                 order = order.toMutableList().also { list ->
-                                                    val item = list.removeAt(index)
-                                                    list.add(index - 1, item)
+                                                    val item = list.removeAt(currentIndex)
+                                                    list.add(targetIndex, item)
                                                 }
-                                                draggingIndex = index - 1
-                                                dragOffsetY += threshold
-                                            } else if (dragOffsetY >= threshold && index < order.lastIndex) {
-                                                order = order.toMutableList().also { list ->
-                                                    val item = list.removeAt(index)
-                                                    list.add(index + 1, item)
-                                                }
-                                                draggingIndex = index + 1
-                                                dragOffsetY -= threshold
+                                                // The current index is derived from the customer itself, so the same
+                                                // drag gesture survives every reorder and can cross many rows.
                                             }
+
+                                            // Keep the dragged item under the pointer even after crossing
+                                            // multiple rows in a single continuous drag.
+                                            dragVisualOffsetY = dragTotalY -
+                                                ((order.indexOf(customer) - dragStartIndex) * rowHeightPx)
                                         }
                                     )
                                 },
