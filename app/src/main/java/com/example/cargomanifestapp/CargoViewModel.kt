@@ -15,6 +15,7 @@ import kotlinx.coroutines.withContext
 import org.apache.poi.ss.usermodel.*
 import java.io.File
 import java.io.FileOutputStream
+import org.json.JSONArray
 
 class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -29,6 +30,12 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     // Data cargo sekarang bersumber dari Room Database (persisten),
     // bukan lagi dari MutableStateFlow di memori yang hilang saat app ditutup.
     private val dao = CargoDatabase.getDatabase(application).cargoDao()
+    private val stowingSource = MutableStateFlow<List<CargoItem>>(emptyList())
+
+    init {
+        refreshFromStowingPrefs(application)
+    }
+
 
     val cargoList: StateFlow<List<CargoItem>> = dao.getAllCargo()
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -59,6 +66,40 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     val totalWeight: StateFlow<Double> = cargoList.map { list ->
         list.sumOf { parseDoubleOrZero(it.subTotal) }
     }.stateIn(viewModelScope, SharingStarted.Lazily, 0.0)
+
+    /**
+     * Manifest membaca Stowing sebagai master. Data mentah Stowing tetap disimpan
+     * apa adanya; hanya salinannya untuk Manifest yang digabung.
+     */
+    fun refreshFromStowingPrefs(context: Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+            val json = prefs.getString("saved_cargo_list", null)
+            val raw = mutableListOf<CargoItem>()
+            if (!json.isNullOrBlank()) {
+                runCatching {
+                    val array = JSONArray(json)
+                    for (i in 0 until array.length()) {
+                        val obj = array.getJSONObject(i)
+                        raw += CargoItem(
+                            noPag = obj.optString("noPag"),
+                            customer = obj.optString("customer"),
+                            description = obj.optString("description"),
+                            pti = obj.optString("pti"),
+                            pcsQty = obj.optString("pcsQty"),
+                            weight = obj.optString("weight"),
+                            subTotal = obj.optString("subTotal")
+                        )
+                    }
+                }.onFailure { it.printStackTrace() }
+            }
+
+            val manifest = ExcelUtils.groupManifestRows(raw)
+            stowingSource.value = raw
+            dao.deleteAllCargo()
+            if (manifest.isNotEmpty()) dao.insertAll(manifest.map { it.copy(id = 0L) })
+        }
+    }
 
     fun setSearchQuery(query: String) {
         _searchQuery.value = query
@@ -274,56 +315,52 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     fun exportToExcel(context: Context, awbNo: String, flightNo: String) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val rawList = cargoList.value
-                if (rawList.isEmpty()) {
+                val rawStowing = stowingSource.value.ifEmpty {
+                    // Fallback hanya jika Manifest dibuka sebelum refresh selesai.
+                    val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+                    val json = prefs.getString("saved_cargo_list", null)
+                    val list = mutableListOf<CargoItem>()
+                    if (!json.isNullOrBlank()) {
+                        runCatching {
+                            val array = JSONArray(json)
+                            for (i in 0 until array.length()) {
+                                val obj = array.getJSONObject(i)
+                                list += CargoItem(
+                                    noPag = obj.optString("noPag"),
+                                    customer = obj.optString("customer"),
+                                    description = obj.optString("description"),
+                                    pti = obj.optString("pti"),
+                                    pcsQty = obj.optString("pcsQty"),
+                                    weight = obj.optString("weight"),
+                                    subTotal = obj.optString("subTotal")
+                                )
+                            }
+                        }
+                    }
+                    list
+                }
+
+                if (rawStowing.isEmpty()) {
                     withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Data Kosong!", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(context, "Data Stowing kosong!", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
 
-                /*
-                 * SATU-SATUNYA jalur export sekarang adalah ExcelUtils.
-                 * Jangan lagi membangun sheet Manifest/Stowing Checklist di sini.
-                 * Dengan demikian export dari Manifest Cargo memakai logika yang
-                 * sama persis dengan export Stowing Cargo:
-                 *
-                 * - sumber data = cargoList Stowing
-                 * - Manifest digabung berdasarkan PTI + NO PAG + Customer + Description
-                 * - Pcs/Cly dan Sub Total dijumlahkan
-                 * - Weight Pcs/Cly dikosongkan
-                 * - STOWING CHECK digabung berdasarkan NO PAG + Customer + Description
-                 */
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
-                ExcelUtils.writeCombinedCargoWorkbookToFile(
-                    context = context,
-                    file = file,
-                    cargoList = rawList
-                )
+                ExcelUtils.writeCombinedCargoWorkbookToFile(context, file, rawStowing)
 
-                val uri = FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.provider",
-                    file
-                )
-
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
                 withContext(Dispatchers.Main) {
                     val intent = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(
-                            uri,
-                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                        )
+                        setDataAndType(uri, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                         addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                     }
                     context.startActivity(intent)
                 }
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    Toast.makeText(
-                        context,
-                        "Gagal Export: ${e.localizedMessage}",
-                        Toast.LENGTH_LONG
-                    ).show()
+                    Toast.makeText(context, "Gagal Export: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
                 }
             }
         }

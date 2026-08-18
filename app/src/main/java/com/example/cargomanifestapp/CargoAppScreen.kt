@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,6 +39,10 @@ fun CargoAppScreen(
     val context = LocalContext.current
     val cargoList by viewModel.cargoList.collectAsState()
     var isSendingToN8n by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshFromStowingPrefs(context)
+    }
 
     val totalWeight = cargoList.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
     val totalPcs = cargoList.sumOf { it.pcsQty.toIntOrNull() ?: 0 }
