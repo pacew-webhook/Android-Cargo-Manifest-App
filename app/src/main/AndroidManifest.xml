@@ -5,6 +5,9 @@
     <!-- Internet untuk koneksi ke n8n -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Kamera untuk modul Bukti Timbang / OCR timbangan -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
     <!-- Izin untuk Simpan/Export File Excel -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -40,6 +43,20 @@
             android:name="com.example.cargomanifestapp.BuktiTimbangActivity"
             android:exported="false"
             android:label="Bukti Timbang Barang"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- Activity OCR timbangan yang dibuka dari Bukti Timbang Barang -->
+        <activity
+            android:name="com.example.cargomanifestapp.ScaleOcrActivity"
+            android:exported="false"
+            android:label="OCR Timbangan"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
+        <!-- Activity penerbitan / cetak label BTB -->
+        <activity
+            android:name="com.example.cargomanifestapp.BtbLabelActivity"
+            android:exported="false"
+            android:label="Terbitkan Label BTB"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <!-- Provider untuk Berbagi File Excel -->
