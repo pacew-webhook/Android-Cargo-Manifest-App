@@ -87,7 +87,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
     val photoUris = remember { mutableStateListOf<Uri>() }
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
-    val lifecycleOwner = context as? LifecycleOwner
+    val lifecycleOwner = context as LifecycleOwner
     var usedBtbIds by remember { mutableStateOf<Set<String>>(emptySet()) }
 
     fun reloadBtbStowingStatus() {
