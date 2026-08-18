@@ -348,7 +348,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
 
                 val file = File(context.cacheDir, "Manifest_Cargo_Output.xlsx")
-                ExcelUtils.writeCombinedCargoWorkbookToFile(context, file, rawStowing)
+                ExcelUtils.writeManifestWorkbookToFile(context, file, rawStowing)
 
                 val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
                 withContext(Dispatchers.Main) {

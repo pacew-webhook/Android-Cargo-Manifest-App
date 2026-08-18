@@ -82,7 +82,7 @@ object ExcelUtils {
             val manifestSheet =
                 workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
 
-            fillManifestSheet(workbook, manifestSheet, cargoList)
+            fillManifestSheetForStowingExport(workbook, manifestSheet, cargoList)
 
             val pagInput = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
             val pagWorkbook = pagInput.use { XSSFWorkbook(it) }
@@ -131,6 +131,69 @@ object ExcelUtils {
      * tetapi langsung ditulis ke File lokal (dipakai sebelum upload ke n8n).
      */
     fun writeCombinedCargoWorkbookToFile(
+        context: Context,
+        file: File,
+        cargoList: List<CargoItem>
+    ) {
+        require(cargoList.isNotEmpty()) { "Data Stowing kosong" }
+
+        file.parentFile?.mkdirs()
+
+        val manifestInput = context.assets.open("template_manifest.xlsx")
+        val workbook = manifestInput.use { XSSFWorkbook(it) }
+
+        try {
+            val manifestSheet =
+                workbook.getSheet("Manifest") ?: workbook.getSheetAt(0)
+
+            fillManifestSheetForStowingExport(workbook, manifestSheet, cargoList)
+
+            val pagInput = context.assets.open("STOWINGAN_PAG_TEMPLATE.xlsx")
+            val pagWorkbook = pagInput.use { XSSFWorkbook(it) }
+
+            try {
+                val names = listOf(
+                    "STOWINGAN PAG",
+                    "PAG LOOT",
+                    "PAG DATA",
+                    "STOWING CHECK",
+                    "BARANG KOLIAN"
+                )
+
+                pagWorkbook.sheetIterator().asSequence().forEachIndexed { index, sourceSheet ->
+                    val targetName =
+                        names.getOrElse(index) { "PAG TEMPLATE ${index + 1}" }
+                    val targetSheet = workbook.createSheet(targetName)
+
+                    copySheet(sourceSheet, targetSheet, workbook)
+
+                    if (index == 0) {
+                        fillStowingPagSheet(targetSheet, cargoList)
+                    }
+                }
+            } finally {
+                pagWorkbook.close()
+            }
+
+            val stowingDataSheet = getOrCreateStowingDataSheet(workbook)
+            fillStowingDataSheet(stowingDataSheet, cargoList)
+
+            workbook.setSheetVisibility(
+                workbook.getSheetIndex(stowingDataSheet),
+                SheetVisibility.VERY_HIDDEN
+            )
+
+            workbook.setForceFormulaRecalculation(true)
+
+            FileOutputStream(file).use { output ->
+                workbook.write(output)
+            }
+        } finally {
+            workbook.close()
+        }
+    }
+
+    fun writeManifestWorkbookToFile(
         context: Context,
         file: File,
         cargoList: List<CargoItem>
@@ -295,6 +358,291 @@ object ExcelUtils {
                 subTotal = formatNumber(kg)
             )
         }
+    }
+
+    private fun fillManifestSheetForStowingExport(
+        workbook: XSSFWorkbook,
+        sheet: XSSFSheet,
+        cargoList: List<CargoItem>
+    ) {
+        val startRow = 13
+
+        // Baris total asli template (0-based).
+        // Data Stowing tersedia pada row 14..37 Excel.
+        val baseStowingTotalRow = 36
+
+        // Baris total Manifest asli template (0-based).
+        val baseManifestTotalRow = 44
+
+        val manifestRows = cargoList.toList()
+
+        val groupedStowing = cargoList
+            .filter { it.noPag.isNotBlank() }
+            .groupBy { normalize(it.noPag) }
+            .map { (_, items) ->
+                val totalNet = items.sumOf { parseWeight(it.subTotal) }
+
+                val customers = items
+                    .map { it.customer.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
+
+                val descriptions = items
+                    .map { it.description.trim() }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+                    .take(4)
+
+                items.first().copy(
+                    customer = customers.joinToString(" / "),
+                    description = descriptions.joinToString(" / "),
+                    subTotal = formatNumber(totalNet)
+                )
+            }
+
+        /*
+         * FIX ROW 37:
+         *
+         * Jangan lagi memakai maxRows untuk menulis Manifest dan Stowing
+         * secara bersamaan. Jika jumlah Manifest lebih banyak daripada
+         * Stowing, loop gabungan sebelumnya dapat meninggalkan row kosong
+         * pada area Stowing. Sebaliknya, kedua area sekarang ditulis
+         * independen.
+         *
+         * Dengan demikian row 37 hanya berisi total Stowing jika memang
+         * posisi totalnya di sana, bukan baris data kosong.
+         */
+
+        val stowingCapacity =
+            baseStowingTotalRow - startRow
+
+        val stowingExtra =
+            maxOf(0, groupedStowing.size - stowingCapacity)
+
+        if (stowingExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = baseStowingTotalRow,
+                count = stowingExtra,
+                styleSourceRowIndex = baseStowingTotalRow - 1
+            )
+        }
+
+        val stowingTotalRow =
+            baseStowingTotalRow + stowingExtra
+
+        /*
+         * Posisi total Manifest ikut bergeser ketika row Stowing disisipkan.
+         */
+        val manifestBaseAfterStowing =
+            baseManifestTotalRow + stowingExtra
+
+        val manifestCapacity =
+            manifestBaseAfterStowing - startRow
+
+        val manifestExtra =
+            maxOf(0, manifestRows.size - manifestCapacity)
+
+        if (manifestExtra > 0) {
+            insertRowsBefore(
+                sheet = sheet,
+                rowIndex = manifestBaseAfterStowing,
+                count = manifestExtra,
+                styleSourceRowIndex = manifestBaseAfterStowing - 1
+            )
+        }
+
+        val manifestTotalRow =
+            manifestBaseAfterStowing + manifestExtra
+
+        /*
+         * Bersihkan hanya area DATA.
+         *
+         * Penting: jangan membersihkan sampai row total secara membabi buta
+         * pada sisi Stowing setelah Manifest mempunyai jumlah baris berbeda.
+         */
+        clearDataArea(
+            sheet = sheet,
+            startRow = startRow,
+            endRow = stowingTotalRow - 1,
+            startCol = 7,
+            endCol = 12
+        )
+
+        clearDataArea(
+            sheet = sheet,
+            startRow = startRow,
+            endRow = manifestTotalRow - 1,
+            startCol = 0,
+            endCol = 6
+        )
+
+        val sampleRow = sheet.getRow(startRow)
+
+        /*
+         * Tulis Manifest SECARA TERPISAH.
+         * Tidak ada lagi row kosong yang dibuat karena maxOf().
+         */
+        var totalManifestPcs = 0.0
+        var totalManifestWeight = 0.0
+
+        manifestRows.forEachIndexed { index, item ->
+            val rowIndex = startRow + index
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+
+            val pcs = parseWeight(item.pcsQty)
+            val subtotal = parseWeight(item.subTotal)
+
+            totalManifestPcs += pcs
+            totalManifestWeight += subtotal
+
+            setStyledNumericCell(
+                row, 0, (index + 1).toDouble(), sampleRow?.getCell(0)
+            )
+            setStyledTextCell(
+                row, 1, item.pti, sampleRow?.getCell(1)
+            )
+            setStyledNumericCell(
+                row, 2, pcs, sampleRow?.getCell(2)
+            )
+
+            val weightPerClyCell =
+                row.getCell(3) ?: row.createCell(3)
+
+            weightPerClyCell.setBlank()
+
+            if (sampleRow != null) {
+                weightPerClyCell.cellStyle =
+                    sampleRow.getCell(3).cellStyle
+            }
+
+            setStyledNumericCell(
+                row, 4, subtotal, sampleRow?.getCell(4)
+            )
+            setStyledTextCell(
+                row, 5, item.description, sampleRow?.getCell(5)
+            )
+            setStyledTextCell(
+                row, 6, item.customer, sampleRow?.getCell(6)
+            )
+        }
+
+        /*
+         * Tulis Stowing SECARA TERPISAH.
+         * Ini inti perbaikan row kosong.
+         */
+        var totalStowingNet = 0.0
+        var totalStowingGross = 0.0
+
+        groupedStowing.forEachIndexed { index, item ->
+            val rowIndex = startRow + index
+            val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
+
+            val net = parseWeight(item.subTotal)
+            val gross = net + 125.0
+
+            totalStowingNet += net
+            totalStowingGross += gross
+
+            setStyledNumericCell(
+                row, 7, (index + 1).toDouble(), sampleRow?.getCell(7)
+            )
+            setStyledTextCell(
+                row, 8, item.noPag, sampleRow?.getCell(8)
+            )
+            setChecklistTextCell(
+                workbook,
+                row,
+                9,
+                item.description,
+                sampleRow?.getCell(9)
+            )
+            setStyledNumericCell(
+                row, 10, net, sampleRow?.getCell(10)
+            )
+            setStyledNumericCell(
+                row, 11, gross, sampleRow?.getCell(11)
+            )
+            setChecklistTextCell(
+                workbook,
+                row,
+                12,
+                item.customer,
+                sampleRow?.getCell(12)
+            )
+        }
+
+        /*
+         * TOTAL MANIFEST
+         *
+         * Jangan mempertahankan formula bawaan template seperti
+         * =SUM(E14:E44). Jika data melewati baris template (misalnya sampai
+         * row 45, 60, 100, dst.), formula harus mengikuti baris data aktual.
+         *
+         * Data dimulai pada row Excel 14 (startRow = 13, zero-based).
+         */
+        val manifestTotalRowObj =
+            sheet.getRow(manifestTotalRow)
+                ?: sheet.createRow(manifestTotalRow)
+
+        if (manifestRows.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + manifestRows.size
+
+            setFormulaCell(
+                manifestTotalRowObj,
+                2,
+                "SUM(C$firstExcelRow:C$lastExcelRow)"
+            )
+
+            manifestTotalRowObj
+                .getCell(3)
+                ?.setBlank()
+
+            setFormulaCell(
+                manifestTotalRowObj,
+                4,
+                "SUM(E$firstExcelRow:E$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(manifestTotalRowObj, 2, totalManifestPcs)
+            manifestTotalRowObj.getCell(3)?.setBlank()
+            setNumericCell(manifestTotalRowObj, 4, totalManifestWeight)
+        }
+
+        /*
+         * TOTAL STOWING
+         *
+         * Area Stowing juga dibuat dinamis. Formula selalu berhenti tepat pada
+         * baris data Stowing terakhir, bukan pada batas template lama.
+         */
+        val stowingTotalRowObj =
+            sheet.getRow(stowingTotalRow)
+                ?: sheet.createRow(stowingTotalRow)
+
+        if (groupedStowing.isNotEmpty()) {
+            val firstExcelRow = startRow + 1
+            val lastExcelRow = startRow + groupedStowing.size
+
+            setFormulaCell(
+                stowingTotalRowObj,
+                10,
+                "SUM(K$firstExcelRow:K$lastExcelRow)"
+            )
+
+            setFormulaCell(
+                stowingTotalRowObj,
+                11,
+                "SUM(L$firstExcelRow:L$lastExcelRow)"
+            )
+        } else {
+            setNumericCell(stowingTotalRowObj, 10, totalStowingNet)
+            setNumericCell(stowingTotalRowObj, 11, totalStowingGross)
+        }
+
+        // Paksa Excel/POI untuk menghitung ulang formula saat file dibuka.
+        workbook.setForceFormulaRecalculation(true)
     }
 
     private fun fillManifestSheet(
