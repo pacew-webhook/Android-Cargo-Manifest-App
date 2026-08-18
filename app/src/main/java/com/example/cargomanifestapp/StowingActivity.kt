@@ -39,10 +39,20 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.activity.viewModels
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
 
 class StowingActivity : ComponentActivity() {
+    private val stowingViewModel: StowingViewModel by viewModels()
+
+    override fun onResume() {
+        super.onResume()
+        // Manifest dapat mengedit master saved_cargo_list. Reload saat Form
+        // Stowing kembali aktif agar perubahan Manifest langsung terlihat.
+        stowingViewModel.loadCargoListFromPrefs(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
@@ -51,7 +61,7 @@ class StowingActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    StowingInputScreen(onBack = { finish() })
+                    StowingInputScreen(onBack = { finish() }, viewModel = stowingViewModel)
                 }
             }
         }
@@ -104,7 +114,6 @@ fun StowingInputScreen(
                 BtbOcrScanner.scan(context, uri)
             }
 
-            scannedPhotoUri = uri.toString()
             if (result.weights.isEmpty()) {
                 Toast.makeText(
                     context,
@@ -145,7 +154,7 @@ fun StowingInputScreen(
         scanBusy = true
         scanScope.launch {
             try {
-                processBtbUri(uri, deleteTemp = false)
+                processBtbUri(uri, deleteTemp = true)
             } finally {
                 scanBusy = false
             }

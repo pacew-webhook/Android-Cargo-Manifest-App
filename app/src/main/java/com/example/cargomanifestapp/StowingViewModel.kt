@@ -22,6 +22,8 @@ enum class DeleteType {
 
 class StowingViewModel : ViewModel() {
 
+    // Fase 2/4: draft input dan keterkaitan foto BTB disimpan tanpa mengubah
+    // alur input yang sudah ada.
     private var attachedContext: Context? = null
     private var draftLoaded = false
     private var editingOriginalKey: String? = null
@@ -36,21 +38,25 @@ class StowingViewModel : ViewModel() {
     }
 
     private fun cargoKey(item: CargoItem): String =
-        listOf(item.noPag, item.customer, item.description, item.pti).joinToString("\u001F") { it.trim().uppercase() }
+        listOf(item.noPag, item.customer, item.description, item.pti)
+            .joinToString("\u001F") { it.trim().uppercase() }
 
     private fun persistDraft() {
         val context = attachedContext ?: return
         val obj = JSONObject().apply {
-            put("noPag", noPag); put("customer", customer); put("description", description); put("pti", pti); put("inputKg", inputKg)
+            put("noPag", noPag); put("customer", customer); put("description", description);
+            put("pti", pti); put("inputKg", inputKg)
             put("weights", JSONArray().apply { currentKgEntries.forEach { put(it ?: JSONObject.NULL) } })
             put("photos", JSONArray().apply { currentPhotoUris.forEach { put(it) } })
         }
-        context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).edit().putString("draft", obj.toString()).apply()
+        context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).edit()
+            .putString("draft", obj.toString()).apply()
     }
 
     private fun loadDraft() {
         val context = attachedContext ?: return
-        val raw = context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).getString("draft", null) ?: return
+        val raw = context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE)
+            .getString("draft", null) ?: return
         runCatching {
             val obj = JSONObject(raw)
             noPag = obj.optString("noPag")
@@ -79,11 +85,6 @@ class StowingViewModel : ViewModel() {
         persistDraft()
     }
 
-    fun removeBtbPhoto(uri: String) {
-        currentPhotoUris.remove(uri)
-        persistDraft()
-    }
-
     private fun savePhotosForItem(item: CargoItem) {
         val context = attachedContext ?: return
         val prefs = context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
@@ -97,7 +98,8 @@ class StowingViewModel : ViewModel() {
         currentPhotoUris.clear()
         val context = attachedContext ?: return
         runCatching {
-            val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE).getString("items", "{}") ?: "{}")
+            val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                .getString("items", "{}") ?: "{}")
             val photos = all.optJSONArray(cargoKey(item)) ?: return
             for (i in 0 until photos.length()) currentPhotoUris.add(photos.optString(i))
         }
@@ -1149,8 +1151,6 @@ class StowingViewModel : ViewModel() {
         pti = ""
         inputKg = ""
         currentKgEntries.clear()
-        currentPhotoUris.clear()
-        editingOriginalKey = null
         editingIndex = null
         expandedCustomer = false
         expandedDescription = false
