@@ -183,14 +183,22 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             showExportMenu = false
                             val btb = savedBtbList.lastOrNull()
                             if (btb != null) {
-                                context.startActivity(
-                                    Intent(context, BtbLabelActivity::class.java).apply {
-                                        putExtra(
-                                            BtbLabelActivity.EXTRA_BTB_JSON,
-                                            BtbLabelUtils.encode(btb)
-                                        )
-                                    }
-                                )
+                                try {
+                                    context.startActivity(
+                                        Intent(context, BtbLabelActivity::class.java).apply {
+                                            putExtra(
+                                                BtbLabelActivity.EXTRA_BTB_JSON,
+                                                BtbLabelUtils.encode(btb)
+                                            )
+                                        }
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Label BTB tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             } else {
                                 Toast.makeText(context, "Belum ada BTB tersimpan untuk diterbitkan.", Toast.LENGTH_SHORT).show()
                             }
@@ -311,7 +319,18 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             }
                             Button(
                                 onClick = {
-                                    scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
+                                    // Activity OCR sudah didaftarkan khusus untuk modul BTB.
+                                    // Jika perangkat tidak dapat menjalankannya, jangan biarkan
+                                    // aplikasi force close; tampilkan pesan dan tetap di form BTB.
+                                    try {
+                                        scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            context,
+                                            "OCR timbangan tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}",
+                                            Toast.LENGTH_LONG
+                                        ).show()
+                                    }
                                 },
                                 modifier = Modifier.height(56.dp),
                                 shape = RoundedCornerShape(12.dp)
@@ -424,14 +443,24 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             // FIX18: Penerbitan label dipindahkan ke daftar BTB,
                             // sehingga tidak terjadi otomatis saat tombol Simpan BTB ditekan.
                             IconButton(onClick = {
-                                context.startActivity(
-                                    Intent(context, BtbLabelActivity::class.java).apply {
-                                        putExtra(
-                                            BtbLabelActivity.EXTRA_BTB_JSON,
-                                            BtbLabelUtils.encode(btb)
-                                        )
-                                    }
-                                )
+                                // Penerbitan label adalah bagian dari modul BTB.
+                                // Tangani kegagalan Activity agar tidak membuat aplikasi crash.
+                                try {
+                                    context.startActivity(
+                                        Intent(context, BtbLabelActivity::class.java).apply {
+                                            putExtra(
+                                                BtbLabelActivity.EXTRA_BTB_JSON,
+                                                BtbLabelUtils.encode(btb)
+                                            )
+                                        }
+                                    )
+                                } catch (e: Exception) {
+                                    Toast.makeText(
+                                        context,
+                                        "Label BTB tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}",
+                                        Toast.LENGTH_LONG
+                                    ).show()
+                                }
                             }) {
                                 Icon(Icons.Default.Share, contentDescription = "Terbitkan Label", tint = Color(0xFF6A1B9A))
                             }
