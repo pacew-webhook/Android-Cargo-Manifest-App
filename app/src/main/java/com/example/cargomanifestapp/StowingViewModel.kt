@@ -98,6 +98,48 @@ class StowingViewModel : ViewModel() {
     fun isBtbAlreadyUsed(id: String): Boolean =
         id.isNotBlank() && (id in usedBtbReferenceIds || id == pendingBtbReferenceId)
 
+    /**
+     * Refresh daftar BTB dan status BTB yang sudah dipakai di Stowing Cargo.
+     * Dipanggil saat layar dibuka dan saat tombol Ambil Data BTB ditekan.
+     */
+    fun refreshBtbReferences() {
+        loadBtbReferences()
+    }
+
+    /**
+     * Menerapkan BTB ke form Stowing. BTB belum dianggap selesai pada tahap ini.
+     * Status baru menjadi USED setelah operator menekan Simpan.
+     *
+     * @return false jika BTB sudah pernah dimasukkan ke Stowing Cargo.
+     */
+    fun applyBtbReference(btb: BtbFormData): Boolean {
+        val id = btb.id.trim()
+        if (id.isBlank() || isBtbAlreadyUsed(id)) return false
+
+        if (btb.customerName.isNotBlank()) updateCustomer(btb.customerName)
+        if (btb.jenisBarang.isNotBlank()) updateDescription(btb.jenisBarang)
+        if (btb.daftarTimbangan.isNotEmpty()) {
+            currentKgEntries.addAll(btb.daftarTimbangan)
+        }
+
+        // Tandai sebagai pending. Belum permanen sampai Save berhasil.
+        pendingBtbReferenceId = id
+        persistDraft()
+        return true
+    }
+
+    /** Menjadikan BTB pending sebagai BTB yang sudah masuk Stowing Cargo. */
+    private fun markPendingBtbAsUsed(context: Context) {
+        val id = pendingBtbReferenceId?.trim().orEmpty()
+        if (id.isBlank()) return
+
+        if (id !in usedBtbReferenceIds) {
+            usedBtbReferenceIds.add(id)
+            saveUsedBtbReferenceIds(context)
+        }
+        pendingBtbReferenceId = null
+    }
+
     private fun cargoKey(item: CargoItem): String =
         listOf(item.noPag, item.customer, item.description, item.pti)
             .joinToString("\u001F") { it.trim().uppercase() }
