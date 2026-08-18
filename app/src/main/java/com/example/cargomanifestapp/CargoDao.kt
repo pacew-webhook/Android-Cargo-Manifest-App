@@ -25,6 +25,35 @@ interface CargoDao {
     @Delete
     suspend fun deleteCargo(cargo: CargoItem)
 
+    /**
+     * Mencari baris Manifest yang sebelumnya dibuat dari data Stowing.
+     * Semua field utama Stowing dibandingkan agar saat edit data tidak membuat
+     * baris Manifest baru/duplikat.
+     */
+    @Query(
+        """
+        SELECT * FROM cargo_table
+        WHERE pti = :pti
+          AND pcsQty = :pcsQty
+          AND weight = :weight
+          AND subTotal = :subTotal
+          AND description = :description
+          AND customer = :customer
+          AND noPag = :noPag
+        ORDER BY id DESC
+        LIMIT 1
+        """
+    )
+    suspend fun findExactCargo(
+        pti: String,
+        pcsQty: String,
+        weight: String,
+        subTotal: String,
+        description: String,
+        customer: String,
+        noPag: String
+    ): CargoItem?
+
     @Query("DELETE FROM cargo_table")
     suspend fun deleteAllCargo()
 }

@@ -1023,18 +1023,116 @@ class StowingViewModel : ViewModel() {
         )
 
         val index = editingIndex
+        val oldItem = if (index != null && index in cargoList.indices) {
+            cargoList[index]
+        } else {
+            null
+        }
+
         if (index != null && index in cargoList.indices) {
             cargoList[index] = newItem
-            onSuccess("Data berhasil diperbarui!")
         } else {
             // V9: data baru selalu ditambahkan ke AKHIR daftar.
             // Dengan begitu data lama hasil Import tetap berada di atas
             // dan data baru akan menjadi baris baru di bawahnya saat Export Manifest.
             cargoList.add(newItem)
-            onSuccess("Data berhasil disimpan!")
         }
+
         saveCargoListToPrefs(context)
         resetForm()
+
+        // Satu input Stowing juga langsung disalin ke tabel data Manifest
+        // (Room: cargo_table). Saat edit, baris lama dicari berdasarkan isi
+        // data sebelumnya agar tidak membuat duplikat.
+        syncStowingToManifest(
+            context = context,
+            oldItem = oldItem,
+            newItem = newItem,
+            onSuccess = {
+                onSuccess(
+                    if (oldItem != null) {
+                        "Data berhasil diperbarui! Data juga diperbarui di Tabel Manifest."
+                    } else {
+                        "Data berhasil disimpan! Data juga masuk ke Tabel Manifest."
+                    }
+                )
+            },
+            onError = { error ->
+                // Data Stowing lokal tetap tersimpan. Hanya sinkronisasi ke
+                // tabel Manifest yang gagal.
+                onError(
+                    "Data Stowing berhasil disimpan, tetapi gagal menyalin ke Tabel Manifest.\n$error"
+                )
+            }
+        )
+    }
+
+    /**
+     * Sinkronisasi satu item Stowing -> tabel data Manifest.
+     *
+     * Mapping:
+     * - PTI        -> PTI
+     * - jumlah KG  -> Pcs / Qty
+     * - rincian KG -> Pcs/Qty Wt
+     * - total KG   -> Sub Total (Kg)
+     * - Description -> Description
+     * - Customer    -> Customer
+     * - NO PAG      -> NO PAG
+     *
+     * AWB dan Flight tidak diisi dari Stowing karena form Stowing memang
+     * tidak memiliki kedua field tersebut.
+     */
+    private fun syncStowingToManifest(
+        context: Context,
+        oldItem: CargoItem?,
+        newItem: CargoItem,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val dao = CargoDatabase.getDatabase(context).cargoDao()
+
+                val existing = if (oldItem != null) {
+                    dao.findExactCargo(
+                        pti = oldItem.pti,
+                        pcsQty = oldItem.pcsQty,
+                        weight = oldItem.weight,
+                        subTotal = oldItem.subTotal,
+                        description = oldItem.description,
+                        customer = oldItem.customer,
+                        noPag = oldItem.noPag
+                    )
+                } else {
+                    null
+                }
+
+                if (existing != null) {
+                    // Jangan menghapus AWB/Flight yang mungkin sudah ada pada
+                    // baris Manifest hasil import. Yang diubah hanya field Stowing.
+                    dao.updateCargo(
+                        newItem.copy(
+                            id = existing.id,
+                            awbNo = existing.awbNo,
+                            flightNo = existing.flightNo
+                        )
+                    )
+                } else {
+                    dao.insertCargo(newItem.copy(id = 0L))
+                }
+
+                withContext(Dispatchers.Main) {
+                    onSuccess()
+                }
+            } catch (t: Throwable) {
+                withContext(Dispatchers.Main) {
+                    onError(
+                        t.message?.takeIf { it.isNotBlank() }
+                            ?: t.javaClass.simpleName
+                    )
+                }
+            }
+        }
     }
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {
