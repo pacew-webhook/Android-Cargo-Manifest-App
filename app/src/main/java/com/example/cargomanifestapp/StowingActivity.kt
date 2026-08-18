@@ -552,7 +552,7 @@ fun StowingInputScreen(
                                         showBtbPicker = false
                                         Toast.makeText(
                                             context,
-                                            "Data BTB ${btb.customerName} berhasil diambil ke Form Stowing. Tekan Simpan untuk menandai BTB sudah masuk Stowing Cargo.",
+                                            "Data BTB ${btb.trademarks.ifBlank { "TRADEMARKS" }} berhasil diambil ke Form Stowing. Tekan Simpan untuk menandai BTB sudah masuk Stowing Cargo.",
                                             Toast.LENGTH_LONG
                                         ).show()
                                     } else {
@@ -566,7 +566,7 @@ fun StowingInputScreen(
                             ) {
                                 Column(modifier = Modifier.padding(12.dp)) {
                                     Text(
-                                        btb.customerName.ifBlank { "CUSTOMER" },
+                                        btb.trademarks.ifBlank { "TRADEMARKS" },
                                         fontWeight = FontWeight.Bold,
                                         color = if (btbAlreadyUsed) Color(0xFF2E7D32) else Color(0xFF381E72)
                                     )
