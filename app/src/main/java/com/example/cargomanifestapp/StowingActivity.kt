@@ -55,19 +55,6 @@ class StowingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Jika dibuka dari BTB, isi Form Stowing dengan data BTB.
-        // NO PAG sengaja dibiarkan kosong agar operator mengisinya di Stowing.
-        val btbJson = intent.getStringExtra(EXTRA_BTB_TO_STOWING)
-        val btbData = btbJson?.let { runCatching { BtbLabelUtils.decode(it) }.getOrNull() }
-        if (btbData != null) {
-            stowingViewModel.applyBtbToStowing(
-                btbCustomer = btbData.customerName,
-                btbDescription = btbData.jenisBarang,
-                btbWeights = btbData.daftarTimbangan
-            )
-        }
-
         setContent {
             MaterialTheme {
                 Surface(
@@ -78,10 +65,6 @@ class StowingActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    companion object {
-        const val EXTRA_BTB_TO_STOWING = "extra_btb_to_stowing"
     }
 }
 
@@ -98,6 +81,11 @@ fun StowingInputScreen(
     val descriptionFocusRequester = remember { FocusRequester() }
     val ptiFocusRequester = remember { FocusRequester() }
     val kgFocusRequester = remember { FocusRequester() }
+    var showBtbPicker by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        viewModel.refreshBtbReferences()
+    }
 
     fun closeAllDropdowns() {
         viewModel.updateExpandedPag(false)
@@ -528,6 +516,82 @@ fun StowingInputScreen(
         )
     }
 
+    if (showBtbPicker) {
+        AlertDialog(
+            onDismissRequest = { showBtbPicker = false },
+            title = {
+                Text(
+                    "Ambil Data BTB",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF381E72)
+                )
+            },
+            text = {
+                if (viewModel.btbReferenceList.isEmpty()) {
+                    Text("Belum ada data BTB tersimpan. Simpan BTB terlebih dahulu.")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 420.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = viewModel.btbReferenceList,
+                            key = { it.id }
+                        ) { btb ->
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = Color(0xFFF3EDF7)),
+                                onClick = {
+                                    viewModel.applyBtbReference(btb)
+                                    showBtbPicker = false
+                                    Toast.makeText(
+                                        context,
+                                        "Data BTB ${btb.customerName} berhasil diambil ke Stowing",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        btb.customerName.ifBlank { "CUSTOMER" },
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF381E72)
+                                    )
+                                    Text(
+                                        "${btb.jenisBarang.ifBlank { "-" }} | ${btb.jumlahKoli} Koli | Total ${btb.totalBerat.toCleanString()} KG",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                    if (btb.daftarTimbangan.isNotEmpty()) {
+                                        Text(
+                                            "Rincian: ${btb.daftarTimbangan.joinToString(" + ") { it.toCleanString() }} KG",
+                                            fontSize = 11.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                    if (btb.hariTanggal.isNotBlank()) {
+                                        Text(
+                                            "Tgl BTB: ${btb.hariTanggal}",
+                                            fontSize = 10.sp,
+                                            color = Color.Gray
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showBtbPicker = false }) {
+                    Text("Tutup")
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -901,6 +965,20 @@ fun StowingInputScreen(
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("+ KG")
                     }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        viewModel.refreshBtbReferences()
+                        showBtbPicker = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF381E72)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF381E72))
+                ) {
+                    Text("📋 Ambil Data BTB", fontWeight = FontWeight.Bold)
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))

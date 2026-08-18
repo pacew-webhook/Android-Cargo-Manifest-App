@@ -19,7 +19,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -84,6 +83,50 @@ fun BtbScreen(onBackClick: () -> Unit) {
     val photoUris = remember { mutableStateListOf<Uri>() }
 
     val savedBtbList = remember { mutableStateListOf<BtbFormData>() }
+
+    fun persistBtbReferenceList(list: List<BtbFormData>) {
+        val array = org.json.JSONArray()
+        list.forEach { btb ->
+            array.put(org.json.JSONObject().apply {
+                put("id", btb.id)
+                put("hariTanggal", btb.hariTanggal)
+                put("customerName", btb.customerName)
+                put("trademarks", btb.trademarks)
+                put("jenisBarang", btb.jenisBarang)
+                put("weights", org.json.JSONArray().apply { btb.daftarTimbangan.forEach { put(it) } })
+            })
+        }
+        context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+            .edit().putString("items", array.toString()).apply()
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            val raw = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+                .getString("items", "[]") ?: "[]"
+            val array = org.json.JSONArray(raw)
+            savedBtbList.clear()
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val weights = mutableListOf<Double>()
+                val weightsArray = obj.optJSONArray("weights")
+                if (weightsArray != null) {
+                    for (j in 0 until weightsArray.length()) {
+                        val value = weightsArray.optDouble(j, Double.NaN)
+                        if (value.isFinite() && value > 0.0) weights.add(value)
+                    }
+                }
+                savedBtbList.add(BtbFormData(
+                    id = obj.optString("id"),
+                    hariTanggal = obj.optString("hariTanggal"),
+                    customerName = obj.optString("customerName"),
+                    trademarks = obj.optString("trademarks"),
+                    jenisBarang = obj.optString("jenisBarang"),
+                    daftarTimbangan = weights
+                ))
+            }
+        }
+    }
     var editingId by remember { mutableStateOf<String?>(null) }
     var showExportMenu by remember { mutableStateOf(false) }
 
@@ -388,6 +431,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 } else {
                                     savedBtbList.add(formData)
                                 }
+                                persistBtbReferenceList(savedBtbList)
 
                                 resetForm()
                                 customerFocus.requestFocus()
@@ -430,33 +474,6 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
                         Row {
-                            // Kirim data BTB langsung ke Form Stowing.
-                            // NO PAG sengaja tidak dikirim karena diisi operator di Form Stowing.
-                            IconButton(onClick = {
-                                try {
-                                    context.startActivity(
-                                        Intent(context, StowingActivity::class.java).apply {
-                                            putExtra(
-                                                StowingActivity.EXTRA_BTB_TO_STOWING,
-                                                BtbLabelUtils.encode(btb)
-                                            )
-                                        }
-                                    )
-                                } catch (e: Exception) {
-                                    Toast.makeText(
-                                        context,
-                                        "Form Stowing tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}",
-                                        Toast.LENGTH_LONG
-                                    ).show()
-                                }
-                            }) {
-                                Icon(
-                                    Icons.Default.ArrowForward,
-                                    contentDescription = "Kirim ke Stowing",
-                                    tint = Color(0xFF2E7D32)
-                                )
-                            }
-
                             IconButton(onClick = {
                                 customerName = btb.customerName
                                 trademarks = btb.trademarks
@@ -495,6 +512,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
 
                             IconButton(onClick = {
                                 savedBtbList.remove(btb)
+                                persistBtbReferenceList(savedBtbList)
                                 if (editingId == btb.id) resetForm()
                             }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color.Red)

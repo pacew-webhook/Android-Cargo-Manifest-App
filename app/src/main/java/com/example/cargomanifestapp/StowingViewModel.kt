@@ -13,6 +13,7 @@ import org.json.JSONObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Job
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.WorkbookFactory
 
@@ -26,8 +27,10 @@ class StowingViewModel : ViewModel() {
     // alur input yang sudah ada.
     private var attachedContext: Context? = null
     private var draftLoaded = false
+    private var btbReferenceLoaded = false
     private var editingOriginalKey: String? = null
     val currentPhotoUris = mutableStateListOf<String>()
+    val btbReferenceList = mutableStateListOf<BtbFormData>()
 
     fun attachContext(context: Context) {
         if (attachedContext == null) attachedContext = context.applicationContext
@@ -35,6 +38,64 @@ class StowingViewModel : ViewModel() {
             draftLoaded = true
             loadDraft()
         }
+        if (!btbReferenceLoaded) {
+            btbReferenceLoaded = true
+            loadBtbReferences()
+        }
+    }
+
+    private fun loadBtbReferences() {
+        val context = attachedContext ?: return
+        runCatching {
+            val raw = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
+                .getString("items", "[]") ?: "[]"
+            val array = JSONArray(raw)
+            btbReferenceList.clear()
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val weights = mutableListOf<Double>()
+                val weightsArray = obj.optJSONArray("weights")
+                if (weightsArray != null) {
+                    for (j in 0 until weightsArray.length()) {
+                        val value = weightsArray.optDouble(j, Double.NaN)
+                        if (value.isFinite() && value > 0.0) weights.add(value)
+                    }
+                }
+                btbReferenceList.add(
+                    BtbFormData(
+                        id = obj.optString("id"),
+                        hariTanggal = obj.optString("hariTanggal"),
+                        customerName = obj.optString("customerName"),
+                        trademarks = obj.optString("trademarks"),
+                        jenisBarang = obj.optString("jenisBarang"),
+                        daftarTimbangan = weights
+                    )
+                )
+            }
+        }
+    }
+
+    fun refreshBtbReferences() {
+        loadBtbReferences()
+    }
+
+    /**
+     * Mengambil BTB sebagai referensi ke Form Stowing.
+     * NO PAG sengaja tidak disentuh karena PAG ditentukan operator.
+     * Jika rincian KG masih kosong, daftar BTB menjadi rincian aktif.
+     * Jika sudah ada rincian manual, berat BTB ditambahkan agar data lama tidak hilang.
+     */
+    fun applyBtbReference(btb: BtbFormData) {
+        if (btb.customerName.isNotBlank()) updateCustomer(btb.customerName)
+        if (btb.jenisBarang.isNotBlank()) updateDescription(btb.jenisBarang)
+        if (btb.daftarTimbangan.isNotEmpty()) {
+            if (currentKgEntries.isEmpty()) {
+                currentKgEntries.addAll(btb.daftarTimbangan)
+            } else {
+                currentKgEntries.addAll(btb.daftarTimbangan)
+            }
+        }
+        persistDraft()
     }
 
     private fun cargoKey(item: CargoItem): String =
@@ -1040,37 +1101,6 @@ class StowingViewModel : ViewModel() {
      * bersihkan state lama, lalu masukkan satu per satu ke SnapshotStateList.
      * Cara ini menjaga jumlah dan urutan item tetap sama dengan hasil scan.
      */
-    /**
-     * Mengisi Form Stowing dari data BTB yang sudah dikonfirmasi operator.
-     *
-     * NO PAG dan PTI tidak diambil dari BTB:
-     * - NO PAG tetap wajib diisi operator di Form Stowing.
-     * - PTI tetap mengikuti mekanisme input/saran PTI yang sudah ada.
-     *
-     * Customer, Description dan seluruh rincian berat dipindahkan apa adanya.
-     */
-    fun applyBtbToStowing(
-        btbCustomer: String,
-        btbDescription: String,
-        btbWeights: List<Double>
-    ): Int {
-        customer = btbCustomer.trim()
-        description = btbDescription.trim().uppercase()
-        noPag = ""
-        inputKg = ""
-
-        currentKgEntries.clear()
-        btbWeights
-            .asSequence()
-            .filter { it.isFinite() && it > 0.0 }
-            .forEach { currentKgEntries.add(it) }
-
-        lastScanImportedCount = currentKgEntries.count { it != null }
-        editingOriginalKey = null
-        persistDraft()
-        return lastScanImportedCount
-    }
-
     fun applyScannedWeights(weights: List<Double>): Int {
         val cleanWeights = weights
             .asSequence()
