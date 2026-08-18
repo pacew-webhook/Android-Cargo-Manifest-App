@@ -1040,6 +1040,37 @@ class StowingViewModel : ViewModel() {
      * bersihkan state lama, lalu masukkan satu per satu ke SnapshotStateList.
      * Cara ini menjaga jumlah dan urutan item tetap sama dengan hasil scan.
      */
+    /**
+     * Mengisi Form Stowing dari data BTB yang sudah dikonfirmasi operator.
+     *
+     * NO PAG dan PTI tidak diambil dari BTB:
+     * - NO PAG tetap wajib diisi operator di Form Stowing.
+     * - PTI tetap mengikuti mekanisme input/saran PTI yang sudah ada.
+     *
+     * Customer, Description dan seluruh rincian berat dipindahkan apa adanya.
+     */
+    fun applyBtbToStowing(
+        btbCustomer: String,
+        btbDescription: String,
+        btbWeights: List<Double>
+    ): Int {
+        customer = btbCustomer.trim()
+        description = btbDescription.trim().uppercase()
+        noPag = ""
+        inputKg = ""
+
+        currentKgEntries.clear()
+        btbWeights
+            .asSequence()
+            .filter { it.isFinite() && it > 0.0 }
+            .forEach { currentKgEntries.add(it) }
+
+        lastScanImportedCount = currentKgEntries.count { it != null }
+        editingOriginalKey = null
+        persistDraft()
+        return lastScanImportedCount
+    }
+
     fun applyScannedWeights(weights: List<Double>): Int {
         val cleanWeights = weights
             .asSequence()

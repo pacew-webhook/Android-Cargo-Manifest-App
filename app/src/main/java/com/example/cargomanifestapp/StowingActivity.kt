@@ -55,6 +55,19 @@ class StowingActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Jika dibuka dari BTB, isi Form Stowing dengan data BTB.
+        // NO PAG sengaja dibiarkan kosong agar operator mengisinya di Stowing.
+        val btbJson = intent.getStringExtra(EXTRA_BTB_TO_STOWING)
+        val btbData = btbJson?.let { runCatching { BtbLabelUtils.decode(it) }.getOrNull() }
+        if (btbData != null) {
+            stowingViewModel.applyBtbToStowing(
+                btbCustomer = btbData.customerName,
+                btbDescription = btbData.jenisBarang,
+                btbWeights = btbData.daftarTimbangan
+            )
+        }
+
         setContent {
             MaterialTheme {
                 Surface(
@@ -65,6 +78,10 @@ class StowingActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    companion object {
+        const val EXTRA_BTB_TO_STOWING = "extra_btb_to_stowing"
     }
 }
 
