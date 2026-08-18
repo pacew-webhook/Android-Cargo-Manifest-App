@@ -4,6 +4,10 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.LazyRow
@@ -22,6 +26,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -272,11 +277,15 @@ private fun CustomerPriorityDialog(
     onSave: (List<String>) -> Unit
 ) {
     val orderedCustomers = remember(customers, savedPriority) {
-        val known = customers.distinctBy { it.lowercase() }
+        val known = customers.distinctBy { it.trim().lowercase() }
         savedPriority.filter { saved -> known.any { it.equals(saved, ignoreCase = true) } } +
             known.filter { candidate -> savedPriority.none { it.equals(candidate, ignoreCase = true) } }
     }
     var order by remember(orderedCustomers) { mutableStateOf(orderedCustomers) }
+    var draggingIndex by remember { mutableStateOf(-1) }
+    var dragOffsetY by remember { mutableStateOf(0f) }
+    val density = LocalDensity.current
+    val reorderThresholdPx = with(density) { 56.dp.toPx() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -284,7 +293,7 @@ private fun CustomerPriorityDialog(
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                 Text(
-                    "Atur urutan Customer. Urutan ini hanya dipakai untuk baris Manifest saat Export Excel. Form Stowing tidak berubah.",
+                    "Tekan dan tahan Customer, lalu tarik ke atas atau bawah untuk mengatur prioritas. Urutan ini hanya dipakai untuk baris Manifest saat Export Excel. Form Stowing tidak berubah.",
                     fontSize = 13.sp, color = Color.Gray
                 )
                 Spacer(Modifier.height(10.dp))
@@ -292,28 +301,63 @@ private fun CustomerPriorityDialog(
                     Text("Belum ada Customer.", color = Color.Gray)
                 } else {
                     order.forEachIndexed { index, customer ->
+                        val isDragging = draggingIndex == index
                         Card(
-                            Modifier.fillMaxWidth().padding(vertical = 3.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 3.dp)
+                                .zIndex(if (isDragging) 1f else 0f)
+                                .then(
+                                    if (isDragging) Modifier.offset { IntOffset(0, dragOffsetY.toInt()) }
+                                    else Modifier
+                                )
+                                .pointerInput(order, index) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragStart = {
+                                            draggingIndex = index
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = -1
+                                            dragOffsetY = 0f
+                                        },
+                                        onDragEnd = {
+                                            draggingIndex = -1
+                                            dragOffsetY = 0f
+                                        },
+                                        onDrag = { change, dragAmount ->
+                                            change.consume()
+                                            if (draggingIndex != index) return@detectDragGesturesAfterLongPress
+
+                                            dragOffsetY += dragAmount.y
+                                            val threshold = reorderThresholdPx
+                                            if (dragOffsetY <= -threshold && index > 0) {
+                                                order = order.toMutableList().also { list ->
+                                                    val item = list.removeAt(index)
+                                                    list.add(index - 1, item)
+                                                }
+                                                draggingIndex = index - 1
+                                                dragOffsetY += threshold
+                                            } else if (dragOffsetY >= threshold && index < order.lastIndex) {
+                                                order = order.toMutableList().also { list ->
+                                                    val item = list.removeAt(index)
+                                                    list.add(index + 1, item)
+                                                }
+                                                draggingIndex = index + 1
+                                                dragOffsetY -= threshold
+                                            }
+                                        }
+                                    )
+                                },
                             shape = RoundedCornerShape(10.dp)
                         ) {
                             Row(
-                                Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                Text("☰", fontSize = 20.sp, modifier = Modifier.padding(end = 10.dp))
                                 Text("${index + 1}.", fontWeight = FontWeight.Bold, modifier = Modifier.width(28.dp))
                                 Text(customer, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                TextButton(
-                                    enabled = index > 0,
-                                    onClick = { order = order.toMutableList().also { list ->
-                                        val item = list.removeAt(index); list.add(index - 1, item)
-                                    } }
-                                ) { Text("↑") }
-                                TextButton(
-                                    enabled = index < order.lastIndex,
-                                    onClick = { order = order.toMutableList().also { list ->
-                                        val item = list.removeAt(index); list.add(index + 1, item)
-                                    } }
-                                ) { Text("↓") }
                             }
                         }
                     }
