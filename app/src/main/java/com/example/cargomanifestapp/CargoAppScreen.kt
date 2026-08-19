@@ -50,6 +50,7 @@ fun CargoAppScreen(
     var lootTargetKg by remember { mutableStateOf(viewModel.getLootTargetKg(context)) }
     var showLootTargetDialog by remember { mutableStateOf(false) }
     var showCustomerPriorityDialog by remember { mutableStateOf(false) }
+    var showBtbCheckDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
@@ -187,6 +188,15 @@ fun CargoAppScreen(
             ) { Text(if (isSendingToN8n) "Mengirim..." else "Kirim ke Laptop (n8n)", fontWeight = FontWeight.Bold) }
         }
 
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
+            onClick = { showBtbCheckDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Text("✓ Cek Data BTB", fontWeight = FontWeight.Bold)
+        }
+
         Spacer(Modifier.height(12.dp))
         Text("Data dari Form Stowing Cargo (${groups.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
         Spacer(Modifier.height(6.dp))
@@ -266,6 +276,13 @@ fun CargoAppScreen(
                 viewModel.updateManifestDetail(context, detail, edited)
                 selectedDetail = null
             }
+        )
+    }
+
+    if (showBtbCheckDialog) {
+        BtbCheckDialog(
+            context = context,
+            onDismiss = { showBtbCheckDialog = false }
         )
     }
 }
