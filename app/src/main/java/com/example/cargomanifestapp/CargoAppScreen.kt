@@ -1,6 +1,7 @@
 package com.example.cargomanifestapp
 
 import android.widget.Toast
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -26,6 +27,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -571,6 +573,9 @@ private fun ManifestEditDialog(
     }
     var inputKg by remember { mutableStateOf("") }
     var errorText by remember { mutableStateOf<String?>(null) }
+    // Pastikan setiap input angka KG tetap memberikan umpan balik getaran
+    // meskipun haptic keyboard bawaan tidak diteruskan pada perangkat tertentu.
+    val kgInputView = LocalView.current
 
     fun formatKg(value: Double): String =
         if (value % 1.0 == 0.0) value.toInt().toString() else value.toString()
@@ -617,8 +622,11 @@ private fun ManifestEditDialog(
                 ) {
                     OutlinedTextField(
                         value = inputKg,
-                        onValueChange = {
-                            inputKg = it
+                        onValueChange = { newValue ->
+                            if (newValue != inputKg) {
+                                kgInputView.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                            }
+                            inputKg = newValue
                             errorText = null
                         },
                         label = { Text("Input Berat (KG)") },
