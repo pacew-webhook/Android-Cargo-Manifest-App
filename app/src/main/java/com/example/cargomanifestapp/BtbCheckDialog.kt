@@ -453,7 +453,7 @@ fun BtbCheckDialog(
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        checkFormatKg(kg),
+                                        checkFormatKg(kg.toDouble()),
                                         color = Color(0xFF1B5E20),
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp
@@ -477,7 +477,7 @@ fun BtbCheckDialog(
                         Column {
                             Text("TOTAL INPUT", color = Color.White, fontSize = 11.sp)
                             Text(
-                                "${checkFormatKg(accepted.sum())} KG",
+                                "${checkFormatKg(accepted.sum().toDouble())} KG",
                                 color = Color.Yellow,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 16.sp
@@ -491,7 +491,7 @@ fun BtbCheckDialog(
                         Column(horizontalAlignment = Alignment.End) {
                             Text("TOTAL STOWING", color = Color.White, fontSize = 11.sp)
                             Text(
-                                "${checkFormatKg(expected.sum())} KG",
+                                "${checkFormatKg(expected.sum().toDouble())} KG",
                                 color = Color.Yellow,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 16.sp
