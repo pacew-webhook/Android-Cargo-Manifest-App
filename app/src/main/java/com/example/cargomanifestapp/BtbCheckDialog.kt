@@ -1,33 +1,33 @@
 package com.example.cargomanifestapp
 
 import android.content.Context
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.json.JSONArray
 import kotlin.math.floor
 
-private data class BtbCheckSource(
+/**
+ * Sumber pengecekan BUKAN data/foto BTB.
+ *
+ * Data diambil dari hasil yang sudah disimpan oleh Form Stowing Cargo
+ * pada SharedPreferences "stowing_prefs" -> "saved_cargo_list".
+ *
+ * Setiap CargoItem menyimpan daftar KG dalam field weight, misalnya:
+ * "7, 24, 21, 19, 25"
+ *
+ * Semua CargoItem dengan Customer + Description yang sama digabung
+ * mengikuti urutan data Stowing Cargo.
+ */
+private data class StowingCheckSource(
     val customer: String,
     val jenisBarang: String,
     val weights: List<Double>
@@ -38,40 +38,39 @@ private fun checkNormalize(text: String): String =
 
 private fun checkRoundWeight(weight: Double): Int = floor(weight + 0.5).toInt()
 
-private fun checkFormatKg(weight: Double): String =
-    if (weight % 1.0 == 0.0) weight.toInt().toString() else weight.toString()
-
-private fun loadBtbCheckSources(context: Context): List<BtbCheckSource> {
-    val raw = context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
-        .getString("items", "[]") ?: "[]"
+private fun loadStowingCheckSources(context: Context): List<StowingCheckSource> {
+    val raw = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+        .getString("saved_cargo_list", "[]") ?: "[]"
 
     val array = runCatching { JSONArray(raw) }.getOrElse { JSONArray() }
-
-    // Semua BTB dengan Customer + Jenis Barang yang sama digabung berurutan.
-    // Urutan mengikuti urutan BTB yang tersimpan di aplikasi.
     val grouped = linkedMapOf<String, MutableList<Double>>()
     val labels = linkedMapOf<String, Pair<String, String>>()
 
     for (i in 0 until array.length()) {
         val obj = array.optJSONObject(i) ?: continue
-        val customer = obj.optString("customerName").trim()
-        val jenis = obj.optString("jenisBarang").trim()
-        if (customer.isBlank()) continue
+        val customer = obj.optString("customer").trim()
+        val jenis = obj.optString("description").trim()
+        if (customer.isBlank() || jenis.isBlank()) continue
 
         val key = "${checkNormalize(customer)}|${checkNormalize(jenis)}"
-        val weights = obj.optJSONArray("weights") ?: JSONArray()
         val target = grouped.getOrPut(key) { mutableListOf() }
         labels.putIfAbsent(key, customer to jenis)
 
-        for (j in 0 until weights.length()) {
-            val value = weights.optDouble(j, Double.NaN)
-            if (value.isFinite() && value > 0.0) target.add(value)
-        }
+        // Form Stowing menyimpan weight sebagai daftar KG: "7, 24, 21..."
+        val weightText = obj.optString("weight")
+        weightText.split(",", ";", "\n")
+            .map { it.trim().replace(",", ".") }
+            .forEach { token ->
+                val value = token.toDoubleOrNull()
+                if (value != null && value.isFinite() && value > 0.0) {
+                    target.add(value)
+                }
+            }
     }
 
     return grouped.map { (key, weights) ->
         val label = labels[key] ?: ("" to "")
-        BtbCheckSource(label.first, label.second, weights)
+        StowingCheckSource(label.first, label.second, weights)
     }.filter { it.weights.isNotEmpty() }
 }
 
@@ -80,10 +79,11 @@ fun BtbCheckDialog(
     context: Context,
     onDismiss: () -> Unit
 ) {
-    val sources = remember { loadBtbCheckSources(context) }
+    // Setiap kali dialog dibuka, data dibaca ulang dari Form Stowing Cargo.
+    val sources = remember { loadStowingCheckSources(context) }
 
-    var selectedCustomer by remember { mutableStateOf(sources.firstOrNull()?.customer.orEmpty()) }
-    var selectedJenis by remember { mutableStateOf(sources.firstOrNull()?.jenisBarang.orEmpty()) }
+    var selectedCustomer by remember { mutableStateOf("") }
+    var selectedJenis by remember { mutableStateOf("") }
     var customerMenu by remember { mutableStateOf(false) }
     var jenisMenu by remember { mutableStateOf(false) }
 
@@ -95,6 +95,12 @@ fun BtbCheckDialog(
         sources.filter {
             checkNormalize(it.customer) == checkNormalize(selectedCustomer)
         }.map { it.jenisBarang }.distinctBy { checkNormalize(it) }
+    }
+
+    LaunchedEffect(Unit) {
+        if (selectedCustomer.isBlank()) {
+            selectedCustomer = customerOptions.firstOrNull().orEmpty()
+        }
     }
 
     LaunchedEffect(selectedCustomer) {
@@ -118,7 +124,7 @@ fun BtbCheckDialog(
     var successText by remember { mutableStateOf<String?>(null) }
 
     fun checkInput() {
-        val value = input.replace(",", ".").toDoubleOrNull()
+        val value = input.trim().replace(",", ".").toDoubleOrNull()
         if (value == null || !value.isFinite() || value <= 0.0) {
             errorText = "Masukkan KG yang valid."
             successText = null
@@ -126,7 +132,7 @@ fun BtbCheckDialog(
         }
 
         if (expected.isEmpty()) {
-            errorText = "Data BTB untuk Customer/Jenis Barang ini belum ada."
+            errorText = "Data KG dari Form Stowing Cargo belum ada untuk pilihan ini."
             successText = null
             return
         }
@@ -148,17 +154,15 @@ fun BtbCheckDialog(
             errorText = null
             successText = "✓ BENAR — Koli ${accepted.size}: $actual KG"
         } else {
-            // Nilai SALAH tidak pernah dimasukkan ke daftar accepted.
-            errorText = "✗ SALAH. Yang seharusnya: $target KG. $actual KG tidak dimasukkan."
+            // KG salah tidak pernah ditambahkan ke hasil pengecekan.
+            errorText = "✗ SALAH. Berikutnya harus $target KG. $actual KG ditolak."
             successText = null
         }
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text("Cek Data BTB", fontWeight = FontWeight.Bold)
-        },
+        title = { Text("Cek Data BTB", fontWeight = FontWeight.Bold) },
         text = {
             Column(
                 Modifier
@@ -167,22 +171,22 @@ fun BtbCheckDialog(
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    "BTB yang sudah tersimpan digabung berdasarkan Customer + Jenis Barang. Input harus mengikuti urutan BTB.",
+                    "Data KG diambil dari Form Stowing Cargo yang sudah disimpan. " +
+                        "Foto BTB hanya menjadi acuan. Input harus mengikuti urutan KG Stowing.",
                     fontSize = 12.sp,
                     color = Color.Gray
                 )
 
                 Spacer(Modifier.height(10.dp))
 
-                // Customer
                 Box {
                     OutlinedButton(
                         onClick = { customerMenu = true },
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = customerOptions.isNotEmpty()
                     ) {
                         Text(
-                            if (selectedCustomer.isBlank()) "Pilih Customer"
-                            else selectedCustomer,
+                            if (selectedCustomer.isBlank()) "Pilih Customer" else selectedCustomer,
                             modifier = Modifier.weight(1f)
                         )
                         Text("▼")
@@ -209,7 +213,6 @@ fun BtbCheckDialog(
 
                 Spacer(Modifier.height(6.dp))
 
-                // Jenis Barang
                 Box {
                     OutlinedButton(
                         onClick = { jenisMenu = true },
@@ -217,8 +220,7 @@ fun BtbCheckDialog(
                         enabled = jenisOptions.isNotEmpty()
                     ) {
                         Text(
-                            if (selectedJenis.isBlank()) "Pilih Jenis Barang"
-                            else selectedJenis,
+                            if (selectedJenis.isBlank()) "Pilih Jenis Barang" else selectedJenis,
                             modifier = Modifier.weight(1f)
                         )
                         Text("▼")
@@ -229,7 +231,7 @@ fun BtbCheckDialog(
                     ) {
                         jenisOptions.forEach { jenis ->
                             DropdownMenuItem(
-                                text = { Text(jenis.ifBlank { "Tanpa Jenis Barang" }) },
+                                text = { Text(jenis) },
                                 onClick = {
                                     selectedJenis = jenis
                                     jenisMenu = false
@@ -245,14 +247,27 @@ fun BtbCheckDialog(
 
                 Spacer(Modifier.height(10.dp))
 
-                if (expected.isEmpty()) {
+                if (sources.isEmpty()) {
                     Surface(
                         color = Color(0xFFFFEBEE),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            "BTB tidak ditemukan untuk pilihan ini.",
+                            "Data Stowing Cargo belum ditemukan. Simpan data dari Form Stowing Cargo terlebih dahulu.",
+                            modifier = Modifier.padding(10.dp),
+                            color = Color(0xFFB00020),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                } else if (expected.isEmpty()) {
+                    Surface(
+                        color = Color(0xFFFFEBEE),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            "Data KG tidak ditemukan untuk Customer + Jenis Barang ini.",
                             modifier = Modifier.padding(10.dp),
                             color = Color(0xFFB00020),
                             fontWeight = FontWeight.Bold
@@ -260,212 +275,101 @@ fun BtbCheckDialog(
                     }
                 } else {
                     Text(
-                        "URUTAN BTB: ${accepted.size}/${expected.size} KOLI",
+                        "Urutan KG Stowing (${expected.size} Koli):",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
-
                     Spacer(Modifier.height(6.dp))
-
-                    // Semua posisi urutan ditampilkan:
-                    // hijau = sudah benar, kuning = posisi berikutnya,
-                    // abu-abu = belum dicek.
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(5),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 180.dp),
-                        horizontalArrangement = Arrangement.spacedBy(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        itemsIndexed(expected) { index, kg ->
-                            val isAccepted = index < accepted.size
-                            val isNext = index == accepted.size
-
-                            val bg = when {
-                                isAccepted -> Color(0xFFC8E6C9)
-                                isNext -> Color(0xFFFFF3CD)
-                                else -> Color(0xFFEDE7F6)
-                            }
-                            val fg = when {
-                                isAccepted -> Color(0xFF1B5E20)
-                                isNext -> Color(0xFF8A5A00)
-                                else -> Color(0xFF49454F)
-                            }
-
-                            Box(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .background(bg, RoundedCornerShape(6.dp))
-                                    .padding(vertical = 7.dp, horizontal = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.Center
-                                ) {
-                                    if (isAccepted) {
-                                        Icon(
-                                            Icons.Default.CheckCircle,
-                                            contentDescription = "Benar",
-                                            tint = Color(0xFF2E7D32),
-                                            modifier = Modifier.size(14.dp)
-                                        )
-                                        Spacer(Modifier.width(2.dp))
-                                    }
-                                    Text(
-                                        "${index + 1}. $kg",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = fg
-                                    )
-                                }
-                            }
-                        }
-                    }
+                    Text(
+                        expected.joinToString(" → "),
+                        fontSize = 13.sp
+                    )
 
                     Spacer(Modifier.height(10.dp))
 
                     OutlinedTextField(
                         value = input,
-                        onValueChange = {
-                            input = it
-                            errorText = null
-                            successText = null
-                        },
-                        label = { Text("Input Berat (KG)") },
-                        placeholder = {
-                            Text(
-                                if (accepted.size < expected.size)
-                                    "Berikutnya: ${expected[accepted.size]} KG"
-                                else
-                                    "Selesai"
-                            )
-                        },
+                        onValueChange = { input = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Input KG") },
                         singleLine = true,
-                        isError = errorText != null,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Decimal,
-                            imeAction = ImeAction.Done
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                            keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal
                         ),
-                        keyboardActions = KeyboardActions(onDone = { checkInput() }),
-                        modifier = Modifier.fillMaxWidth()
+                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            onDone = { checkInput() }
+                        )
                     )
 
-                    Spacer(Modifier.height(6.dp))
+                    Spacer(Modifier.height(8.dp))
 
                     Button(
                         onClick = { checkInput() },
-                        enabled = expected.isNotEmpty() && accepted.size < expected.size,
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = Color(0xFF381E72)
-                        )
+                        enabled = accepted.size < expected.size
                     ) {
-                        Text("CEK + INPUT", fontWeight = FontWeight.Bold)
+                        Text("✓ Cek KG")
                     }
 
                     successText?.let {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         Surface(
                             color = Color(0xFFE8F5E9),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                Modifier.padding(9.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.CheckCircle,
-                                    contentDescription = null,
-                                    tint = Color(0xFF2E7D32),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    it,
-                                    color = Color(0xFF2E7D32),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
+                            Text(
+                                it,
+                                modifier = Modifier.padding(10.dp),
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
                     errorText?.let {
-                        Spacer(Modifier.height(6.dp))
+                        Spacer(Modifier.height(8.dp))
                         Surface(
                             color = Color(0xFFFFEBEE),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Row(
-                                Modifier.padding(9.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    Icons.Default.Close,
-                                    contentDescription = null,
-                                    tint = Color(0xFFB00020),
-                                    modifier = Modifier.size(18.dp)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text(
-                                    it,
-                                    color = Color(0xFFB00020),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp
-                                )
-                            }
+                            Text(
+                                it,
+                                modifier = Modifier.padding(10.dp),
+                                color = Color(0xFFB00020),
+                                fontWeight = FontWeight.Bold
+                            )
                         }
                     }
 
-                    Spacer(Modifier.height(8.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "Sudah dicek: ${accepted.size}/${expected.size} Koli",
+                        fontWeight = FontWeight.Bold
+                    )
 
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .background(
-                                Color(0xFF381E72),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(10.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column {
-                            Text("SUDAH BENAR", color = Color.White, fontSize = 11.sp)
-                            Text(
-                                "${accepted.size} KOLI",
-                                color = Color.Yellow,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.End) {
-                            Text("SISA", color = Color.White, fontSize = 11.sp)
-                            Text(
-                                "${(expected.size - accepted.size).coerceAtLeast(0)} KOLI",
-                                color = Color.Yellow,
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 16.sp
-                            )
-                        }
+                    if (accepted.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            accepted.joinToString(" → "),
+                            color = Color(0xFF2E7D32),
+                            fontWeight = FontWeight.Bold
+                        )
                     }
 
                     if (accepted.size == expected.size) {
-                        Spacer(Modifier.height(8.dp))
+                        Spacer(Modifier.height(10.dp))
                         Surface(
-                            color = Color(0xFFC8E6C9),
+                            color = Color(0xFFE8F5E9),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Text(
                                 "✓ SEMUA DATA BTB SUDAH COCOK",
                                 modifier = Modifier.padding(10.dp),
-                                color = Color(0xFF1B5E20),
-                                fontWeight = FontWeight.ExtraBold,
-                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                color = Color(0xFF2E7D32),
+                                fontWeight = FontWeight.Bold
                             )
                         }
                     }
@@ -473,9 +377,7 @@ fun BtbCheckDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Tutup")
-            }
+            TextButton(onClick = onDismiss) { Text("Tutup") }
         }
     )
 }
