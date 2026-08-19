@@ -149,7 +149,7 @@ fun BtbCheckDialog(
             accepted = accepted + actual
             input = ""
             errorText = null
-            successText = "✓ BENAR — Koli ${accepted.size}: $actual KG"
+            successText = "✓ BENAR — $actual KG"
         } else {
             // Nilai SALAH tidak pernah dimasukkan ke daftar accepted.
             errorText = "✗ SALAH. Berikutnya harus $target KG. $actual KG tidak dimasukkan."
@@ -263,7 +263,7 @@ fun BtbCheckDialog(
                     }
                 } else {
                     Text(
-                        "URUTAN KG STOWING: ${accepted.size}/${expected.size} KOLI",
+                        "KG STOWING: ${accepted.size}/${expected.size} KOLI",
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp
                     )
@@ -317,7 +317,7 @@ fun BtbCheckDialog(
                                         Spacer(Modifier.width(2.dp))
                                     }
                                     Text(
-                                        "${index + 1}. $kg",
+                                        "$kg KG",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = fg
