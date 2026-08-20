@@ -46,7 +46,10 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToManifestSearch = {
                                     currentScreen = Screen.MANIFEST_SEARCH
                                 },
-                                onNavigateToFlightTracking = { currentScreen = Screen.FLIGHT_TRACKING }
+                                onNavigateToFlightTracking = {
+                                    val intent = Intent(context, FlightTrackingActivity::class.java)
+                                    context.startActivity(intent)
+                                }
                             )
                         }
                         Screen.MANIFEST_CARGO -> {
@@ -57,9 +60,6 @@ class MainActivity : ComponentActivity() {
                         }
                         Screen.MANIFEST_SEARCH -> {
                             ManifestSearchScreen(onBack = { currentScreen = Screen.MAIN_MENU })
-                        }
-                        Screen.FLIGHT_TRACKING -> {
-                            FlightTrackingScreen(onBack = { currentScreen = Screen.MAIN_MENU })
                         }
                         // STOWING_PALLET dan BUKTI_TIMBANG tidak pernah di-set sebagai currentScreen
                         // (navigasinya lewat Intent/Activity terpisah, bukan state ini), jadi
@@ -78,7 +78,10 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToManifestSearch = {
                                     currentScreen = Screen.MANIFEST_SEARCH
                                 },
-                                onNavigateToFlightTracking = { currentScreen = Screen.FLIGHT_TRACKING }
+                                onNavigateToFlightTracking = {
+                                    val intent = Intent(context, FlightTrackingActivity::class.java)
+                                    context.startActivity(intent)
+                                }
                             )
                         }
                     }

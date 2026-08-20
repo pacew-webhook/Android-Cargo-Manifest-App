@@ -7,7 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.Flight
+import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
@@ -107,23 +107,24 @@ fun MainMenuScreen(
 
             // 2. Kartu Menu Ketiga: Bukti Timbang Barang
             MenuCard(
-                title = "Flight Tracking",
-                subtitle = "Lacak penerbangan melalui Flightradar24",
-                icon = Icons.Default.Flight,
-                iconBackgroundColor = Color(0xFFE0F2FE),
-                iconTintColor = Color(0xFF0369A1),
-                onClick = onNavigateToFlightTracking
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            MenuCard(
                 title = "Bukti Timbang Barang",
                 subtitle = "Kelola data timbangan, customer, & export BTB",
                 icon = Icons.Default.Edit,
                 iconBackgroundColor = Color(0xFFE8DEF8),
                 iconTintColor = Color(0xFF673AB7),
                 onClick = onNavigateToBuktiTimbang
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Flight Tracking berdiri sendiri dan tidak menjadi bagian dari form Cargo Manifest.
+            MenuCard(
+                title = "Flight Tracking",
+                subtitle = "Lacak penerbangan melalui Flightradar24 (opsional)",
+                icon = Icons.Default.FlightTakeoff,
+                iconBackgroundColor = Color(0xFFE3F2FD),
+                iconTintColor = Color(0xFF1565C0),
+                onClick = onNavigateToFlightTracking
             )
         }
     }
