@@ -59,6 +59,13 @@
             android:label="Terbitkan Label BTB"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
+        <!-- Flight Tracking terpisah dari seluruh workflow Cargo Manifest -->
+        <activity
+            android:name="com.example.cargomanifestapp.FlightTrackingActivity"
+            android:exported="false"
+            android:label="Flight Tracking"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- Provider untuk Berbagi File Excel -->
         <provider
             android:name="androidx.core.content.FileProvider"
