@@ -11,9 +11,10 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,6 +34,7 @@ class FlightTrackingActivity : ComponentActivity() {
 @Composable
 private fun FlightTrackingScreen(onBack: () -> Unit) {
     var flightNumber by remember { mutableStateOf("") }
+    val context = LocalContext.current
 
     Scaffold(
         topBar = {
@@ -95,10 +97,10 @@ private fun FlightTrackingScreen(onBack: () -> Unit) {
                         val uri = Uri.parse(
                             "https://www.flightradar24.com/data/flights/${Uri.encode(query)}"
                         )
-                        startActivityForFlightTracking(uri)
+                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
                     } else {
                         val uri = Uri.parse("https://www.flightradar24.com/data/flights")
-                        startActivityForFlightTracking(uri)
+                        context.startActivity(Intent(Intent.ACTION_VIEW, uri))
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -109,6 +111,3 @@ private fun FlightTrackingScreen(onBack: () -> Unit) {
     }
 }
 
-private fun ComponentActivity.startActivityForFlightTracking(uri: Uri) {
-    startActivity(Intent(Intent.ACTION_VIEW, uri))
-}
