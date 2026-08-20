@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Flight
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
@@ -26,7 +27,8 @@ fun MainMenuScreen(
     onNavigateToManifest: () -> Unit,
     onNavigateToStowing: () -> Unit,
     onNavigateToBuktiTimbang: () -> Unit,
-    onNavigateToManifestSearch: () -> Unit
+    onNavigateToManifestSearch: () -> Unit,
+    onNavigateToFlightTracking: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -104,6 +106,17 @@ fun MainMenuScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 2. Kartu Menu Ketiga: Bukti Timbang Barang
+            MenuCard(
+                title = "Flight Tracking",
+                subtitle = "Lacak penerbangan melalui Flightradar24",
+                icon = Icons.Default.Flight,
+                iconBackgroundColor = Color(0xFFE0F2FE),
+                iconTintColor = Color(0xFF0369A1),
+                onClick = onNavigateToFlightTracking
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             MenuCard(
                 title = "Bukti Timbang Barang",
                 subtitle = "Kelola data timbangan, customer, & export BTB",
