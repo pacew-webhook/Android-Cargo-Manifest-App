@@ -1,43 +1,43 @@
-<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+<!-- Dokumentasi ini menggunakan Bahasa Indonesia. -->
 
 # ANDROID_PROJECT_STATUS.md
 
 **Proyek:** Android Cargo Manifest App  
-**Status:** Existing Proyek — baseline audit  
-**Terakhir Diperbarui:** 21 August 2026
+**Status:** Proyek yang sudah ada — baseline audit  
+**Terakhir Diperbarui:** 21 Agustus 2026
 
-## 1. Saat Ini Baseline
+## 1. Baseline Saat Ini
 
-The uploaded Proyek contains:
+Proyek yang diunggah berisi:
 
-- Jetpack Compose UI;
-- multiple Activities;
-- Room databases for Cargo and Manifest Pencarian;
-- BTB entities/DAO/Repository;
-- Apache POI Excel processing;
-- CameraX + ML Kit OCR;
-- n8n client;
-- separate Flight Tracking Activity;
-- existing Manifest Pencarian;
-- bundled Excel templates.
+- UI Jetpack Compose;
+- beberapa Activity;
+- basis data Room untuk Cargo dan Pencarian Manifest;
+- Entity/DAO/Repository BTB;
+- pemrosesan Excel dengan Apache POI;
+- OCR CameraX + ML Kit;
+- client n8n;
+- Activity Flight Tracking terpisah;
+- fitur Pencarian Manifest yang sudah ada;
+- template Excel yang disertakan dalam aplikasi.
 
-## 2. Documentation Status
+## 2. Status Dokumentasi
 
-- [x] Android Pengembangan plan created
-- [x] Android Arsitektur documentation created
-- [x] Android Alur Kerja Spesifikasi created
-- [x] Android Pengembangan Aturan created
-- [x] Android Proyek Status created
-- [ ] Full final Arsitektur review
-- [ ] Build verification after restoring a complete Gradle wrapper
+- [x] Rencana Pengembangan Android dibuat
+- [x] Dokumentasi Arsitektur Android dibuat
+- [x] Spesifikasi Alur Kerja Android dibuat
+- [x] Aturan Pengembangan Android dibuat
+- [x] Status Proyek Android dibuat
+- [ ] Review final Arsitektur
+- [ ] Verifikasi Build setelah Gradle Wrapper lengkap
 
-## 3. Known Architectural Debt
+## 3. Utang Arsitektur yang Diketahui
 
-### Persistence duplication
+### Duplikasi Penyimpanan
 
-Room exists, but SharedPreferences are still used for structured operational state.
+Room sudah digunakan, tetapi SharedPreferences masih digunakan untuk beberapa state operasional yang terstruktur.
 
-Observed preference areas include:
+Area SharedPreferences yang teramati:
 
 ```text
 stowing_prefs
@@ -49,96 +49,96 @@ cargo_archive
 manifest_settings
 ```
 
-This does not mean they should all be deleted immediately.
+Ini tidak berarti semuanya harus langsung dihapus.
 
-Berikutnya step: map each preference to its Tujuan and decide:
+Langkah berikutnya: petakan setiap penggunaan berdasarkan Tujuannya, lalu tentukan:
 
 ```text
-Keep as setting
-Migrate to Room
-Replace with File storage
-Remove as obsolete
+Pertahankan sebagai pengaturan
+Migrasikan ke Room
+Ganti dengan penyimpanan File
+Hapus karena sudah tidak diperlukan
 ```
 
-### Multiple data stores
+### Banyak Penyimpanan Data
 
-The Proyek has separate Room databases:
+Proyek memiliki basis data Room terpisah:
 
 ```text
 CargoDatabase
 ManifestDatabase
 ```
 
-This is not automatically wrong, but it should be reviewed to ensure boundaries are intentional and queries do not require unnecessary synchronization between databases.
+Hal ini tidak otomatis salah, tetapi perlu ditinjau untuk memastikan batas tanggung jawabnya memang disengaja dan query tidak membutuhkan sinkronisasi yang tidak perlu antara kedua basis data.
 
-## 4. Saat Ini Fitur
+## 4. Fitur Saat Ini
 
-| Area | Present |
+| Area | Tersedia |
 |---|---|
-| Main Menu | Yes |
-| Manifest Cargo | Yes |
-| Stowing | Yes |
-| BTB | Yes |
-| Scale OCR | Yes |
-| BTB Label | Yes |
-| Manifest Pencarian | Yes |
-| Flight Tracking | Yes |
-| n8n integration | Yes |
-| Excel templates | Yes |
+| Menu Utama | Ya |
+| Manifest Cargo | Ya |
+| Stowing | Ya |
+| BTB | Ya |
+| OCR Timbangan | Ya |
+| Label BTB | Ya |
+| Pencarian Manifest | Ya |
+| Flight Tracking | Ya |
+| Integrasi n8n | Ya |
+| Template Excel | Ya |
 
-## 5. Build Verification
+## 5. Verifikasi Build
 
-The uploaded ZIP contains `gradlew`, but the Gradle wrapper JAR is not present in the archive.
+ZIP yang diunggah berisi `gradlew`, tetapi file JAR Gradle Wrapper tidak terdapat di dalam arsip.
 
-Therefore the Proyek could not be verified with:
+Karena itu proyek belum dapat diverifikasi dengan:
 
 ```text
 ./gradlew assembleDebug
 ```
 
-The attempted Build failed because:
+Percobaan Build gagal karena:
 
 ```text
 org.gradle.wrapper.GradleWrapperMain
 ```
 
-was unavailable.
+tidak tersedia.
 
-This is a Repository/package completeness issue, not evidence that the Kotlin source necessarily fails to compile.
+Ini merupakan masalah kelengkapan paket/repository, bukan bukti bahwa source code Kotlin pasti gagal dikompilasi.
 
-## 6. Immediate Berikutnya Steps
+## 6. Langkah Berikutnya
 
-1. Review this baseline documentation.
-2. Restore/verify a complete Gradle wrapper.
-3. Build the Saat Ini Proyek without functional changes.
-4. Record actual compiler/runtime errors.
-5. Map persistence usage.
-6. Decide the Room/SharedPreferences migration plan.
-7. Only then implement the Berikutnya requested Fitur.
+1. Review dokumentasi baseline ini.
+2. Lengkapi/verifikasi Gradle Wrapper.
+3. Build proyek saat ini tanpa perubahan fitur.
+4. Catat error compiler/runtime yang benar-benar muncul.
+5. Petakan seluruh penggunaan penyimpanan.
+6. Tentukan rencana migrasi Room/SharedPreferences.
+7. Setelah itu baru implementasikan fitur berikutnya yang diminta.
 
-## 7. Saat Ini Checkpoint
-
-```text
-SOURCE AUDIT        ✅
-DOCUMENTATION       ✅
-Build VERIFICATION  ⚠️ BLOCKED BY MISSING WRAPPER JAR
-Fitur Pengembangan ⏸️ WAITING FOR BASELINE Build
-```
-
-## 8. Resume Protocol
-
-When this Proyek is uploaded again:
+## 7. Checkpoint Saat Ini
 
 ```text
-Read ANDROID_PROJECT_STATUS.md
-        ↓
-Read relevant Spesifikasi
-        ↓
-Inspect source
-        ↓
-Verify Build
-        ↓
-Continue from Saat Ini checkpoint
+AUDIT SOURCE       ✅
+DOKUMENTASI        ✅
+VERIFIKASI BUILD   ⚠️ TERHAMBAT KARENA WRAPPER JAR TIDAK ADA
+PENGEMBANGAN FITUR ⏸️ MENUNGGU BUILD BASELINE
 ```
 
-Do not assume a Fitur is complete merely because its source File exists.
+## 8. Prosedur Melanjutkan Proyek
+
+Ketika proyek ini diunggah kembali:
+
+```text
+Baca ANDROID_PROJECT_STATUS.md
+        ↓
+Baca Spesifikasi yang relevan
+        ↓
+Periksa source code
+        ↓
+Verifikasi Build
+        ↓
+Lanjutkan dari checkpoint saat ini
+```
+
+Jangan menganggap sebuah fitur sudah selesai hanya karena file source-nya sudah ada.

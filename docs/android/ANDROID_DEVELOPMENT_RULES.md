@@ -1,134 +1,134 @@
-<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+<!-- Dokumentasi ini menggunakan Bahasa Indonesia. -->
 
 # ANDROID_DEVELOPMENT_RULES.md
 
 **Proyek:** Android Cargo Manifest App
 
-## 1. Source of Truth
+## 1. Sumber Kebenaran
 
-Before modifying code:
+Sebelum mengubah kode:
 
-1. Read the relevant Spesifikasi.
-2. Inspect the Saat Ini Kode Sumber.
-3. Confirm the actual Implementasi.
-4. Make the smallest safe change.
+1. Baca spesifikasi yang relevan.
+2. Periksa kode sumber yang benar-benar ada saat ini.
+3. Pastikan implementasi aktual.
+4. Lakukan perubahan terkecil yang aman.
 
-Do not code from memory or from an old ZIP.
+Jangan melakukan coding hanya berdasarkan ingatan atau ZIP lama.
 
-## 2. Build Before and After
+## 2. Build Sebelum dan Sesudah Perubahan
 
-For a meaningful code change:
+Untuk perubahan kode yang bermakna:
 
 ```text
-Saat Ini Build state
+Kondisi Build saat ini
     ↓
-Change
+Perubahan
     ↓
 Build
     ↓
-Test affected Fitur
+Uji fitur yang terdampak
 ```
 
-If the Proyek cannot Build because the Gradle wrapper/toolchain is incomplete, document that limitation instead of claiming a successful Build.
+Jika proyek tidak dapat di-Build karena Gradle Wrapper atau toolchain tidak lengkap, dokumentasikan keterbatasan tersebut. Jangan menyatakan Build berhasil jika belum benar-benar berhasil dijalankan.
 
-## 3. No Blind File Deletion
+## 3. Jangan Menghapus File Secara Sembarangan
 
-Do not delete a Kotlin File merely because another screen appears to replace it.
+Jangan menghapus file Kotlin hanya karena terlihat ada screen lain yang menggantikannya.
 
-Before deletion:
+Sebelum menghapus:
 
-- Pencarian references;
-- inspect Manifest registration;
-- inspect navigation;
-- confirm no imports/usages remain;
-- confirm the File is truly obsolete.
+- cari semua referensi;
+- periksa pendaftaran di Manifest;
+- periksa navigasi;
+- pastikan tidak ada import/penggunaan yang tersisa;
+- pastikan file tersebut benar-benar sudah tidak diperlukan.
 
-## 4. Data Storage Rule
+## 4. Aturan Penyimpanan Data
 
-Do not introduce or preserve duplicated persistence without a reason.
+Jangan menambahkan atau mempertahankan penyimpanan data ganda tanpa alasan yang jelas.
 
-Saat Ini Proyek has both Room and SharedPreferences. Treat migration as a deliberate Proyek task, not an automatic side effect of another Fitur.
+Saat ini proyek menggunakan Room dan SharedPreferences. Migrasi harus diperlakukan sebagai pekerjaan proyek yang disengaja, bukan sebagai efek samping dari pengerjaan fitur lain.
 
-## 5. Room Rule
+## 5. Aturan Room
 
-Room should be preferred for structured, queryable application data.
+Room harus diprioritaskan untuk data aplikasi yang terstruktur dan perlu dicari melalui query.
 
-SharedPreferences may remain for genuinely small settings until a documented migration is Selesai.
+SharedPreferences masih boleh digunakan untuk pengaturan kecil yang memang sesuai, sampai migrasi yang terdokumentasi selesai.
 
-## 6. UI State Rule
+## 6. Aturan State UI
 
-Temporary UI state should remain in UI/ViewModel state as appropriate.
+State UI sementara tetap dikelola pada UI/ViewModel sesuai kebutuhan.
 
-Important state that must survive configuration change/process recreation should have an explicit persistence strategy.
+State penting yang harus bertahan setelah perubahan konfigurasi atau proses aplikasi dibuat ulang harus memiliki strategi penyimpanan yang jelas.
 
-Do not assume `remember` alone is sufficient for durable state.
+Jangan menganggap `remember` saja sudah cukup untuk state yang harus bertahan lama.
 
-## 7. Latar Belakang Work Rule
+## 7. Aturan Pekerjaan di Latar Belakang
 
-Do not run heavy operations on the UI thread.
+Jangan menjalankan pekerjaan berat di UI thread.
 
-Examples:
+Contohnya:
 
-- Apache POI workbook processing;
-- large Excel imports/exports;
-- OCR processing;
-- large filesystem scans;
-- Basis Data operations;
-- network calls.
+- pemrosesan workbook Apache POI;
+- import/export Excel berukuran besar;
+- pemrosesan OCR;
+- pemindaian filesystem berukuran besar;
+- operasi basis data;
+- pemanggilan jaringan.
 
-## 8. Excel Safety
+## 8. Keamanan Excel
 
-Never modify the master Template accidentally.
+Jangan sampai Master Template berubah secara tidak sengaja.
 
-Never overwrite an existing Manifest without explicit approval.
+Jangan menimpa Manifest yang sudah ada tanpa persetujuan yang jelas.
 
-Read/Pencarian operations should be read-only.
+Operasi baca/pencarian harus bersifat read-only.
 
-## 9. Fitur Completion Rule
+## 9. Aturan Penyelesaian Fitur
 
-A Fitur is `[x] Selesai` only after:
+Sebuah fitur hanya boleh ditandai `[x] Selesai` setelah:
 
 ```text
-Kebutuhan clear
+Kebutuhan jelas
 ↓
 Implementasi
 ↓
 Build
 ↓
-Functional test
+Uji fungsional
 ↓
-Regression check
+Pemeriksaan regresi
 ↓
-Documentation update
+Dokumentasi diperbarui
 ```
 
-## 10. Ruang Lingkup Rule
+## 10. Aturan Ruang Lingkup
 
-Do not add unrelated Fitur while fixing a bug.
+Jangan menambahkan fitur yang tidak berhubungan saat sedang memperbaiki bug.
 
-Separate:
+Pisahkan dengan jelas:
 
-- bug fix;
+- perbaikan bug;
 - refactor;
-- Fitur;
-- optimization.
+- fitur;
+- optimasi.
 
-## 11. Documentation Rule
+## 11. Aturan Dokumentasi
 
-After a meaningful architectural or Alur Kerja change:
+Setelah perubahan arsitektur atau alur kerja yang bermakna:
 
-- update the relevant MD;
-- update `ANDROID_PROJECT_STATUS.md`;
-- record the reason when the change affects Arsitektur or Ruang Lingkup.
+- perbarui MD yang relevan;
+- perbarui `ANDROID_PROJECT_STATUS.md`;
+- catat alasannya jika perubahan memengaruhi Arsitektur atau Ruang Lingkup.
 
-## 12. Error Rule
+## 12. Aturan Error
 
-Never claim a Build or test passed unless it was actually executed successfully.
+Jangan pernah menyatakan Build atau pengujian berhasil jika memang belum berhasil dijalankan.
 
-Report blockers precisely.
+Laporkan kendala secara tepat dan spesifik.
 
-## 13. GitHub Rule
+## 13. Aturan GitHub
 
-Keep generated/Build output out of source control unless explicitly required.
+Jangan memasukkan output hasil generate/Build ke source control kecuali memang diperlukan.
 
-Use GitHub Actions as a verification/release mechanism, not as a substitute for understanding the local Proyek state.
+Gunakan GitHub Actions sebagai sarana verifikasi/rilis, bukan sebagai pengganti pemahaman terhadap kondisi proyek lokal.

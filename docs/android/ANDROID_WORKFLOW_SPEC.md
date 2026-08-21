@@ -1,110 +1,110 @@
-<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+<!-- Dokumentasi ini menggunakan Bahasa Indonesia. -->
 
 # ANDROID_WORKFLOW_SPEC.md
 
 **Proyek:** Android Cargo Manifest App  
-**Tujuan:** Define the operational Alur Kerja represented by the Saat Ini application
+**Tujuan:** Mendokumentasikan alur kerja operasional yang direpresentasikan oleh aplikasi saat ini
 
-## 1. Main Navigation
+## 1. Navigasi Utama
 
 ```text
-Open App
+Buka Aplikasi
   ↓
-Main Menu
+Menu Utama
   ├── Data Manifest Cargo
   ├── Data Stowingan Palet
   ├── Pencarian Basis Data Manifest
   ├── Bukti Timbang Barang
-  └── Flight Tracking (optional/separate)
+  └── Flight Tracking (opsional/terpisah)
 ```
 
-## 2. Manifest Alur Kerja
+## 2. Alur Kerja Manifest
 
-Saat Ini conceptual flow:
+Alur kerja konseptual saat ini:
 
 ```text
-Stowing / imported Cargo data
+Data Stowing / Cargo yang diimpor
         ↓
 CargoViewModel
         ↓
-Manifest grouping / editing
+Pengelompokan / pengeditan Manifest
         ↓
-Manifest display
+Tampilan Manifest
         ↓
-Excel export / processing
+Ekspor / pemrosesan Excel
 ```
 
-Manifest grouping currently uses fields including PTI, Pelanggan, and Description.
+Pengelompokan Manifest saat ini menggunakan beberapa field termasuk PTI, Pelanggan, dan Deskripsi.
 
-## 3. BTB Alur Kerja
+## 3. Alur Kerja BTB
 
-The application contains a dedicated BTB module:
+Aplikasi memiliki modul BTB khusus:
 
 ```text
 Bukti Timbang Barang
         ↓
-BTB data / photos / OCR
+Data BTB / foto / OCR
         ↓
-Validation / label handling
+Validasi / pengelolaan label
         ↓
-Excel or downstream processing
+Excel atau pemrosesan lanjutan
 ```
 
-The exact operational Aturan should follow the user's actual Cargo process rather than assuming PTI and BTB are always interchangeable.
+Aturan operasional yang sebenarnya harus mengikuti proses Cargo pengguna di lapangan, bukan menganggap PTI dan BTB selalu dapat dipertukarkan.
 
-## 4. Stowing Alur Kerja
+## 4. Alur Kerja Stowing
 
-The Proyek contains a separate Stowing Activity and ViewModel.
+Proyek memiliki Activity dan ViewModel Stowing yang terpisah.
 
-The Saat Ini Implementasi uses persisted Stowing data and Excel-related processing.
+Implementasi saat ini menggunakan data Stowing yang disimpan serta pemrosesan yang berkaitan dengan Excel.
 
-## 5. Manifest Historical Pencarian
+## 5. Pencarian Historis Manifest
 
-The Saat Ini Android Proyek already has a Manifest Pencarian Fitur.
+Proyek Android saat ini sudah memiliki fitur Pencarian Manifest.
 
-Conceptual flow:
+Alur konseptual:
 
 ```text
-Pencarian Screen
+Layar Pencarian
     ↓
-Pencarian ViewModel
+ViewModel Pencarian
     ↓
-Manifest Pencarian data
+Data Pencarian Manifest
     ↓
-Results
+Hasil
     ↓
-Open / inspect relevant Manifest
+Buka / periksa Manifest yang relevan
 ```
 
-The Pencarian Arsitektur must be verified against the actual Implementasi before replacing it with a different design.
+Arsitektur pencarian harus diverifikasi terhadap implementasi aktual sebelum diganti dengan desain yang berbeda.
 
 ## 6. Flight Tracking
 
-Flight Tracking is optional and separated from the Cargo Alur Kerja:
+Flight Tracking bersifat opsional dan dipisahkan dari alur kerja Cargo:
 
 ```text
-Main Menu
+Menu Utama
    ↓
 Flight Tracking Activity
 ```
 
-It must not become a mandatory step for creating or processing a Manifest.
+Fitur ini tidak boleh menjadi langkah wajib untuk membuat atau memproses Manifest.
 
-## 7. Excel Principle
+## 7. Prinsip Excel
 
-Excel remains an important operational artifact.
+Excel tetap menjadi dokumen kerja operasional yang penting.
 
-The application may:
+Aplikasi dapat:
 
-- import Excel;
-- generate/export Excel;
-- open/share Excel files;
-- use bundled templates.
+- mengimpor Excel;
+- membuat/mengekspor Excel;
+- membuka/membagikan file Excel;
+- menggunakan template yang disertakan dalam aplikasi.
 
-The application must not silently alter user-owned Manifest files during read/Pencarian operations.
+Aplikasi tidak boleh mengubah file Manifest milik pengguna secara diam-diam saat melakukan operasi baca/pencarian.
 
-## 8. Masa Depan Alur Kerja Changes
+## 8. Perubahan Alur Kerja di Masa Depan
 
-Any new PTI/BTB/Pelanggan reconciliation Alur Kerja must first be documented here before large-scale Implementasi.
+Setiap alur kerja baru terkait rekonsiliasi PTI/BTB/Pelanggan harus terlebih dahulu didokumentasikan di sini sebelum implementasi berskala besar.
 
-Avoid adding automation that assumes all staff follow the same manual process when field practice is known to vary.
+Hindari menambahkan otomatisasi yang menganggap semua orang mengikuti proses manual yang sama apabila praktik di lapangan diketahui berbeda.

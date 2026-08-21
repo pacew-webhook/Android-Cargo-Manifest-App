@@ -1,11 +1,11 @@
-<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+<!-- Dokumentasi ini menggunakan Bahasa Indonesia. -->
 
 # ANDROID_ARCHITECTURE.md
 
 **Proyek:** Android Cargo Manifest App  
-**Tujuan:** Describe the actual architectural baseline and boundaries
+**Tujuan:** Menjelaskan baseline arsitektur aktual dan batas tanggung jawab setiap bagian
 
-## 1. High-Level Structure
+## 1. Struktur Tingkat Tinggi
 
 ```text
 MainActivity
@@ -29,35 +29,35 @@ MainMenuScreen
     │
     ├── BuktiTimbangActivity
     │     ↓
-    │   BTB components / repositories
+    │   Komponen BTB / repository
     │
     └── FlightTrackingActivity
 ```
 
-## 2. UI Lapisan
+## 2. Lapisan UI
 
-Major UI files currently include:
+File UI utama saat ini antara lain:
 
 - `MainMenuScreen.kt`
 - `CargoAppScreen.kt`
 - `ManifestSearchScreen.kt`
 - `BtbCheckDialog.kt`
-- Activity-based screens for Stowing, BTB, OCR, BTB label, and Flight Tracking.
+- screen berbasis Activity untuk Stowing, BTB, OCR, label BTB, dan Flight Tracking.
 
-Compose is used for the main menu, Manifest UI, and Manifest Pencarian.
+Compose digunakan untuk menu utama, UI Manifest, dan Pencarian Manifest.
 
-## 3. State / Presentation Lapisan
+## 3. Lapisan State / Presentasi
 
-Saat Ini ViewModels include:
+ViewModel yang ada saat ini meliputi:
 
 - `CargoViewModel`
 - `ManifestSearchViewModel`
 - `BtbViewModel`
 - `StowingViewModel`
 
-ViewModels currently perform both presentation-state management and some persistence/File orchestration. Masa Depan refactoring should move reusable data/File operations toward Repository/service boundaries where justified.
+ViewModel saat ini menangani state presentasi sekaligus sebagian orkestrasi penyimpanan/file. Pada pengembangan mendatang, operasi data/file yang dapat digunakan kembali sebaiknya dipindahkan ke batas Repository/service jika memang diperlukan.
 
-## 4. Persistence Lapisan
+## 4. Lapisan Penyimpanan Data
 
 ### Cargo
 
@@ -69,7 +69,7 @@ CargoDao
 CargoDatabase
 ```
 
-### Manifest Pencarian
+### Pencarian Manifest
 
 ```text
 ManifestSearchViewModel
@@ -81,18 +81,18 @@ ManifestDatabase
 
 ### BTB
 
-The Proyek contains:
+Proyek memiliki:
 
 - `BtbDao`
 - `BtbEntity`
 - `BtbRepository`
 - `BtbPhotoEntity`
 
-### Important Saat Ini Condition
+### Kondisi Penting Saat Ini
 
-The Proyek is **not yet a single-source-of-truth Arsitektur**.
+Proyek **belum menggunakan arsitektur dengan satu sumber kebenaran**.
 
-SharedPreferences are still used for several areas, including:
+SharedPreferences masih digunakan untuk beberapa area, termasuk:
 
 - `stowing_prefs`
 - `btb_reference`
@@ -102,23 +102,23 @@ SharedPreferences are still used for several areas, including:
 - `cargo_archive`
 - `manifest_settings`
 
-This must be treated as known architectural debt, not silently removed during unrelated Fitur work.
+Hal ini harus diperlakukan sebagai utang arsitektur yang sudah diketahui dan tidak boleh dihapus diam-diam saat mengerjakan fitur yang tidak berkaitan.
 
-## 5. Excel Lapisan
+## 5. Lapisan Excel
 
-`ExcelUtils.kt` and `ManifestExcelImporter.kt` handle Excel-related processing.
+`ExcelUtils.kt` dan `ManifestExcelImporter.kt` menangani pemrosesan yang berkaitan dengan Excel.
 
-Assets currently include:
+Asset yang saat ini tersedia antara lain:
 
 - `template_manifest.xlsx`
 - `Bukti_Timbang_Barang_BTB.xlsx`
 - `STOWINGAN_PAG_TEMPLATE.xlsx`
 
-Apache POI is used for workbook processing.
+Apache POI digunakan untuk memproses workbook.
 
-## 6. OCR Lapisan
+## 6. Lapisan OCR
 
-Saat Ini OCR-related components:
+Komponen OCR saat ini:
 
 ```text
 CameraX
@@ -127,25 +127,25 @@ ScaleOcrActivity / BtbOcrScanner
    ↓
 ML Kit Text Recognition
    ↓
-Weight / BTB processing
+Pemrosesan berat / BTB
 ```
 
-## 7. External Integration
+## 7. Integrasi Eksternal
 
-`N8nClient.kt` provides the Android-side n8n integration.
+`N8nClient.kt` menyediakan integrasi n8n dari sisi Android.
 
-The n8n Alur Kerja/documentation is kept outside the core UI Arsitektur.
+Alur kerja dan dokumentasi n8n tetap dipisahkan dari arsitektur UI inti.
 
-## 8. Navigation Boundary
+## 8. Batas Navigasi
 
-Flight Tracking is deliberately a separate Activity and is not part of the Cargo Manifest form flow.
+Flight Tracking sengaja dibuat sebagai Activity terpisah dan bukan bagian dari alur form Cargo Manifest.
 
-This separation should be preserved unless a Masa Depan Kebutuhan explicitly changes it.
+Pemisahan ini harus dipertahankan kecuali kebutuhan masa depan secara jelas mengubahnya.
 
-## 9. Architectural Aturan
+## 9. Aturan Arsitektur
 
-- UI should not directly own long-running File/Basis Data work.
-- ViewModels should expose state to UI and coordinate operations.
-- Basis Data access remains off the main thread.
-- Excel processing remains off the main thread.
-- Do not introduce a second persistence mechanism without documenting the reason.
+- UI tidak boleh memiliki pekerjaan File/Basis Data yang berjalan lama secara langsung.
+- ViewModel bertugas menyediakan state untuk UI dan mengoordinasikan operasi.
+- Akses basis data harus dilakukan di luar main thread.
+- Pemrosesan Excel harus dilakukan di luar main thread.
+- Jangan memperkenalkan mekanisme penyimpanan kedua tanpa mendokumentasikan alasannya.

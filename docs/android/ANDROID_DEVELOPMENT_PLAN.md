@@ -1,93 +1,98 @@
-<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+<!-- Dokumentasi ini menggunakan Bahasa Indonesia. -->
 
 # ANDROID_DEVELOPMENT_PLAN.md
 
 **Proyek:** Android Cargo Manifest App  
-**Tujuan:** Master Pengembangan direction for the Android application  
-**Status:** Existing Proyek — documentation baseline
+**Tujuan:** Menjadi rencana utama pengembangan aplikasi Android  
+**Status:** Proyek yang sudah ada — baseline dokumentasi
 
-## 1. Saat Ini Ruang Lingkup
+## 1. Ruang Lingkup Saat Ini
 
-The Android app currently contains these functional areas:
+Aplikasi Android saat ini memiliki beberapa area fungsi:
 
 - Cargo Manifest
-- Stowing / pallet data
+- Stowing / data palet
 - Bukti Timbang Barang (BTB)
-- Scale OCR
-- BTB label handling
-- Manifest historical Pencarian
-- Optional Flight Tracking
-- n8n integration
+- OCR timbangan
+- Pengelolaan label BTB
+- Pencarian historis Manifest
+- Flight Tracking opsional
+- Integrasi n8n
 
-The Android app remains the operational application. Desktop Pengembangan is documented separately under `docs/desktop/`.
+Aplikasi Android tetap menjadi aplikasi operasional. Pengembangan Desktop didokumentasikan secara terpisah di `docs/desktop/`.
 
-## 2. Pengembangan Priorities
+## 2. Prioritas Pengembangan
 
-### Priority 1 — Stability
-- Keep the Proyek buildable.
-- Fix compile/runtime regressions before adding unrelated Fitur.
-- Preserve working Excel import/export behavior.
+### Prioritas 1 — Stabilitas
 
-### Priority 2 — Data consistency
-- Define one authoritative source for each data domain.
-- Reduce duplicated state between Room, SharedPreferences, files, and in-memory state.
-- Preserve data across process death where appropriate.
+- Jaga agar proyek tetap dapat di-Build.
+- Perbaiki regresi compile/runtime sebelum menambahkan fitur yang tidak berkaitan.
+- Pertahankan perilaku import/export Excel yang sudah berjalan.
 
-### Priority 3 — Alur Kerja correctness
-- Manifest, BTB, Stowing, and Pencarian must reflect the actual Cargo Alur Kerja.
-- Do not force an idealized Alur Kerja that conflicts with field practice.
+### Prioritas 2 — Konsistensi Data
 
-### Priority 4 — Performa
-- Heavy Excel/OCR/Pencarian operations must not block the UI.
-- Optimize only after measuring real bottlenecks.
+- Tentukan satu sumber kebenaran untuk setiap kelompok data.
+- Kurangi duplikasi state antara Room, SharedPreferences, file, dan state di memori.
+- Pertahankan data setelah proses aplikasi mati jika memang diperlukan.
 
-### Priority 5 — Maintainability
-- Keep UI, ViewModel, Repository/DAO, Basis Data, and File/Excel responsibilities separated.
-- Avoid adding new storage mechanisms without documenting why.
+### Prioritas 3 — Ketepatan Alur Kerja
 
-## 3. Saat Ini Arsitektur Baseline
+- Manifest, BTB, Stowing, dan Pencarian harus mencerminkan alur kerja Cargo yang sebenarnya.
+- Jangan memaksakan alur kerja ideal yang bertentangan dengan praktik di lapangan.
 
-The Saat Ini codebase uses:
+### Prioritas 4 — Performa
 
-- Jetpack Compose for major UI surfaces.
-- Activities for several operational modules.
-- Room for Cargo and Manifest-related persistence.
-- Apache POI for Excel processing.
-- CameraX + ML Kit for OCR.
-- n8n HTTP integration.
-- SharedPreferences for several settings/legacy state areas.
+- Operasi Excel/OCR/Pencarian yang berat tidak boleh memblokir UI.
+- Lakukan optimasi setelah bottleneck nyata diukur.
 
-This is the baseline to be improved, not an assumption that every Saat Ini Implementasi is final.
+### Prioritas 5 — Kemudahan Pemeliharaan
 
-## 4. Non-Goals
+- Pisahkan tanggung jawab UI, ViewModel, Repository/DAO, Basis Data, dan File/Excel.
+- Jangan menambahkan mekanisme penyimpanan baru tanpa mendokumentasikan alasannya.
 
-Do not add complexity solely for Masa Depan possibilities.
+## 3. Baseline Arsitektur Saat Ini
 
-Examples:
+Kode saat ini menggunakan:
 
-- Cloud backend without a defined Kebutuhan.
-- Mandatory online dependency for core Cargo work.
-- New Basis Data tables without a clear query/use case.
-- Replacing Excel before the real Alur Kerja requires it.
+- Jetpack Compose untuk sebagian besar tampilan UI utama.
+- Activity untuk beberapa modul operasional.
+- Room untuk penyimpanan data Cargo dan Manifest.
+- Apache POI untuk pemrosesan Excel.
+- CameraX + ML Kit untuk OCR.
+- Integrasi HTTP dengan n8n.
+- SharedPreferences untuk beberapa pengaturan dan state lama.
 
-## 5. Pengembangan Sequence
+Ini adalah baseline yang akan diperbaiki, bukan berarti semua implementasi saat ini sudah final.
+
+## 4. Hal yang Tidak Menjadi Tujuan
+
+Jangan menambahkan kompleksitas hanya untuk kemungkinan di masa depan.
+
+Contohnya:
+
+- backend cloud tanpa kebutuhan yang jelas;
+- ketergantungan online wajib untuk pekerjaan Cargo inti;
+- tabel basis data baru tanpa kebutuhan query/penggunaan yang jelas;
+- mengganti Excel sebelum alur kerja nyata memang membutuhkannya.
+
+## 5. Urutan Pengembangan
 
 ```text
-Understand Saat Ini code
+Pahami kode saat ini
         ↓
-Define Kebutuhan
+Tentukan kebutuhan
         ↓
-Implement smallest safe change
+Implementasikan perubahan terkecil yang aman
         ↓
 Build
         ↓
-Test affected Alur Kerja
+Uji alur kerja yang terdampak
         ↓
-Update documentation/Status
+Perbarui dokumentasi/Status
         ↓
-Berikutnya Fitur
+Fitur berikutnya
 ```
 
-## 6. Release Principle
+## 6. Prinsip Rilis
 
-A Fitur is complete only when its behavior is verified against its Kebutuhan and existing workflows remain intact.
+Sebuah fitur dianggap selesai hanya jika perilakunya sudah diverifikasi terhadap kebutuhan dan alur kerja yang sudah ada tetap berfungsi.
