@@ -453,57 +453,144 @@ File tetap tersimpan.
 
 # 15. Historical Search Architecture
 
-Search harus dipisahkan menjadi dua tahap:
+Untuk MVP, **tidak menggunakan SQLite + FTS5 sebagai mekanisme utama**.
+
+Pencarian dilakukan langsung terhadap:
+
+1. struktur folder arsip;
+2. nama file Manifest;
+3. isi workbook Excel.
+
+Konsep:
 
 ```text
-INDEXING
-    ↓
-SEARCH
+User Search
+     ↓
+Folder Archive
+     ↓
+Find .xlsx files
+     ↓
+Read Excel
+     ↓
+Extract text
+     ↓
+Search keyword
+     ↓
+Display Manifest
+     ↓
+Open original Excel
 ```
 
-Bukan membaca seluruh Excel setiap kali pengguna mengetik karakter.
+Tujuan utama adalah menjaga sistem sederhana dan tidak membuat database pencarian sebelum benar-benar diperlukan.
 
 ---
 
-# 16. Indexing Pipeline
+# 16. Search Modes
+
+## 16.1 File/Folder Search
+
+Digunakan untuk pencarian berdasarkan:
+
+- tahun;
+- bulan;
+- tanggal;
+- flight;
+- nama file.
+
+Contoh:
 
 ```text
-Archive Folder
-      ↓
-File Discovery
-      ↓
-Excel Reader
-      ↓
-Text Extraction
-      ↓
-Normalization
-      ↓
-Search Index
+FLIGHT 2
+21 AGUSTUS 2026
+2026
 ```
 
-Indexing harus berjalan di background.
+Tidak perlu membaca isi Excel jika informasi tersebut sudah tersedia dari nama file atau struktur folder.
+
+---
+
+## 16.2 Excel Content Search
+
+Digunakan jika pengguna mencari data yang berada di dalam Manifest.
+
+Contoh:
+
+```text
+Tripleks Tony
+```
+
+atau:
+
+```text
+Tripleks
+```
+
+atau:
+
+```text
+Tony
+```
+
+atau:
+
+```text
+KAL001
+```
+
+Flow:
+
+```text
+Search: "Tripleks Tony"
+        ↓
+Scan Manifest folder
+        ↓
+Find .xlsx
+        ↓
+Read workbook
+        ↓
+Search cells/text
+        ↓
+Return matching files
+```
+
+Desktop tidak mengubah workbook selama proses pencarian.
 
 ---
 
 # 17. Excel Text Extraction
 
-Tahap awal harus mengambil teks yang memang tersedia di workbook.
+Tahap awal mengambil teks yang tersedia di workbook.
 
-Kemungkinan sumber:
+Sumber yang dapat dibaca:
 
 - worksheet cells;
 - header;
 - rows;
-- formulas jika diperlukan;
-- metadata yang relevan.
+- nilai teks;
+- nilai numerik jika diperlukan;
+- formula result jika library mendukung dan memang diperlukan.
 
-Jangan mengubah workbook saat membaca.
+Contoh:
+
+```text
+Excel:
+
+TRIPLEKS | TONY | 5 KOLI | 50 KG
+```
+
+Query:
+
+```text
+Tripleks Tony
+```
+
+harus dapat menemukan workbook tersebut.
 
 ---
 
 # 18. Search Normalization
 
-Untuk meningkatkan pencarian:
+Pencarian dapat dinormalisasi:
 
 ```text
 "ULIN"
@@ -511,174 +598,178 @@ Untuk meningkatkan pencarian:
 " Ulin "
 ```
 
-dapat dinormalisasi menjadi bentuk yang konsisten.
+menjadi bentuk pencarian yang konsisten.
 
-Namun nilai asli file tidak boleh diubah.
+Normalization hanya digunakan untuk pencarian.
 
-Normalization hanya berlaku untuk index/search.
-
----
-
-# 19. Search Index Technology
-
-Untuk MVP, gunakan **SQLite/FTS5** hanya jika kebutuhan volume arsip membenarkannya.
-
-Alternatif awal yang lebih sederhana:
-
-```text
-SQLite
-+
-FTS5
-```
-
-Keuntungan:
-
-- pencarian cepat;
-- database lokal;
-- tidak memerlukan server;
-- dapat dibuat ulang dari Excel;
-- cocok untuk arsip besar.
-
-Tetapi:
-
-> **FTS5 bukan kewajiban pada prototype pertama.**
-
-Prototype boleh dimulai dengan index sederhana untuk mengukur kebutuhan sebenarnya.
+Nilai asli Excel tidak boleh diubah.
 
 ---
 
-# 20. Index Schema — Konsep Awal
+# 19. Search Query
 
-Contoh konseptual:
-
-```text
-manifest_files
-├── id
-├── file_path
-├── file_name
-├── manifest_date
-├── flight
-├── file_modified_time
-└── indexed_at
-```
-
-FTS:
+MVP harus mendukung minimal:
 
 ```text
-manifest_search
-├── file_id
-├── content
-└── ...
+Single keyword:
+Tripleks
+
+Multiple keywords:
+Tripleks Tony
+
+Identifier:
+KAL001
+
+Customer:
+Tony
+
+Cargo:
+Pinang
 ```
 
-Schema final harus mengikuti hasil pengujian arsip nyata.
+Untuk multiple keywords, hasil yang mengandung semua kata pencarian diprioritaskan.
 
 ---
 
-# 21. Search Flow
+# 20. Search Flow
 
 ```text
 User enters keyword
         ↓
 Normalize query
         ↓
-Search Index
+Search file/folder metadata
         ↓
-Results
+Search Excel content
         ↓
-Sort by relevance/date
+Collect matching files
         ↓
-User selects result
+Sort results
+        ↓
+Display results
         ↓
 Open original Excel
 ```
 
+Hasil harus menunjuk langsung ke file Excel asli.
+
 ---
 
-# 22. Search Filters
+# 21. Search Filters
 
 MVP dapat menyediakan:
 
 - keyword;
 - tahun;
+- bulan;
 - tanggal;
 - flight.
 
-Filter tambahan hanya ditambahkan jika data historis benar-benar mendukungnya.
+Filter digunakan untuk mempersempit jumlah Excel yang harus dibaca.
+
+Contoh:
+
+```text
+Keyword : Tripleks Tony
+Tahun   : 2026
+Bulan   : Agustus
+```
+
+Dengan demikian Desktop tidak perlu membaca seluruh arsip jika pengguna sudah memberikan filter.
 
 ---
 
-# 23. Index Rebuild
+# 22. Search Performance Strategy
 
-Fungsi:
-
-```text
-Rebuild Search Index
-```
-
-harus tersedia.
-
-Flow:
+Prioritas optimasi:
 
 ```text
-Clear Index
-    ↓
-Scan Archive
-    ↓
-Read Excel
-    ↓
-Index
-    ↓
-Complete
+1. Batasi folder berdasarkan filter
+2. Filter berdasarkan nama file
+3. Hanya baca .xlsx
+4. Baca workbook di background
+5. Hentikan pembacaan file jika tidak relevan
+6. Tampilkan hasil secara bertahap jika diperlukan
 ```
 
-Jika satu file gagal dibaca, lanjutkan file berikutnya dan simpan error.
+Jangan langsung membuat database hanya untuk mengatasi masalah performa yang belum terbukti.
 
 ---
 
-# 24. Detecting Changed Files
+# 23. Optional Search Cache
 
-Index dapat menyimpan:
+Jika pencarian langsung mulai terasa lambat, tahap berikutnya dapat menggunakan cache sederhana.
 
-```text
-file_path
-file_size
-modified_time
-```
-
-Jika berubah:
+Contoh:
 
 ```text
-Re-index file
+Excel File
+   ↓
+Extracted Text Cache
+   ↓
+Search
 ```
 
-Jika tidak berubah:
+Cache tetap bukan sumber data utama.
 
-```text
-Skip
-```
-
-Ini menghindari pembacaan ulang seluruh arsip setiap kali aplikasi dibuka.
+File Excel tetap menjadi sumber asli.
 
 ---
 
-# 25. Detecting Missing Files
+# 24. SQLite / FTS5 — Future Optimization Only
 
-Jika index menunjuk ke file yang tidak ada:
+SQLite + FTS5 **bukan requirement MVP**.
+
+Teknologi tersebut hanya dipertimbangkan jika pengujian arsip nyata menunjukkan:
+
+- jumlah file sangat besar;
+- pencarian terlalu lambat;
+- pencarian berulang membaca file yang sama terlalu sering;
+- cache sederhana tidak cukup.
+
+Urutan keputusan:
 
 ```text
-Missing
+Folder/File Search
+       ↓
+Excel Content Search
+       ↓
+Measure Performance
+       ↓
+Cukup?
+ ┌─────┴─────┐
+ YA          TIDAK
+ ↓             ↓
+Selesai    Cache
+               ↓
+           Cukup?
+          ┌────┴────┐
+         YA         TIDAK
+          ↓           ↓
+       Selesai    SQLite/FTS5
 ```
 
-Jangan membuat file pengganti.
+---
 
-Tampilkan status:
+# 25. No Mandatory Search Database
+
+Aplikasi tidak boleh memiliki persyaratan:
 
 ```text
-File tidak ditemukan
+Database harus ada
 ```
 
-Index dapat dibersihkan melalui rebuild/sync.
+agar pencarian dapat bekerja.
+
+Jika database/cache hilang:
+
+```text
+Folder Excel
+    ↓
+Search
+```
+
+tetap harus dapat dilakukan.
 
 ---
 
@@ -686,20 +777,21 @@ Index dapat dibersihkan melalui rebuild/sync.
 
 Operasi berikut tidak boleh dijalankan di UI thread:
 
-- scan archive;
+- scan banyak folder;
 - membaca banyak Excel;
-- indexing;
-- rebuild index;
-- operasi filesystem besar.
+- content search;
+- membuat cache;
+- rebuild cache.
 
 Gunakan background coroutine/dispatcher yang sesuai.
 
-UI harus menerima:
+UI harus menerima status:
 
 ```text
 Idle
 Scanning
-Indexing
+Reading Excel
+Searching
 Completed
 Error
 Cancelled
@@ -707,41 +799,191 @@ Cancelled
 
 ---
 
-# 27. Cancellation
+# 27. Progressive Search
 
-Indexing panjang sebaiknya dapat dibatalkan.
+Jika arsip besar, hasil dapat ditampilkan bertahap:
+
+```text
+Searching...
+
+Found:
+1. MANIFES 21 AGUSTUS 2026 FLIGHT 2
+2. MANIFES 03 SEPTEMBER 2025 FLIGHT 1
+3. ...
+```
+
+Pengguna tidak harus menunggu seluruh arsip selesai jika hasil relevan sudah ditemukan.
+
+---
+
+# 28. Cancellation
+
+Pencarian panjang harus dapat dibatalkan.
 
 Contoh:
 
 ```text
-Indexing...
-245 / 2,430 files
+Searching 850 / 2,400 files
 
 [ Batalkan ]
 ```
 
-Pembatalan tidak boleh merusak file Excel.
+Pembatalan tidak boleh mengubah file Excel.
 
 ---
 
-# 28. Error Handling
+# 29. Missing Files
 
-Gunakan error domain yang jelas.
+Jika file yang ditemukan berdasarkan metadata sudah tidak ada:
+
+```text
+File tidak ditemukan
+```
+
+Jangan membuat file pengganti.
+
+Hasil tersebut dapat ditandai sebagai:
+
+```text
+Missing
+```
+
+---
+
+# 30. Corrupted Excel
+
+Jika satu workbook rusak atau gagal dibaca:
+
+```text
+File ditemukan
+      ↓
+Gagal membaca
+      ↓
+Catat error
+      ↓
+Lanjutkan file berikutnya
+```
+
+Satu file rusak tidak boleh menghentikan seluruh pencarian.
+
+---
+
+# 31. Search Result Model
 
 Contoh:
 
 ```text
-TemplateNotFound
-TemplateInvalid
-ManifestAlreadyExists
-DirectoryCreationFailed
-ManifestCreationFailed
-ExcelOpenFailed
-ArchiveReadFailed
-IndexingFailed
+SearchResult
+├── fileName
+├── filePath
+├── date
+├── flight
+├── matchedText
+└── status
 ```
 
-UI menerjemahkan error teknis menjadi pesan pengguna.
+`matchedText` digunakan untuk membantu pengguna memahami mengapa file tersebut muncul.
+
+---
+
+# 32. Result Ranking
+
+Untuk multiple keyword:
+
+```text
+Tripleks Tony
+```
+
+prioritaskan:
+
+1. file yang mengandung `Tripleks` dan `Tony`;
+2. file yang memiliki kedua kata dalam worksheet yang sama;
+3. file yang hanya mengandung salah satu kata.
+
+Algoritma ranking dapat disederhanakan pada MVP dan ditingkatkan jika diperlukan.
+
+---
+
+# 33. Archive Search Safety
+
+Search harus bersifat read-only.
+
+Selama pencarian:
+
+```text
+Excel
+ ↓
+READ
+```
+
+bukan:
+
+```text
+Excel
+ ↓
+READ
+ ↓
+WRITE
+```
+
+Tidak boleh ada perubahan format, formula, isi, tanggal, atau nama file akibat pencarian.
+
+---
+
+# 34. Search Technical Decision
+
+Keputusan teknis saat ini:
+
+| Fitur | MVP |
+|---|---|
+| Folder search | **WAJIB** |
+| File name search | **WAJIB** |
+| Excel content search | **WAJIB** |
+| Background search | **WAJIB** |
+| SQLite | Tidak wajib |
+| FTS5 | Tidak wajib |
+| Search cache | Opsional |
+| Search database | Future optimization |
+
+---
+
+# 35. Performance Benchmark
+
+Sebelum menggunakan SQLite/FTS5, ukur:
+
+```text
+Jumlah file
+Total ukuran arsip
+Waktu pencarian
+Memory usage
+CPU usage
+```
+
+Contoh pengujian:
+
+```text
+100 Excel
+500 Excel
+1.000 Excel
+2.000 Excel
+5.000 Excel
+```
+
+Keputusan optimasi harus berdasarkan hasil nyata.
+
+---
+
+# 36. Final Search Principle
+
+> **Mulai dari folder.**
+
+> **Baca Excel hanya ketika diperlukan.**
+
+> **Gunakan filter untuk mempersempit pencarian.**
+
+> **Jangan membuat database sebelum ada masalah performa.**
+
+> **Jika suatu hari folder + Excel search sudah terlalu lambat, barulah pertimbangkan cache atau SQLite/FTS5.**
 
 ---
 
@@ -1100,8 +1342,8 @@ Arsitektur Desktop harus mengikuti prinsip:
 | Build | Gradle Kotlin DSL |
 | Excel workflow | Defined |
 | Archive structure | Defined |
-| Search architecture | Defined |
-| SQLite/FTS5 | Conditional / Prototype first |
+| Search architecture | Folder + Excel Content Search |
+| SQLite/FTS5 | Future optimization only |
 | Windows target | Windows 10/11 |
 | `.exe` packaging | Planned |
 | Implementation | **Not started** |
