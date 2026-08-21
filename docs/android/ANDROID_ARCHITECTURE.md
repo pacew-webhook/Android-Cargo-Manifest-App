@@ -1,7 +1,9 @@
+<!-- Dokumentasi ini ditulis dalam Bahasa Indonesia. -->
+
 # ANDROID_ARCHITECTURE.md
 
-**Project:** Android Cargo Manifest App  
-**Purpose:** Describe the actual architectural baseline and boundaries
+**Proyek:** Android Cargo Manifest App  
+**Tujuan:** Describe the actual architectural baseline and boundaries
 
 ## 1. High-Level Structure
 
@@ -32,7 +34,7 @@ MainMenuScreen
     └── FlightTrackingActivity
 ```
 
-## 2. UI Layer
+## 2. UI Lapisan
 
 Major UI files currently include:
 
@@ -42,20 +44,20 @@ Major UI files currently include:
 - `BtbCheckDialog.kt`
 - Activity-based screens for Stowing, BTB, OCR, BTB label, and Flight Tracking.
 
-Compose is used for the main menu, Manifest UI, and Manifest Search.
+Compose is used for the main menu, Manifest UI, and Manifest Pencarian.
 
-## 3. State / Presentation Layer
+## 3. State / Presentation Lapisan
 
-Current ViewModels include:
+Saat Ini ViewModels include:
 
 - `CargoViewModel`
 - `ManifestSearchViewModel`
 - `BtbViewModel`
 - `StowingViewModel`
 
-ViewModels currently perform both presentation-state management and some persistence/file orchestration. Future refactoring should move reusable data/file operations toward repository/service boundaries where justified.
+ViewModels currently perform both presentation-state management and some persistence/File orchestration. Masa Depan refactoring should move reusable data/File operations toward Repository/service boundaries where justified.
 
-## 4. Persistence Layer
+## 4. Persistence Lapisan
 
 ### Cargo
 
@@ -67,7 +69,7 @@ CargoDao
 CargoDatabase
 ```
 
-### Manifest Search
+### Manifest Pencarian
 
 ```text
 ManifestSearchViewModel
@@ -79,16 +81,16 @@ ManifestDatabase
 
 ### BTB
 
-The project contains:
+The Proyek contains:
 
 - `BtbDao`
 - `BtbEntity`
 - `BtbRepository`
 - `BtbPhotoEntity`
 
-### Important Current Condition
+### Important Saat Ini Condition
 
-The project is **not yet a single-source-of-truth architecture**.
+The Proyek is **not yet a single-source-of-truth Arsitektur**.
 
 SharedPreferences are still used for several areas, including:
 
@@ -100,9 +102,9 @@ SharedPreferences are still used for several areas, including:
 - `cargo_archive`
 - `manifest_settings`
 
-This must be treated as known architectural debt, not silently removed during unrelated feature work.
+This must be treated as known architectural debt, not silently removed during unrelated Fitur work.
 
-## 5. Excel Layer
+## 5. Excel Lapisan
 
 `ExcelUtils.kt` and `ManifestExcelImporter.kt` handle Excel-related processing.
 
@@ -114,9 +116,9 @@ Assets currently include:
 
 Apache POI is used for workbook processing.
 
-## 6. OCR Layer
+## 6. OCR Lapisan
 
-Current OCR-related components:
+Saat Ini OCR-related components:
 
 ```text
 CameraX
@@ -132,18 +134,18 @@ Weight / BTB processing
 
 `N8nClient.kt` provides the Android-side n8n integration.
 
-The n8n workflow/documentation is kept outside the core UI architecture.
+The n8n Alur Kerja/documentation is kept outside the core UI Arsitektur.
 
 ## 8. Navigation Boundary
 
 Flight Tracking is deliberately a separate Activity and is not part of the Cargo Manifest form flow.
 
-This separation should be preserved unless a future requirement explicitly changes it.
+This separation should be preserved unless a Masa Depan Kebutuhan explicitly changes it.
 
-## 9. Architectural Rules
+## 9. Architectural Aturan
 
-- UI should not directly own long-running file/database work.
+- UI should not directly own long-running File/Basis Data work.
 - ViewModels should expose state to UI and coordinate operations.
-- Database access remains off the main thread.
+- Basis Data access remains off the main thread.
 - Excel processing remains off the main thread.
 - Do not introduce a second persistence mechanism without documenting the reason.
