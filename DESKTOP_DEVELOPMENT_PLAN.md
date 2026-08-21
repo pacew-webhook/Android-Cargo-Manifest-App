@@ -756,3 +756,213 @@ Saat dokumen ini dibuat:
 > **Implement Desktop Foundation + Cargo MVP.**
 
 Jangan langsung mengerjakan OCR, BTB, atau Stowing sebelum Cargo + Database + Excel foundation stabil.
+
+# 27. Aturan Pembuatan dan Arsip File Manifest Harian
+
+Setiap Manifest yang dibuat Desktop **wajib mengikuti tanggal sistem saat Manifest dibuat**.
+
+Tanggal tidak boleh diketik manual untuk menentukan tanggal file Manifest.
+
+## Aturan tanggal
+
+Aplikasi harus mengambil tanggal dari tanggal sistem Windows.
+
+Contoh:
+
+```text
+Tanggal Windows: 21 Agustus 2026
+Flight: 2
+```
+
+Maka nama file wajib menjadi:
+
+```text
+MANIFES 21 AGUSTUS 2026 FLIGHT 2.xlsx
+```
+
+## Aturan template
+
+File template Excel asli **tidak boleh diubah atau ditimpa**.
+
+Alurnya:
+
+```text
+template_manifest.xlsx
+        ↓
+COPY
+        ↓
+MANIFES 21 AGUSTUS 2026 FLIGHT 2.xlsx
+        ↓
+Isi data Manifest
+        ↓
+Simpan
+```
+
+Template asli harus tetap tersedia untuk pembuatan Manifest berikutnya.
+
+## Aturan folder berdasarkan bulan
+
+File Manifest harus otomatis dipindahkan/disimpan ke folder berdasarkan tahun dan bulan.
+
+Struktur:
+
+```text
+MANIFEST/
+└── 2026/
+    └── AGUSTUS/
+        ├── MANIFES 01 AGUSTUS 2026 FLIGHT 1.xlsx
+        ├── MANIFES 01 AGUSTUS 2026 FLIGHT 2.xlsx
+        ├── MANIFES 21 AGUSTUS 2026 FLIGHT 1.xlsx
+        └── MANIFES 21 AGUSTUS 2026 FLIGHT 2.xlsx
+```
+
+Ketika bulan berganti:
+
+```text
+MANIFEST/
+├── 2026/
+│   ├── AGUSTUS/
+│   └── SEPTEMBER/
+```
+
+Aplikasi harus membuat folder tahun/bulan secara otomatis jika belum tersedia.
+
+## Format nama file
+
+Format resmi:
+
+```text
+MANIFES {DD} {BULAN} {YYYY} FLIGHT {N}.xlsx
+```
+
+Contoh:
+
+```text
+MANIFES 21 AGUSTUS 2026 FLIGHT 1.xlsx
+MANIFES 21 AGUSTUS 2026 FLIGHT 2.xlsx
+MANIFES 22 AGUSTUS 2026 FLIGHT 1.xlsx
+```
+
+Gunakan nama bulan Bahasa Indonesia:
+
+```text
+JANUARI
+FEBRUARI
+MARET
+APRIL
+MEI
+JUNI
+JULI
+AGUSTUS
+SEPTEMBER
+OKTOBER
+NOVEMBER
+DESEMBER
+```
+
+## Aturan duplikasi
+
+Aplikasi **tidak boleh menimpa Manifest yang sudah ada**.
+
+Jika file berikut sudah ada:
+
+```text
+MANIFES 21 AGUSTUS 2026 FLIGHT 2.xlsx
+```
+
+maka aplikasi harus memberikan peringatan:
+
+> Manifest 21 Agustus 2026 Flight 2 sudah ada.
+
+Pilihan yang tersedia:
+
+```text
+[ Buka Manifest yang Ada ]
+[ Batalkan ]
+```
+
+Jangan membuat file dengan nama berbeda secara otomatis untuk menyembunyikan duplikasi, karena setiap tanggal + flight harus mempunyai identitas Manifest yang jelas.
+
+## Aturan pembukaan Excel
+
+Setelah Manifest baru berhasil dibuat dari template, Desktop dapat membuka file tersebut menggunakan aplikasi spreadsheet default Windows.
+
+Alur:
+
+```text
+CargoManifest.exe
+       ↓
+Pilih/Buat Manifest
+       ↓
+Ambil tanggal Windows
+       ↓
+Pilih Flight
+       ↓
+Copy template
+       ↓
+Buat nama file
+       ↓
+Buat folder tahun/bulan
+       ↓
+Simpan Manifest
+       ↓
+Buka file dengan Excel/default spreadsheet
+```
+
+## Aturan perubahan tanggal
+
+Tanggal Manifest ditentukan ketika Manifest dibuat.
+
+Jika tanggal Windows berubah dari:
+
+```text
+21 AGUSTUS 2026
+```
+
+menjadi:
+
+```text
+22 AGUSTUS 2026
+```
+
+Manifest baru harus menggunakan:
+
+```text
+MANIFES 22 AGUSTUS 2026 FLIGHT N.xlsx
+```
+
+Manifest tanggal sebelumnya tidak boleh diubah otomatis.
+
+## Aturan penting
+
+1. Template asli tidak boleh ditimpa.
+2. Tanggal Manifest harus berasal dari tanggal sistem ketika Manifest dibuat.
+3. Nama file harus mengikuti format resmi.
+4. Folder tahun dan bulan dibuat otomatis.
+5. Bulan menggunakan Bahasa Indonesia.
+6. File Manifest yang sudah ada tidak boleh ditimpa.
+7. Manifest tanggal sebelumnya tidak boleh berubah hanya karena tanggal sistem berubah.
+8. File baru harus dibuat dari template.
+9. Setelah file dibuat, Desktop dapat membuka file tersebut di Excel/default spreadsheet.
+10. Logika penamaan dan pengarsipan harus berada di service/use case, bukan di UI.
+
+## Target implementasi
+
+Gunakan abstraction seperti:
+
+```text
+ManifestFileService
+```
+
+dengan tanggung jawab:
+
+```text
+getCurrentManifestDate()
+getMonthFolder()
+buildManifestFileName()
+createManifestFromTemplate()
+checkExistingManifest()
+openManifest()
+```
+
+Dengan demikian UI Desktop cukup memanggil service tersebut dan tidak menangani detail filesystem secara langsung.
