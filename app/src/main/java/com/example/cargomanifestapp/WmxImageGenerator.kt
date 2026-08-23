@@ -54,20 +54,21 @@ object WmxImageGenerator {
 
     /**
      * Dibuat dari ManifestGroup agar langsung cocok dengan struktur project sekarang.
-     * Karena CargoItem saat ini belum mempunyai field PENGIRIM/PENERIMA terpisah,
-     * customer dipakai sebagai PENGIRIM dan PENERIMA dibiarkan kosong.
+     * Customer dari CargoItem dipakai sebagai PENERIMA.
+     * PENGIRIM diisi operator sebelum foto dibuat, melalui senderByGroupKey.
      */
     fun generateFromManifestGroups(
         header: Header,
-        groups: List<ManifestGroup>
+        groups: List<ManifestGroup>,
+        senderByGroupKey: Map<String, String> = emptyMap()
     ): Bitmap {
         val rows = groups.mapIndexed { index, group ->
             val item = group.summary
             Row(
                 no = index + 1,
                 pti = item.pti.trim(),
-                pengirim = item.customer.trim(),
-                penerima = "",
+                pengirim = senderByGroupKey[group.groupKey].orEmpty().trim(),
+                penerima = item.customer.trim(),
                 jenisBarang = item.description.trim(),
                 koli = item.pcsQty.trim()
             )

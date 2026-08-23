@@ -59,6 +59,8 @@ fun CargoAppScreen(
     var showLootTargetDialog by remember { mutableStateOf(false) }
     var showCustomerPriorityDialog by remember { mutableStateOf(false) }
     var showBtbCheckDialog by remember { mutableStateOf(false) }
+    var showWmxSenderDialog by remember { mutableStateOf(false) }
+    val wmxSenderByGroupKey = remember { mutableStateMapOf<String, String>() }
     var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var wmxGenerating by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -204,23 +206,8 @@ fun CargoAppScreen(
             onClick = {
                 if (groups.isEmpty()) {
                     Toast.makeText(context, "Data Manifest kosong", Toast.LENGTH_SHORT).show()
-                } else if (!wmxGenerating) {
-                    wmxGenerating = true
-                    scope.launch {
-                        val bitmap = withContext(Dispatchers.Default) {
-                            WmxImageGenerator.generateFromManifestGroups(
-                                header = WmxImageGenerator.Header(
-                                    date = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault()).format(java.util.Date()),
-                                    flightNo = groups.firstOrNull()?.summary?.flightNo.orEmpty(),
-                                    from = "DJJ",
-                                    to = "WMX"
-                                ),
-                                groups = groups
-                            )
-                        }
-                        wmxBitmap = bitmap
-                        wmxGenerating = false
-                    }
+                } else {
+                    showWmxSenderDialog = true
                 }
             },
             enabled = groups.isNotEmpty() && !wmxGenerating,
@@ -228,7 +215,10 @@ fun CargoAppScreen(
             shape = RoundedCornerShape(20.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
         ) {
-            Text(if (wmxGenerating) "Membuat Foto..." else "📸 Preview & Buat Foto WMX", fontWeight = FontWeight.Bold)
+            Text(
+                if (wmxGenerating) "Membuat Foto..." else "📸 Isi Pengirim & Preview WMX",
+                fontWeight = FontWeight.Bold
+            )
         }
 
         Spacer(Modifier.height(8.dp))
@@ -282,6 +272,51 @@ fun CargoAppScreen(
                 viewModel.saveCustomerPriority(context, priority)
                 showCustomerPriorityDialog = false
                 Toast.makeText(context, "Prioritas Customer disimpan", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (showWmxSenderDialog) {
+        WmxSenderDialog(
+            groups = groups,
+            senderByGroupKey = wmxSenderByGroupKey,
+            onDismiss = { showWmxSenderDialog = false },
+            onConfirm = { senders ->
+                wmxSenderByGroupKey.clear()
+                wmxSenderByGroupKey.putAll(senders)
+                showWmxSenderDialog = false
+
+                if (!wmxGenerating) {
+                    wmxGenerating = true
+                    scope.launch {
+                        runCatching {
+                            withContext(Dispatchers.Default) {
+                                WmxImageGenerator.generateFromManifestGroups(
+                                    header = WmxImageGenerator.Header(
+                                        date = java.text.SimpleDateFormat(
+                                            "dd-MM-yyyy",
+                                            java.util.Locale.getDefault()
+                                        ).format(java.util.Date()),
+                                        flightNo = groups.firstOrNull()?.summary?.flightNo.orEmpty(),
+                                        from = "DJJ",
+                                        to = "WMX"
+                                    ),
+                                    groups = groups,
+                                    senderByGroupKey = senders
+                                )
+                            }
+                        }.onSuccess { bitmap ->
+                            wmxBitmap = bitmap
+                        }.onFailure { error ->
+                            Toast.makeText(
+                                context,
+                                "Gagal membuat foto WMX: ${error.localizedMessage}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                        wmxGenerating = false
+                    }
+                }
             }
         )
     }
