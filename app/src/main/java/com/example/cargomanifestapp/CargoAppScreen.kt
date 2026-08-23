@@ -1,8 +1,10 @@
 package com.example.cargomanifestapp
 
+import android.content.Intent
 import android.widget.Toast
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -35,6 +38,9 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CargoAppScreen(
@@ -53,6 +59,9 @@ fun CargoAppScreen(
     var showLootTargetDialog by remember { mutableStateOf(false) }
     var showCustomerPriorityDialog by remember { mutableStateOf(false) }
     var showBtbCheckDialog by remember { mutableStateOf(false) }
+    var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var wmxGenerating by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
@@ -191,6 +200,38 @@ fun CargoAppScreen(
         }
 
         Spacer(Modifier.height(8.dp))
+        Button(
+            onClick = {
+                if (groups.isEmpty()) {
+                    Toast.makeText(context, "Data Manifest kosong", Toast.LENGTH_SHORT).show()
+                } else if (!wmxGenerating) {
+                    wmxGenerating = true
+                    scope.launch {
+                        val bitmap = withContext(Dispatchers.Default) {
+                            WmxImageGenerator.generateFromManifestGroups(
+                                header = WmxImageGenerator.Header(
+                                    date = java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault()).format(java.util.Date()),
+                                    flightNo = groups.firstOrNull()?.summary?.flightNo.orEmpty(),
+                                    from = "DJJ",
+                                    to = "WMX"
+                                ),
+                                groups = groups
+                            )
+                        }
+                        wmxBitmap = bitmap
+                        wmxGenerating = false
+                    }
+                }
+            },
+            enabled = groups.isNotEmpty() && !wmxGenerating,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+        ) {
+            Text(if (wmxGenerating) "Membuat Foto..." else "📸 Preview & Buat Foto WMX", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(8.dp))
         OutlinedButton(
             onClick = { showBtbCheckDialog = true },
             modifier = Modifier.fillMaxWidth(),
@@ -241,6 +282,54 @@ fun CargoAppScreen(
                 viewModel.saveCustomerPriority(context, priority)
                 showCustomerPriorityDialog = false
                 Toast.makeText(context, "Prioritas Customer disimpan", Toast.LENGTH_SHORT).show()
+            }
+        )
+    }
+
+    if (wmxBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { wmxBitmap = null },
+            title = { Text("Preview Foto WMX", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 520.dp)
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Image(
+                        bitmap = wmxBitmap!!.asImageBitmap(),
+                        contentDescription = "Preview Manifest WMX",
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val bitmap = wmxBitmap ?: return@TextButton
+                    scope.launch {
+                        runCatching {
+                            val uri = withContext(Dispatchers.IO) {
+                                WmxImageGenerator.saveToCache(context, bitmap)
+                            }
+                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "image/png"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            context.startActivity(Intent.createChooser(shareIntent, "Kirim Foto Manifest"))
+                        }.onFailure {
+                            Toast.makeText(
+                                context,
+                                "Gagal membagikan foto: ${it.localizedMessage}",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }) { Text("📤 Share") }
+            },
+            dismissButton = {
+                TextButton(onClick = { wmxBitmap = null }) { Text("Tutup") }
             }
         )
     }
