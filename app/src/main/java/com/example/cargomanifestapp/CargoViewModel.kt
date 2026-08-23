@@ -680,6 +680,13 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun normalize(value: String): String {
+        return value
+            .trim()
+            .replace(Regex("\\s+"), " ")
+            .uppercase()
+    }
+
     // ==========================================
     // HELPER FUNCTIONS
     // ==========================================
