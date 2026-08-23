@@ -124,6 +124,32 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
     }
 
+    /**
+     * Mengurutkan ManifestGroup mengikuti Prioritas Customer yang sama dengan
+     * urutan yang digunakan saat export Excel. Customer yang tidak masuk daftar
+     * prioritas ditempatkan setelah customer prioritas, dengan urutan aslinya tetap.
+     */
+    fun sortManifestGroupsByCustomerPriority(
+        groups: List<ManifestGroup>,
+        priority: List<String>
+    ): List<ManifestGroup> {
+        if (priority.isEmpty()) return groups
+
+        val rank = priority
+            .mapIndexed { index, customer -> normalize(customer) to index }
+            .toMap()
+        val fallback = priority.size
+
+        return groups
+            .withIndex()
+            .sortedWith(
+                compareBy<IndexedValue<ManifestGroup>> {
+                    rank[normalize(it.value.summary.customer)] ?: fallback
+                }.thenBy { it.index }
+            )
+            .map { it.value }
+    }
+
     fun getKnownCustomers(): List<String> {
         return manifestGroupsState.value
             .flatMap { group -> group.details.map { it.item.customer } + group.summary.customer }
