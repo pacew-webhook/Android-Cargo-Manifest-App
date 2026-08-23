@@ -34,6 +34,7 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         private const val LOOT_TARGET_PREFS = "manifest_settings"
         private const val LOOT_TARGET_KEY = "target_loot_kg"
         private const val CUSTOMER_PRIORITY_KEY = "customer_priority_order"
+        private const val WMX_SENDERS_KEY = "wmx_saved_senders"
 
         // Kolom ke-20 (index 19, 0-based -> kolom "T"). Dipilih jauh di luar area
         // tabel yang dipakai template (kolom terpakai cuma sampai R/index17), dan
@@ -124,31 +125,45 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
     }
 
-    /**
-     * Mengurutkan ManifestGroup mengikuti Prioritas Customer yang sama dengan
-     * urutan yang digunakan saat export Excel. Customer yang tidak masuk daftar
-     * prioritas ditempatkan setelah customer prioritas, dengan urutan aslinya tetap.
+    /** Daftar PENGIRIM WMX disimpan di storage manifest_settings yang sudah ada.
+     * Tidak membuat model Room/entity/database baru.
      */
-    fun sortManifestGroupsByCustomerPriority(
-        groups: List<ManifestGroup>,
-        priority: List<String>
-    ): List<ManifestGroup> {
+    fun getWmxSavedSenders(context: Context): List<String> {
+        val raw = context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .getString(WMX_SENDERS_KEY, "") ?: ""
+        return raw.split("\u001F")
+            .map { it.trim().uppercase() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .takeLast(100)
+    }
+
+    fun saveWmxSenders(context: Context, senders: Collection<String>) {
+        val existing = getWmxSavedSenders(context)
+        val merged = (existing + senders)
+            .map { it.trim().uppercase() }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .takeLast(100)
+        context.getSharedPreferences(LOOT_TARGET_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(WMX_SENDERS_KEY, merged.joinToString("\u001F"))
+            .apply()
+    }
+
+    fun getWmxGroupsInCustomerPriorityOrder(context: Context): List<ManifestGroup> {
+        val groups = manifestGroupsState.value
+        val priority = getCustomerPriority(context)
         if (priority.isEmpty()) return groups
-
-        val rank = priority
-            .mapIndexed { index, customer -> normalize(customer) to index }
-            .toMap()
+        val rank = priority.mapIndexed { index, customer -> normalize(customer) to index }.toMap()
         val fallback = priority.size
-
-        return groups
-            .withIndex()
-            .sortedWith(
-                compareBy<IndexedValue<ManifestGroup>> {
-                    rank[normalize(it.value.summary.customer)] ?: fallback
-                }.thenBy { it.index }
-            )
+        return groups.withIndex()
+            .sortedWith(compareBy<IndexedValue<ManifestGroup>> { rank[normalize(it.value.summary.customer)] ?: fallback }.thenBy { it.index })
             .map { it.value }
     }
+
+    private fun normalize(value: String): String =
+        value.trim().replace(Regex("\\s+"), " ").uppercase()
 
     fun getKnownCustomers(): List<String> {
         return manifestGroupsState.value
@@ -678,13 +693,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
-    }
-
-    private fun normalize(value: String): String {
-        return value
-            .trim()
-            .replace(Regex("\\s+"), " ")
-            .uppercase()
     }
 
     // ==========================================

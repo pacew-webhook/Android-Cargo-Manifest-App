@@ -1,10 +1,17 @@
 package com.example.cargomanifestapp
 
-import android.content.Intent
 import android.widget.Toast
+import android.content.Intent
+import androidx.core.content.FileProvider
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.FileOutputStream
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
@@ -25,7 +32,6 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -38,9 +44,6 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 @Composable
 fun CargoAppScreen(
@@ -60,12 +63,12 @@ fun CargoAppScreen(
     var showCustomerPriorityDialog by remember { mutableStateOf(false) }
     var showBtbCheckDialog by remember { mutableStateOf(false) }
     var showWmxSenderDialog by remember { mutableStateOf(false) }
-    val wmxSenderByGroupKey = remember { mutableStateMapOf<String, String>() }
+    var showWmxPreview by remember { mutableStateOf(false) }
     var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var wmxSenders by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var wmxSavedSenders by remember { mutableStateOf(viewModel.getWmxSavedSenders(context)) }
     var wmxGenerating by remember { mutableStateOf(false) }
-    var wmxPreviewGroups by remember { mutableStateOf<List<ManifestGroup>>(emptyList()) }
-    var wmxSavedSenders by remember { mutableStateOf(WmxSenderHistory.load(context)) }
-    val scope = rememberCoroutineScope()
+    val wmxScope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
@@ -204,29 +207,20 @@ fun CargoAppScreen(
         }
 
         Spacer(Modifier.height(8.dp))
-        Button(
+        OutlinedButton(
             onClick = {
                 if (groups.isEmpty()) {
                     Toast.makeText(context, "Data Manifest kosong", Toast.LENGTH_SHORT).show()
                 } else {
-                    // Preview WMX harus mengikuti Prioritas Customer yang sama
-                    // seperti urutan Manifest saat Export Excel.
-                    wmxPreviewGroups = viewModel.sortManifestGroupsByCustomerPriority(
-                        groups = groups,
-                        priority = viewModel.getCustomerPriority(context)
-                    )
+                    wmxSavedSenders = viewModel.getWmxSavedSenders(context)
                     showWmxSenderDialog = true
                 }
             },
             enabled = groups.isNotEmpty() && !wmxGenerating,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0))
+            shape = RoundedCornerShape(20.dp)
         ) {
-            Text(
-                if (wmxGenerating) "Membuat Foto..." else "📸 Isi Pengirim & Preview WMX",
-                fontWeight = FontWeight.Bold
-            )
+            Text(if (wmxGenerating) "Membuat Preview..." else "📸 Isi Pengirim & Preview WMX", fontWeight = FontWeight.Bold)
         }
 
         Spacer(Modifier.height(8.dp))
@@ -278,125 +272,8 @@ fun CargoAppScreen(
             onDismiss = { showCustomerPriorityDialog = false },
             onSave = { priority ->
                 viewModel.saveCustomerPriority(context, priority)
-
-                // Jika dialog WMX sedang terbuka, langsung susun ulang berdasarkan
-                // prioritas terbaru agar daftar input PENGIRIM ikut berubah.
-                if (showWmxSenderDialog) {
-                    wmxPreviewGroups = viewModel.sortManifestGroupsByCustomerPriority(
-                        groups = groups,
-                        priority = priority
-                    )
-                }
-
                 showCustomerPriorityDialog = false
                 Toast.makeText(context, "Prioritas Customer disimpan", Toast.LENGTH_SHORT).show()
-            }
-        )
-    }
-
-    if (showWmxSenderDialog) {
-        WmxSenderDialog(
-            groups = wmxPreviewGroups,
-            senderByGroupKey = wmxSenderByGroupKey,
-            savedSenders = wmxSavedSenders,
-            onDismiss = { showWmxSenderDialog = false },
-            onConfirm = { senders ->
-                val normalizedSenders = senders.mapValues { it.value.trim().uppercase(java.util.Locale.getDefault()) }
-                WmxSenderHistory.save(context, normalizedSenders.values)
-                wmxSavedSenders = WmxSenderHistory.load(context)
-                wmxSenderByGroupKey.clear()
-                wmxSenderByGroupKey.putAll(normalizedSenders)
-                showWmxSenderDialog = false
-
-                if (!wmxGenerating) {
-                    wmxGenerating = true
-                    scope.launch {
-                        runCatching {
-                            // Re-read the priority HERE, immediately before generating
-                            // the image. This prevents an old cached preview order from
-                            // being used after the user changes Customer Priority.
-                            val latestPriority = viewModel.getCustomerPriority(context)
-                            val latestWmxGroups = viewModel.sortManifestGroupsByCustomerPriority(
-                                groups = groups,
-                                priority = latestPriority
-                            )
-                            wmxPreviewGroups = latestWmxGroups
-
-                            withContext(Dispatchers.Default) {
-                                WmxImageGenerator.generateFromManifestGroups(
-                                    header = WmxImageGenerator.Header(
-                                        date = java.text.SimpleDateFormat(
-                                            "dd-MM-yyyy",
-                                            java.util.Locale.getDefault()
-                                        ).format(java.util.Date()),
-                                        flightNo = latestWmxGroups.firstOrNull()?.summary?.flightNo.orEmpty(),
-                                        from = "DJJ",
-                                        to = "WMX"
-                                    ),
-                                    groups = latestWmxGroups,
-                                    senderByGroupKey = normalizedSenders
-                                )
-                            }
-                        }.onSuccess { bitmap ->
-                            wmxBitmap = bitmap
-                        }.onFailure { error ->
-                            Toast.makeText(
-                                context,
-                                "Gagal membuat foto WMX: ${error.localizedMessage}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                        wmxGenerating = false
-                    }
-                }
-            }
-        )
-    }
-
-    if (wmxBitmap != null) {
-        AlertDialog(
-            onDismissRequest = { wmxBitmap = null },
-            title = { Text("Preview Foto WMX", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 520.dp)
-                        .verticalScroll(rememberScrollState())
-                ) {
-                    Image(
-                        bitmap = wmxBitmap!!.asImageBitmap(),
-                        contentDescription = "Preview Manifest WMX",
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val bitmap = wmxBitmap ?: return@TextButton
-                    scope.launch {
-                        runCatching {
-                            val uri = withContext(Dispatchers.IO) {
-                                WmxImageGenerator.saveToCache(context, bitmap)
-                            }
-                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                type = "image/png"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(Intent.createChooser(shareIntent, "Kirim Foto Manifest"))
-                        }.onFailure {
-                            Toast.makeText(
-                                context,
-                                "Gagal membagikan foto: ${it.localizedMessage}",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    }
-                }) { Text("📤 Share") }
-            },
-            dismissButton = {
-                TextButton(onClick = { wmxBitmap = null }) { Text("Tutup") }
             }
         )
     }
@@ -433,6 +310,67 @@ fun CargoAppScreen(
             onSave = { edited ->
                 viewModel.updateManifestDetail(context, detail, edited)
                 selectedDetail = null
+            }
+        )
+    }
+
+    if (showWmxSenderDialog) {
+        WmxSenderDialog(
+            groups = groups,
+            savedSenders = wmxSavedSenders,
+            initialSenders = wmxSenders,
+            onDismiss = { showWmxSenderDialog = false },
+            onConfirm = { senders ->
+                wmxSenders = senders
+                viewModel.saveWmxSenders(context, senders.values)
+                wmxSavedSenders = viewModel.getWmxSavedSenders(context)
+                showWmxSenderDialog = false
+                wmxGenerating = true
+                wmxScope.launch {
+                    val latestGroups = viewModel.getWmxGroupsInCustomerPriorityOrder(context)
+                    val bitmap = withContext(Dispatchers.Default) {
+                        WmxImageGenerator.generate(latestGroups, senders)
+                    }
+                    wmxBitmap = bitmap
+                    wmxGenerating = false
+                    showWmxPreview = true
+                }
+            }
+        )
+    }
+
+    if (showWmxPreview && wmxBitmap != null) {
+        AlertDialog(
+            onDismissRequest = { showWmxPreview = false },
+            title = { Text("Periksa Foto WMX", fontWeight = FontWeight.Bold) },
+            text = {
+                Image(
+                    bitmap = wmxBitmap!!.asImageBitmap(),
+                    contentDescription = "Preview WMX",
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+                )
+            },
+            dismissButton = { TextButton(onClick = { showWmxPreview = false }) { Text("Tutup") } },
+            confirmButton = {
+                Button(onClick = {
+                    val bitmap = wmxBitmap ?: return@Button
+                    val file = File(context.cacheDir, "WMX_${System.currentTimeMillis()}.png")
+                    runCatching {
+                        FileOutputStream(file).use { out ->
+                            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
+                        }
+                        val uri = FileProvider.getUriForFile(context, "com.example.cargomanifestapp.provider", file)
+                        context.startActivity(
+                            Intent(Intent.ACTION_SEND).apply {
+                                type = "image/png"
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }.let { Intent.createChooser(it, "Kirim Foto WMX") }
+                        )
+                    }.onFailure {
+                        Toast.makeText(context, "Gagal menyiapkan foto: ${it.localizedMessage}", Toast.LENGTH_LONG).show()
+                    }
+                }) { Text("Kirim") }
             }
         )
     }
