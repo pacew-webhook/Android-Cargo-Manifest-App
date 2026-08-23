@@ -63,6 +63,8 @@ fun CargoAppScreen(
     val wmxSenderByGroupKey = remember { mutableStateMapOf<String, String>() }
     var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var wmxGenerating by remember { mutableStateOf(false) }
+    var wmxPreviewGroups by remember { mutableStateOf<List<ManifestGroup>>(emptyList()) }
+    var wmxSavedSenders by remember { mutableStateOf(WmxSenderHistory.load(context)) }
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
@@ -207,6 +209,12 @@ fun CargoAppScreen(
                 if (groups.isEmpty()) {
                     Toast.makeText(context, "Data Manifest kosong", Toast.LENGTH_SHORT).show()
                 } else {
+                    // Preview WMX harus mengikuti Prioritas Customer yang sama
+                    // seperti urutan Manifest saat Export Excel.
+                    wmxPreviewGroups = viewModel.sortManifestGroupsByCustomerPriority(
+                        groups = groups,
+                        priority = viewModel.getCustomerPriority(context)
+                    )
                     showWmxSenderDialog = true
                 }
             },
@@ -270,6 +278,16 @@ fun CargoAppScreen(
             onDismiss = { showCustomerPriorityDialog = false },
             onSave = { priority ->
                 viewModel.saveCustomerPriority(context, priority)
+
+                // Jika dialog WMX sedang terbuka, langsung susun ulang berdasarkan
+                // prioritas terbaru agar daftar input PENGIRIM ikut berubah.
+                if (showWmxSenderDialog) {
+                    wmxPreviewGroups = viewModel.sortManifestGroupsByCustomerPriority(
+                        groups = groups,
+                        priority = priority
+                    )
+                }
+
                 showCustomerPriorityDialog = false
                 Toast.makeText(context, "Prioritas Customer disimpan", Toast.LENGTH_SHORT).show()
             }
@@ -278,18 +296,32 @@ fun CargoAppScreen(
 
     if (showWmxSenderDialog) {
         WmxSenderDialog(
-            groups = groups,
+            groups = wmxPreviewGroups,
             senderByGroupKey = wmxSenderByGroupKey,
+            savedSenders = wmxSavedSenders,
             onDismiss = { showWmxSenderDialog = false },
             onConfirm = { senders ->
+                val normalizedSenders = senders.mapValues { it.value.trim().uppercase(java.util.Locale.getDefault()) }
+                WmxSenderHistory.save(context, normalizedSenders.values)
+                wmxSavedSenders = WmxSenderHistory.load(context)
                 wmxSenderByGroupKey.clear()
-                wmxSenderByGroupKey.putAll(senders)
+                wmxSenderByGroupKey.putAll(normalizedSenders)
                 showWmxSenderDialog = false
 
                 if (!wmxGenerating) {
                     wmxGenerating = true
                     scope.launch {
                         runCatching {
+                            // Re-read the priority HERE, immediately before generating
+                            // the image. This prevents an old cached preview order from
+                            // being used after the user changes Customer Priority.
+                            val latestPriority = viewModel.getCustomerPriority(context)
+                            val latestWmxGroups = viewModel.sortManifestGroupsByCustomerPriority(
+                                groups = groups,
+                                priority = latestPriority
+                            )
+                            wmxPreviewGroups = latestWmxGroups
+
                             withContext(Dispatchers.Default) {
                                 WmxImageGenerator.generateFromManifestGroups(
                                     header = WmxImageGenerator.Header(
@@ -297,12 +329,12 @@ fun CargoAppScreen(
                                             "dd-MM-yyyy",
                                             java.util.Locale.getDefault()
                                         ).format(java.util.Date()),
-                                        flightNo = groups.firstOrNull()?.summary?.flightNo.orEmpty(),
+                                        flightNo = latestWmxGroups.firstOrNull()?.summary?.flightNo.orEmpty(),
                                         from = "DJJ",
                                         to = "WMX"
                                     ),
-                                    groups = groups,
-                                    senderByGroupKey = senders
+                                    groups = latestWmxGroups,
+                                    senderByGroupKey = normalizedSenders
                                 )
                             }
                         }.onSuccess { bitmap ->

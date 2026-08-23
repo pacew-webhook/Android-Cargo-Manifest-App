@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedTextField
@@ -24,6 +26,39 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.content.Context
+import org.json.JSONArray
+import java.util.Locale
+
+/** Penyimpanan daftar PENGIRIM yang pernah digunakan untuk WMX. */
+object WmxSenderHistory {
+    private const val PREFS = "wmx_sender_history"
+    private const val KEY = "senders"
+
+    fun load(context: Context): List<String> {
+        val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY, null) ?: return emptyList()
+        return runCatching {
+            val json = JSONArray(raw)
+            (0 until json.length())
+                .map { json.optString(it).trim().uppercase(Locale.getDefault()) }
+                .filter { it.isNotBlank() }
+                .distinct()
+        }.getOrDefault(emptyList())
+    }
+
+    fun save(context: Context, values: Collection<String>) {
+        val merged = (load(context) + values)
+            .map { it.trim().uppercase(Locale.getDefault()) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .takeLast(100)
+        val json = JSONArray()
+        merged.forEach { json.put(it) }
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY, json.toString()).apply()
+    }
+}
 
 /**
  * Dialog untuk melengkapi PENGIRIM sebelum foto WMX dibuat.
@@ -33,6 +68,7 @@ import androidx.compose.ui.unit.sp
 fun WmxSenderDialog(
     groups: List<ManifestGroup>,
     senderByGroupKey: Map<String, String>,
+    savedSenders: List<String>,
     onDismiss: () -> Unit,
     onConfirm: (Map<String, String>) -> Unit
 ) {
@@ -80,7 +116,7 @@ fun WmxSenderDialog(
                         OutlinedTextField(
                             value = draft[group.groupKey].orEmpty(),
                             onValueChange = {
-                                draft[group.groupKey] = it
+                                draft[group.groupKey] = it.uppercase(Locale.getDefault())
                                 errorText = null
                             },
                             label = { Text("PENGIRIM") },
@@ -88,6 +124,28 @@ fun WmxSenderDialog(
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
+                        if (savedSenders.isNotEmpty()) {
+                            Text(
+                                "Pengirim tersimpan — ketuk untuk memilih:",
+                                fontSize = 11.sp,
+                                color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            LazyRow(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(savedSenders, key = { it }) { sender ->
+                                    FilterChip(
+                                        selected = draft[group.groupKey].orEmpty() == sender,
+                                        onClick = {
+                                            draft[group.groupKey] = sender
+                                            errorText = null
+                                        },
+                                        label = { Text(sender, fontSize = 11.sp) }
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -110,7 +168,7 @@ fun WmxSenderDialog(
                     if (missing.isNotEmpty()) {
                         errorText = "PENGIRIM belum diisi untuk ${missing.size} data. Lengkapi sebelum lanjut."
                     } else {
-                        onConfirm(draft.mapValues { it.value.trim() })
+                        onConfirm(draft.mapValues { it.value.trim().uppercase(Locale.getDefault()) })
                     }
                 }
             ) {
