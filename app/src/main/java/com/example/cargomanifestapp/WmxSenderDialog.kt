@@ -25,6 +25,9 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -96,9 +99,10 @@ fun WmxSenderDialog(
                                     }
                                 },
                             singleLine = true,
-                            imeAction = if (index < groups.lastIndex) androidx.compose.ui.text.input.ImeAction.Next
-                                        else androidx.compose.ui.text.input.ImeAction.Done,
-                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                            keyboardOptions = KeyboardOptions(
+                                imeAction = if (index < groups.lastIndex) ImeAction.Next else ImeAction.Done
+                            ),
+                            keyboardActions = KeyboardActions(
                                 onNext = {
                                     val next = index + 1
                                     if (next < focusRequesters.size) {
