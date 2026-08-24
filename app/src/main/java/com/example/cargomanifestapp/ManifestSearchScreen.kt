@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -33,6 +34,10 @@ fun ManifestSearchScreen(
     val message by viewModel.message.collectAsState()
 
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    // Tombol Back Android pada halaman pencarian kembali ke Menu Utama,
+    // bukan menutup Activity/aplikasi.
+    BackHandler(enabled = true) { onBack() }
 
     val folderLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocumentTree()

@@ -19,6 +19,12 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
@@ -41,6 +47,11 @@ fun WmxSenderDialog(
 ) {
     val draft = remember { mutableStateMapOf<String, String>() }
     var errorText by remember { mutableStateOf<String?>(null) }
+    // Satu FocusRequester untuk setiap kolom PENGIRIM.
+    // Tombol Enter akan memindahkan fokus ke kolom berikutnya.
+    val focusRequesters = remember(groups) {
+        List(groups.size) { FocusRequester() }
+    }
 
     LaunchedEffect(groups, initialSenders) {
         draft.clear()
@@ -70,8 +81,32 @@ fun WmxSenderDialog(
                                 draft[group.groupKey] = value.uppercase(Locale.getDefault())
                                 errorText = null
                             },
-                            modifier = Modifier.fillMaxWidth(),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .focusRequester(focusRequesters.getOrNull(index) ?: FocusRequester())
+                                .onKeyEvent { event ->
+                                    if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
+                                        val next = index + 1
+                                        if (next < focusRequesters.size) {
+                                            focusRequesters[next].requestFocus()
+                                        }
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                },
                             singleLine = true,
+                            imeAction = if (index < groups.lastIndex) androidx.compose.ui.text.input.ImeAction.Next
+                                        else androidx.compose.ui.text.input.ImeAction.Done,
+                            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
+                                onNext = {
+                                    val next = index + 1
+                                    if (next < focusRequesters.size) {
+                                        focusRequesters[next].requestFocus()
+                                    }
+                                },
+                                onDone = { /* tetap di kolom terakhir */ }
+                            ),
                             label = { Text("PENGIRIM") }
                         )
                         if (savedSenders.isNotEmpty()) {
