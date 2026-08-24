@@ -22,9 +22,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
+import android.view.KeyEvent as AndroidKeyEvent
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
@@ -88,7 +87,9 @@ fun WmxSenderDialog(
                                 .fillMaxWidth()
                                 .focusRequester(focusRequesters.getOrNull(index) ?: FocusRequester())
                                 .onKeyEvent { event ->
-                                    if (event.type == KeyEventType.KeyUp && event.key == Key.Enter) {
+                                    if (event.nativeKeyEvent.keyCode == AndroidKeyEvent.KEYCODE_ENTER &&
+                                        event.nativeKeyEvent.action == AndroidKeyEvent.ACTION_UP
+                                    ) {
                                         val next = index + 1
                                         if (next < focusRequesters.size) {
                                             focusRequesters[next].requestFocus()
