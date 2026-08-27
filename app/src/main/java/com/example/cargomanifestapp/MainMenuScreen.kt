@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -28,7 +29,8 @@ fun MainMenuScreen(
     onNavigateToStowing: () -> Unit,
     onNavigateToBuktiTimbang: () -> Unit,
     onNavigateToManifestSearch: () -> Unit,
-    onNavigateToFlightTracking: () -> Unit
+    onNavigateToFlightTracking: () -> Unit,
+    onNavigateToJarvis: () -> Unit
 ) {
     Scaffold(
         topBar = {
@@ -125,6 +127,17 @@ fun MainMenuScreen(
                 iconBackgroundColor = Color(0xFFE3F2FD),
                 iconTintColor = Color(0xFF1565C0),
                 onClick = onNavigateToFlightTracking
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            MenuCard(
+                title = "JARVIS Voice Assistant",
+                subtitle = "Kontrol aplikasi dengan perintah suara",
+                icon = Icons.Default.RecordVoiceOver,
+                iconBackgroundColor = Color(0xFFE8DEF8),
+                iconTintColor = Color(0xFF673AB7),
+                onClick = onNavigateToJarvis
             )
         }
     }

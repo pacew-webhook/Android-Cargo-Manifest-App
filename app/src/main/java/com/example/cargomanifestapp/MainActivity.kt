@@ -49,6 +49,10 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToFlightTracking = {
                                     val intent = Intent(context, FlightTrackingActivity::class.java)
                                     context.startActivity(intent)
+                                },
+                                onNavigateToJarvis = {
+                                    val intent = Intent(context, JarvisActivity::class.java)
+                                    context.startActivity(intent)
                                 }
                             )
                         }
@@ -80,6 +84,10 @@ class MainActivity : ComponentActivity() {
                                 },
                                 onNavigateToFlightTracking = {
                                     val intent = Intent(context, FlightTrackingActivity::class.java)
+                                    context.startActivity(intent)
+                                },
+                                onNavigateToJarvis = {
+                                    val intent = Intent(context, JarvisActivity::class.java)
                                     context.startActivity(intent)
                                 }
                             )
