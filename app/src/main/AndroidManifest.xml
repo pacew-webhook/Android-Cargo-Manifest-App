@@ -8,6 +8,9 @@
     <!-- Kamera untuk modul Bukti Timbang / OCR timbangan -->
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- Mikrofon untuk JARVIS Voice Assistant -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <!-- Izin untuk Simpan/Export File Excel -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -30,6 +33,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- JARVIS Voice Assistant -->
+        <activity
+            android:name="com.example.cargomanifestapp.JarvisActivity"
+            android:exported="false"
+            android:label="JARVIS"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <!-- Activity Data Stowingan Palet -->
         <activity
