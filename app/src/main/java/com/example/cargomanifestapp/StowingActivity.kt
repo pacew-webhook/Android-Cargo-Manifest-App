@@ -1,9 +1,6 @@
 package com.example.cargomanifestapp
 
 import android.net.Uri
-import android.Manifest
-import android.content.pm.PackageManager
-import androidx.core.content.ContextCompat
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -46,9 +43,6 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.viewModels
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
 class StowingActivity : ComponentActivity() {
     private val stowingViewModel: StowingViewModel by viewModels()
@@ -91,13 +85,6 @@ fun StowingInputScreen(
     val kgGridState = rememberLazyGridState()
     var scrollToKgIndex by remember { mutableStateOf<Int?>(null) }
     var showBtbPicker by remember { mutableStateOf(false) }
-    var showBackupDialog by remember { mutableStateOf(false) }
-    var flightNumber by remember { mutableStateOf("2") }
-    val backupDateText = remember {
-        SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID"))
-            .format(Date())
-            .uppercase(Locale("id", "ID"))
-    }
 
     LaunchedEffect(scrollToKgIndex) {
         val targetIndex = scrollToKgIndex ?: return@LaunchedEffect
@@ -151,12 +138,15 @@ fun StowingInputScreen(
     var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
     var sendingToN8n by remember { mutableStateOf(false) }
 
-    suspend fun processBtbUri(uri: Uri) {
+    suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
         try {
-            // Foto sudah disimpan permanen di storage aplikasi. OCR hanya membaca
-            // file tersebut dan TIDAK boleh menghapusnya karena foto harus ikut
-            // tersimpan pada data Stowing/Manifest.
-            val result = BtbOcrScanner.scan(context, uri)
+            val result = if (deleteTemp) {
+                BtbOcrScanner.scanAndDeleteTemp(context, uri)
+            } else {
+                // URI dari Galeri adalah milik aplikasi Galeri/MediaStore.
+                // Jangan dihapus setelah OCR selesai.
+                BtbOcrScanner.scan(context, uri)
+            }
 
             if (result.weights.isEmpty()) {
                 Toast.makeText(
@@ -184,8 +174,6 @@ fun StowingInputScreen(
         }
     }
 
-    var requestCameraCapture by remember { mutableStateOf(false) }
-
     val scanCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -197,37 +185,13 @@ fun StowingInputScreen(
             return@rememberLauncherForActivityResult
         }
 
-        // Kamera menulis langsung ke file internal aplikasi. Hubungkan foto
-        // sekarang juga ke form, sehingga foto tetap tersimpan walaupun OCR gagal.
-        scannedPhotoUri = uri.toString()
-        viewModel.attachBtbPhoto(scannedPhotoUri)
         scanBusy = true
         scanScope.launch {
             try {
-                processBtbUri(uri)
+                processBtbUri(uri, deleteTemp = true)
             } finally {
                 scanBusy = false
             }
-        }
-    }
-
-    val cameraPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission()
-    ) { granted ->
-        if (!granted) {
-            requestCameraCapture = false
-            Toast.makeText(context, "Izin Kamera diperlukan untuk Foto BTB", Toast.LENGTH_LONG).show()
-        } else {
-            requestCameraCapture = true
-        }
-    }
-
-    LaunchedEffect(requestCameraCapture) {
-        if (requestCameraCapture && !scanBusy) {
-            requestCameraCapture = false
-            val uri = BtbPhotoStorage.createPhotoUri(context)
-            pendingScanUri = uri
-            scanCameraLauncher.launch(uri)
         }
     }
 
@@ -239,17 +203,10 @@ fun StowingInputScreen(
     ) { uri ->
         if (uri == null || scanBusy) return@rememberLauncherForActivityResult
 
+        scanBusy = true
         scanScope.launch {
             try {
-                // Salin ke internal app storage supaya URI Galeri tidak hilang
-                // setelah aplikasi restart atau izin sementara berakhir.
-                val permanentUri = BtbPhotoStorage.copyToAppStorage(context, uri)
-                scannedPhotoUri = permanentUri.toString()
-                viewModel.attachBtbPhoto(scannedPhotoUri)
-                scanBusy = true
-                processBtbUri(permanentUri)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Gagal menyimpan foto BTB: ${e.localizedMessage ?: "error"}", Toast.LENGTH_LONG).show()
+                processBtbUri(uri, deleteTemp = false)
             } finally {
                 scanBusy = false
             }
@@ -258,11 +215,9 @@ fun StowingInputScreen(
 
     fun scanBtbFromCamera() {
         if (scanBusy) return
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
-            requestCameraCapture = true
-        } else {
-            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-        }
+        val uri = BtbPhotoStorage.createPhotoUri(context)
+        pendingScanUri = uri
+        scanCameraLauncher.launch(uri)
     }
 
     fun scanBtbFromGallery() {
@@ -302,73 +257,6 @@ fun StowingInputScreen(
                 Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
-    }
-
-    val backupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        if (viewModel.cargoList.isEmpty()) {
-            Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-        } else {
-            viewModel.exportBackupZip(
-                context, uri,
-                onSuccess = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
-                onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
-            )
-        }
-    }
-
-    val restoreLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri ->
-        uri ?: return@rememberLauncherForActivityResult
-        viewModel.restoreBackupZip(
-            context, uri,
-            onSuccess = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
-            onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
-        )
-    }
-
-    if (showBackupDialog) {
-        AlertDialog(
-            onDismissRequest = { showBackupDialog = false },
-            title = { Text("Backup Manifest") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Tanggal: $backupDateText")
-                    OutlinedTextField(
-                        value = flightNumber,
-                        onValueChange = { value ->
-                            flightNumber = value.filter { it.isDigit() }
-                        },
-                        label = { Text("Nomor Flight") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
-                    )
-                    Text(
-                        "Nama file: MANIFES $backupDateText FLIGHT ${flightNumber.ifBlank { "-" }}.zip",
-                        fontSize = 12.sp
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        val flight = flightNumber.trim()
-                        if (flight.isBlank()) {
-                            Toast.makeText(context, "Nomor Flight wajib diisi", Toast.LENGTH_SHORT).show()
-                        } else {
-                            showBackupDialog = false
-                            backupLauncher.launch("MANIFES $backupDateText FLIGHT $flight.zip")
-                        }
-                    }
-                ) { Text("BUAT BACKUP") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showBackupDialog = false }) { Text("BATAL") }
-            }
-        )
     }
 
     val groupedCargo = remember(viewModel.cargoList.toList()) {
@@ -816,9 +704,15 @@ fun StowingInputScreen(
                     )
                 }
 
-                // Tombol Backup / Restore / Export sengaja tidak diletakkan di toolbar.
-                // Pada layar kecil Android, 5 tombol toolbar dapat terpotong.
-                // Ketiga tombol ditampilkan penuh di bawah tombol Kirim Excel ke Laptop.
+                IconButton(onClick = {
+                    if (viewModel.cargoList.isNotEmpty()) {
+                        exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
+                    } else {
+                        Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
+                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export 1 Excel", tint = Color(0xFF2E7D32))
+                }
             }
         }
 
@@ -1250,7 +1144,14 @@ fun StowingInputScreen(
 
         // --- DAFTAR CARGO TERGROUPING ---
         // --- DAFTAR CARGO TERGROUPING ---
-        val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        // Total Stowing yang ditampilkan mengikuti SISA TERSEDIA.
+        // Data Cargo/Stowing asli tetap tidak diubah. Pengurangan hanya dari
+        // transaksi Loot Crew, sama seperti perhitungan Total pada Manifest.
+        val grandTotalKgReal = viewModel.cargoList.sumOf { item ->
+            item.subTotal.toDoubleOrNull() ?: 0.0
+        }
+        val totalCrewLootKg = CrewLootManager.load(context).sumOf { it.kg }
+        val grandTotalKg = (grandTotalKgReal - totalCrewLootKg).coerceAtLeast(0.0)
         val grandTotalPAG = groupedCargo.size
 
         val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
@@ -1379,65 +1280,7 @@ fun StowingInputScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
-
-        // ===== BACKUP / RESTORE / EXPORT FILE =====
-        // Dipisahkan dari toolbar agar selalu terlihat pada semua ukuran layar.
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Button(
-                onClick = {
-                    if (viewModel.cargoList.isNotEmpty()) {
-                        showBackupDialog = true
-                    } else {
-                        Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Backup ZIP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            }
-
-            Button(
-                onClick = {
-                    restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF6C00)),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text("Restore ZIP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Button(
-            onClick = {
-                if (viewModel.cargoList.isNotEmpty()) {
-                    exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
-                } else {
-                    Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-            shape = RoundedCornerShape(8.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Share,
-                contentDescription = "Export Excel",
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Export Excel ke File", fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
