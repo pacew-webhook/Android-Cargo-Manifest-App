@@ -421,6 +421,47 @@ class StowingViewModel : ViewModel() {
         prefs.edit().putString("saved_cargo_list", jsonArray.toString()).apply()
     }
 
+    /** Export backup ZIP lengkap: data Cargo + mapping + file Foto BTB. */
+    fun exportBackupZip(
+        context: Context,
+        uri: Uri,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val snapshot = cargoList.toList()
+        viewModelScope.launch {
+            try {
+                withContext(Dispatchers.IO) {
+                    CargoBackupManager.exportBackup(context.applicationContext, uri, snapshot)
+                }
+                onSuccess("Backup lengkap berhasil dibuat (${snapshot.size} data)")
+            } catch (e: Exception) {
+                onError("Gagal membuat backup: ${e.localizedMessage ?: "error"}")
+            }
+        }
+    }
+
+    /** Restore backup ZIP lengkap dan muat ulang daftar Cargo + Foto BTB. */
+    fun restoreBackupZip(
+        context: Context,
+        uri: Uri,
+        onSuccess: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val count = withContext(Dispatchers.IO) {
+                    CargoBackupManager.restoreBackup(context.applicationContext, uri)
+                }
+                loadCargoListFromPrefs(context)
+                resetForm()
+                onSuccess("Restore berhasil: $count data Cargo dan Foto BTB dipulihkan")
+            } catch (e: Exception) {
+                onError("Gagal restore backup: ${e.localizedMessage ?: "File tidak valid"}")
+            }
+        }
+    }
+
     /**
      * Import file Excel hasil Export aplikasi.
      *
@@ -1329,6 +1370,8 @@ class StowingViewModel : ViewModel() {
         when (deleteType) {
             DeleteType.RESET_ALL -> {
                 cargoList.clear()
+                BtbPhotoStorage.clearAllPhotos(context)
+                context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE).edit().clear().apply()
                 usedBtbReferenceIds.clear()
                 saveUsedBtbReferenceIds(context)
                 runCatching {
@@ -1348,6 +1391,19 @@ class StowingViewModel : ViewModel() {
                 itemIndexToDelete?.let { idx ->
                     if (idx in cargoList.indices) {
                         if (editingIndex == idx) resetForm()
+                        val removedItem = cargoList[idx]
+                        runCatching {
+                            val prefs = context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                            val all = JSONObject(prefs.getString("items", "{}") ?: "{}")
+                            val key = cargoKey(removedItem)
+                            val photos = all.optJSONArray(key)
+                            if (photos != null) {
+                                val uris = buildList { for (i in 0 until photos.length()) add(photos.optString(i)) }
+                                BtbPhotoStorage.deletePhotos(context, uris)
+                            }
+                            all.remove(key)
+                            prefs.edit().putString("items", all.toString()).apply()
+                        }
                         cargoList.removeAt(idx)
                         saveCargoListToPrefs(context)
                         onDeleted("Data berhasil dihapus")

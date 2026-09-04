@@ -1,6 +1,9 @@
 package com.example.cargomanifestapp
 
 import android.net.Uri
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -171,6 +174,8 @@ fun StowingInputScreen(
         }
     }
 
+    var requestCameraCapture by remember { mutableStateOf(false) }
+
     val scanCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
@@ -193,6 +198,26 @@ fun StowingInputScreen(
             } finally {
                 scanBusy = false
             }
+        }
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (!granted) {
+            requestCameraCapture = false
+            Toast.makeText(context, "Izin Kamera diperlukan untuk Foto BTB", Toast.LENGTH_LONG).show()
+        } else {
+            requestCameraCapture = true
+        }
+    }
+
+    LaunchedEffect(requestCameraCapture) {
+        if (requestCameraCapture && !scanBusy) {
+            requestCameraCapture = false
+            val uri = BtbPhotoStorage.createPhotoUri(context)
+            pendingScanUri = uri
+            scanCameraLauncher.launch(uri)
         }
     }
 
@@ -223,9 +248,11 @@ fun StowingInputScreen(
 
     fun scanBtbFromCamera() {
         if (scanBusy) return
-        val uri = BtbPhotoStorage.createPhotoUri(context)
-        pendingScanUri = uri
-        scanCameraLauncher.launch(uri)
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            requestCameraCapture = true
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+        }
     }
 
     fun scanBtbFromGallery() {
@@ -265,6 +292,32 @@ fun StowingInputScreen(
                 Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    val backupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        if (viewModel.cargoList.isEmpty()) {
+            Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+        } else {
+            viewModel.exportBackupZip(
+                context, uri,
+                onSuccess = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
+                onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+            )
+        }
+    }
+
+    val restoreLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        viewModel.restoreBackupZip(
+            context, uri,
+            onSuccess = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
+            onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        )
     }
 
     val groupedCargo = remember(viewModel.cargoList.toList()) {
@@ -710,6 +763,22 @@ fun StowingInputScreen(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                TextButton(
+                    onClick = {
+                        if (viewModel.cargoList.isNotEmpty()) {
+                            backupLauncher.launch("Cargo_Backup_${System.currentTimeMillis()}.zip")
+                        } else Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                    }
+                ) {
+                    Text("Backup", color = Color(0xFF6A1B9A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(
+                    onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }
+                ) {
+                    Text("Restore", color = Color(0xFFEF6C00), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(onClick = {

@@ -247,15 +247,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     private fun sourceKeyFor(item: CargoItem, index: Int): String =
         "${index}|${item.pti}|${item.customer}|${item.description}|${item.noPag}|${item.pcsQty}|${item.weight}|${item.subTotal}"
 
+    private fun photoKeyFor(item: CargoItem): String =
+        listOf(
+            item.noPag, item.customer, item.description, item.pti,
+            item.pcsQty, item.weight, item.subTotal
+        ).joinToString("\u001F") { it.trim().uppercase() }
+
     /** Foto BTB yang tersimpan bersama data Stowing ini. */
     fun getPhotoUrisForItem(context: Context, item: CargoItem): List<String> {
         return runCatching {
             val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
                 .getString("items", "{}") ?: "{}")
-            val key = listOf(
-                item.noPag, item.customer, item.description, item.pti,
-                item.pcsQty, item.weight, item.subTotal
-            ).joinToString("\u001F") { it.trim().uppercase() }
+            val key = photoKeyFor(item)
             val photos = all.optJSONArray(key) ?: return@runCatching emptyList()
             buildList {
                 for (i in 0 until photos.length()) {
@@ -327,7 +330,23 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             if (targetIndex >= 0 && targetIndex < raw.size) {
+                val originalItem = raw[targetIndex]
                 raw[targetIndex] = edited
+
+                // Jika data diedit dari Manifest dan cargoKey berubah, pindahkan
+                // mapping Foto BTB ke key baru agar foto tidak hilang dari Detail Manifest.
+                runCatching {
+                    val photoPrefs = context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                    val allPhotos = JSONObject(photoPrefs.getString("items", "{}") ?: "{}")
+                    val oldKey = photoKeyFor(originalItem)
+                    val newKey = photoKeyFor(edited)
+                    if (oldKey != newKey && allPhotos.has(oldKey)) {
+                        val photos = allPhotos.optJSONArray(oldKey)
+                        if (photos != null) allPhotos.put(newKey, photos)
+                        allPhotos.remove(oldKey)
+                        photoPrefs.edit().putString("items", allPhotos.toString()).apply()
+                    }
+                }
 
                 // Simpan master Stowing yang sudah diedit.
                 val jsonArray = JSONArray()
