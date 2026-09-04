@@ -765,31 +765,9 @@ fun StowingInputScreen(
                     )
                 }
 
-                TextButton(
-                    onClick = {
-                        if (viewModel.cargoList.isNotEmpty()) {
-                            backupLauncher.launch("Cargo_Backup_${System.currentTimeMillis()}.zip")
-                        } else Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-                    }
-                ) {
-                    Text("Backup", color = Color(0xFF6A1B9A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                TextButton(
-                    onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }
-                ) {
-                    Text("Restore", color = Color(0xFFEF6C00), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                }
-
-                IconButton(onClick = {
-                    if (viewModel.cargoList.isNotEmpty()) {
-                        exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
-                    } else {
-                        Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-                    }
-                }) {
-                    Icon(imageVector = Icons.Default.Share, contentDescription = "Export 1 Excel", tint = Color(0xFF2E7D32))
-                }
+                // Tombol Backup / Restore / Export sengaja tidak diletakkan di toolbar.
+                // Pada layar kecil Android, 5 tombol toolbar dapat terpotong.
+                // Ketiga tombol ditampilkan penuh di bawah tombol Kirim Excel ke Laptop.
             }
         }
 
@@ -1350,7 +1328,65 @@ fun StowingInputScreen(
             )
         }
 
-        Spacer(modifier = Modifier.height(6.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // ===== BACKUP / RESTORE / EXPORT FILE =====
+        // Dipisahkan dari toolbar agar selalu terlihat pada semua ukuran layar.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = {
+                    if (viewModel.cargoList.isNotEmpty()) {
+                        backupLauncher.launch("Cargo_Backup_${System.currentTimeMillis()}.zip")
+                    } else {
+                        Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6A1B9A)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Backup ZIP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+
+            Button(
+                onClick = {
+                    restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream"))
+                },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF6C00)),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Restore ZIP", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = {
+                if (viewModel.cargoList.isNotEmpty()) {
+                    exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
+                } else {
+                    Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = "Export Excel",
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Export Excel ke File", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
