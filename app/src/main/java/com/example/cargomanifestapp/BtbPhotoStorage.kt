@@ -37,14 +37,23 @@ object BtbPhotoStorage {
         return FileProvider.getUriForFile(context, "${context.packageName}.provider", target)
     }
 
-    fun resolvePhotoFile(context: Context, uriString: String): File? = try {
-        val uri = Uri.parse(uriString)
-        val fileName = Uri.decode(uri.lastPathSegment ?: return null).substringAfterLast('/')
-        if (fileName.isBlank() || fileName.contains(File.separator)) return null
-        val root = getPhotoDirectory(context).canonicalFile
-        val target = File(root, fileName).canonicalFile
-        if (target.parentFile?.canonicalFile == root) target else null
-    } catch (_: Exception) { null }
+    fun resolvePhotoFile(context: Context, uriString: String): File? {
+        return try {
+            val uri = Uri.parse(uriString)
+            val lastSegment = uri.lastPathSegment ?: return null
+            val fileName = Uri.decode(lastSegment).substringAfterLast('/')
+
+            if (fileName.isBlank() || fileName.contains(File.separator)) {
+                return null
+            }
+
+            val root = getPhotoDirectory(context).canonicalFile
+            val target = File(root, fileName).canonicalFile
+            if (target.parentFile?.canonicalFile == root) target else null
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     fun deletePhoto(context: Context, uriString: String) {
         try { resolvePhotoFile(context, uriString)?.takeIf { it.exists() }?.delete() } catch (_: Exception) {}
