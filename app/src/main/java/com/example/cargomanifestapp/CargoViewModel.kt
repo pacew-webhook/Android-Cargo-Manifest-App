@@ -16,6 +16,7 @@ import org.apache.poi.ss.usermodel.*
 import java.io.File
 import java.io.FileOutputStream
 import org.json.JSONArray
+import org.json.JSONObject
 
 data class ManifestDetailItem(
     val sourceKey: String,
@@ -52,11 +53,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private val manifestOverrides = MutableStateFlow<Map<String, CargoItem>>(emptyMap())
     private val manifestOverridePrefsName = "manifest_overrides"
-
-    private val crewLootState = MutableStateFlow<List<CrewLootTransaction>>(
-        CrewLootManager.load(application)
-    )
-    val crewLootTransactions: StateFlow<List<CrewLootTransaction>> = crewLootState.asStateFlow()
 
     init {
         refreshFromStowingPrefs(application)
@@ -179,74 +175,6 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             .distinctBy { it.lowercase() }
     }
 
-    /** Reload ledger LOOT Crew dari penyimpanan lokal. */
-    fun refreshCrewLoot(context: Context) {
-        crewLootState.value = CrewLootManager.load(context)
-    }
-
-    fun getCrewLootTakenKg(groupKey: String): Double =
-        crewLootState.value.filter { it.manifestGroupKey == groupKey }.sumOf { it.kg }
-
-    fun getCrewLootAvailableKg(group: ManifestGroup): Double {
-        val real = parseDoubleOrZero(group.summary.subTotal)
-        return (real - getCrewLootTakenKg(group.groupKey)).coerceAtLeast(0.0)
-    }
-
-    fun addCrewLoot(context: Context, group: ManifestGroup, crewName: String, kg: Double, note: String = ""): Result<Unit> {
-        val name = crewName.trim()
-        if (name.isBlank()) return Result.failure(IllegalArgumentException("Nama crew wajib diisi"))
-        if (kg <= 0.0) return Result.failure(IllegalArgumentException("KG harus lebih dari 0"))
-        val available = getCrewLootAvailableKg(group)
-        if (kg > available + 0.0001) {
-            return Result.failure(IllegalArgumentException("KG melebihi sisa tersedia ${formatKgForCrewLoot(available)} KG"))
-        }
-        val tx = CrewLootTransaction(
-            manifestGroupKey = group.groupKey,
-            pti = group.summary.pti,
-            customer = group.summary.customer,
-            description = group.summary.description,
-            noPag = group.summary.noPag,
-            crewName = name,
-            kg = kg,
-            note = note.trim()
-        )
-        val updated = crewLootState.value + tx
-        crewLootState.value = updated
-        CrewLootManager.save(context, updated)
-        return Result.success(Unit)
-    }
-
-    fun updateCrewLoot(context: Context, transaction: CrewLootTransaction, crewName: String, kg: Double, note: String = ""): Result<Unit> {
-        val name = crewName.trim()
-        if (name.isBlank()) return Result.failure(IllegalArgumentException("Nama crew wajib diisi"))
-        if (kg <= 0.0) return Result.failure(IllegalArgumentException("KG harus lebih dari 0"))
-        val group = manifestGroupsState.value.firstOrNull { it.groupKey == transaction.manifestGroupKey }
-        if (group != null) {
-            val real = parseDoubleOrZero(group.summary.subTotal)
-            val takenOther = crewLootState.value
-                .filter { it.manifestGroupKey == transaction.manifestGroupKey && it.id != transaction.id }
-                .sumOf { it.kg }
-            val availableForEdit = (real - takenOther).coerceAtLeast(0.0)
-            if (kg > availableForEdit + 0.0001) {
-                return Result.failure(IllegalArgumentException("KG melebihi sisa tersedia ${formatKgForCrewLoot(availableForEdit)} KG"))
-            }
-        }
-        val updatedTx = transaction.copy(crewName = name, kg = kg, note = note.trim())
-        val updated = crewLootState.value.map { if (it.id == transaction.id) updatedTx else it }
-        crewLootState.value = updated
-        CrewLootManager.save(context, updated)
-        return Result.success(Unit)
-    }
-
-    fun deleteCrewLoot(context: Context, transactionId: String) {
-        val updated = crewLootState.value.filterNot { it.id == transactionId }
-        crewLootState.value = updated
-        CrewLootManager.save(context, updated)
-    }
-
-    private fun formatKgForCrewLoot(value: Double): String =
-        if (value % 1.0 == 0.0) value.toLong().toString() else String.format(java.util.Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
-
     fun refreshFromStowingPrefs(context: Context) {
         viewModelScope.launch(Dispatchers.IO) {
             val prefs = context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
@@ -319,6 +247,28 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
     private fun sourceKeyFor(item: CargoItem, index: Int): String =
         "${index}|${item.pti}|${item.customer}|${item.description}|${item.noPag}|${item.pcsQty}|${item.weight}|${item.subTotal}"
 
+    private fun photoKeyFor(item: CargoItem): String =
+        listOf(
+            item.noPag, item.customer, item.description, item.pti,
+            item.pcsQty, item.weight, item.subTotal
+        ).joinToString("\u001F") { it.trim().uppercase() }
+
+    /** Foto BTB yang tersimpan bersama data Stowing ini. */
+    fun getPhotoUrisForItem(context: Context, item: CargoItem): List<String> {
+        return runCatching {
+            val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                .getString("items", "{}") ?: "{}")
+            val key = photoKeyFor(item)
+            val photos = all.optJSONArray(key) ?: return@runCatching emptyList()
+            buildList {
+                for (i in 0 until photos.length()) {
+                    photos.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+
     private fun loadManifestOverrides(context: Context): Map<String, CargoItem> {
         val json = context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
             .getString("items", null) ?: return emptyMap()
@@ -380,7 +330,23 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
             }
 
             if (targetIndex >= 0 && targetIndex < raw.size) {
+                val originalItem = raw[targetIndex]
                 raw[targetIndex] = edited
+
+                // Jika data diedit dari Manifest dan cargoKey berubah, pindahkan
+                // mapping Foto BTB ke key baru agar foto tidak hilang dari Detail Manifest.
+                runCatching {
+                    val photoPrefs = context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                    val allPhotos = JSONObject(photoPrefs.getString("items", "{}") ?: "{}")
+                    val oldKey = photoKeyFor(originalItem)
+                    val newKey = photoKeyFor(edited)
+                    if (oldKey != newKey && allPhotos.has(oldKey)) {
+                        val photos = allPhotos.optJSONArray(oldKey)
+                        if (photos != null) allPhotos.put(newKey, photos)
+                        allPhotos.remove(oldKey)
+                        photoPrefs.edit().putString("items", allPhotos.toString()).apply()
+                    }
+                }
 
                 // Simpan master Stowing yang sudah diedit.
                 val jsonArray = JSONArray()
