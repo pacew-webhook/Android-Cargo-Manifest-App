@@ -1250,7 +1250,10 @@ fun StowingInputScreen(
 
         // --- DAFTAR CARGO TERGROUPING ---
         // --- DAFTAR CARGO TERGROUPING ---
-        val grandTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        val grandRealTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
+        // Loot Crew hanya mengurangi tampilan ketersediaan, tidak mengubah data Stowing asli/BTB.
+        val crewLootTotalKg = CrewLootManager.load(context).sumOf { it.kg }
+        val grandTotalKg = (grandRealTotalKg - crewLootTotalKg).coerceAtLeast(0.0)
         val grandTotalPAG = groupedCargo.size
 
         val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {

@@ -71,6 +71,16 @@ object CargoBackupManager {
                 }
             })
             put("photoMapping", mapping)
+            // Loot Crew ikut dibackup. Data Stowing/BTB tetap master dan tidak dikurangi.
+            put("crewLoot", context.getSharedPreferences("crew_loot_storage", Context.MODE_PRIVATE)
+                .getString("transactions", "[]") ?: "[]")
+            // Simpan pengaturan Manifest yang relevan (target loot, prioritas, WMX).
+            val settings = context.getSharedPreferences("manifest_settings", Context.MODE_PRIVATE)
+            put("manifestSettings", JSONObject().apply {
+                put("target_loot_kg", settings.getString("target_loot_kg", "0") ?: "0")
+                put("customer_priority_order", settings.getString("customer_priority_order", "") ?: "")
+                put("wmx_saved_senders", settings.getString("wmx_saved_senders", "") ?: "")
+            })
         }
 
         context.contentResolver.openOutputStream(destination)?.use { output ->
@@ -189,6 +199,19 @@ object CargoBackupManager {
             context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE).edit()
                 .putString("items", restoredMapping.toString()).apply()
             context.getSharedPreferences("stowing_draft", Context.MODE_PRIVATE).edit().clear().apply()
+
+            // Restore Loot Crew dan pengaturan Manifest bila tersedia.
+            val crewLootRaw = root.optString("crewLoot", "[]")
+            context.getSharedPreferences("crew_loot_storage", Context.MODE_PRIVATE).edit()
+                .putString("transactions", crewLootRaw).apply()
+            val manifestSettings = root.optJSONObject("manifestSettings")
+            if (manifestSettings != null) {
+                context.getSharedPreferences("manifest_settings", Context.MODE_PRIVATE).edit()
+                    .putString("target_loot_kg", manifestSettings.optString("target_loot_kg", "0"))
+                    .putString("customer_priority_order", manifestSettings.optString("customer_priority_order", ""))
+                    .putString("wmx_saved_senders", manifestSettings.optString("wmx_saved_senders", ""))
+                    .apply()
+            }
 
             return cargo.size
         } finally {

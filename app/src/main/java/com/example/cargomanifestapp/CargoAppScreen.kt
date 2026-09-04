@@ -66,6 +66,9 @@ fun CargoAppScreen(
     var showBtbCheckDialog by remember { mutableStateOf(false) }
     var showWmxSenderDialog by remember { mutableStateOf(false) }
     var showWmxPreview by remember { mutableStateOf(false) }
+    var showCrewLootDialog by remember { mutableStateOf(false) }
+    var selectedCrewLootGroup by remember { mutableStateOf<ManifestGroup?>(null) }
+    var crewLoots by remember { mutableStateOf(CrewLootManager.load(context)) }
     var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var wmxSenders by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var wmxSavedSenders by remember { mutableStateOf(viewModel.getWmxSavedSenders(context)) }
@@ -75,12 +78,14 @@ fun CargoAppScreen(
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
 
     val totalPcs = groups.sumOf { it.summary.pcsQty.toDoubleOrNull()?.toInt() ?: 0 }
-    val totalWeight = groups.sumOf { it.summary.subTotal.toDoubleOrNull() ?: 0.0 }
-    val totalWeightText = if (totalWeight % 1.0 == 0.0) totalWeight.toInt().toString() else totalWeight.toString()
+    val totalRealWeight = groups.sumOf { it.summary.subTotal.toDoubleOrNull() ?: 0.0 }
+    val totalCrewLoot = crewLoots.sumOf { it.kg }
+    val totalWeight = (totalRealWeight - totalCrewLoot).coerceAtLeast(0.0)
+    val totalWeightText = formatLootKg(totalWeight)
     val lootTargetText = if (lootTargetKg > 0.0) formatLootKg(lootTargetKg) else "BELUM DIATUR"
+    // Progress memakai KG yang masih tersedia setelah Crew mengambil loot.
     val lootProgress = if (lootTargetKg > 0.0) (totalWeight / lootTargetKg * 100.0).coerceAtLeast(0.0) else 0.0
-    val lootTargetReached: Boolean = lootTargetKg.toDouble() > 0.0 &&
-        totalWeight.toDouble().compareTo(lootTargetKg.toDouble()) >= 0
+    val lootTargetReached: Boolean = lootTargetKg > 0.0 && totalWeight >= lootTargetKg
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -227,6 +232,15 @@ fun CargoAppScreen(
 
         Spacer(Modifier.height(8.dp))
         OutlinedButton(
+            onClick = { showCrewLootDialog = true },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp)
+        ) {
+            Text("📦 Simpanan Loot Crew (${formatLootKg(totalCrewLoot)} KG)", fontWeight = FontWeight.Bold)
+        }
+
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(
             onClick = { showBtbCheckDialog = true },
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(20.dp)
@@ -249,7 +263,12 @@ fun CargoAppScreen(
                 contentPadding = PaddingValues(horizontal = 2.dp)
             ) {
                 items(groups, key = { it.groupKey }) { group ->
-                    ManifestSummaryCard(group) { selectedGroup = group }
+                    ManifestSummaryCard(
+                        group = group,
+                        crewTakenKg = crewLoots.filter { it.manifestGroupKey == group.groupKey }.sumOf { it.kg },
+                        onClick = { selectedGroup = group },
+                        onCrew = { selectedCrewLootGroup = group }
+                    )
                 }
             }
         }
@@ -263,6 +282,47 @@ fun CargoAppScreen(
                 viewModel.setLootTargetKg(context, target.toDouble())
                 lootTargetKg = target
                 showLootTargetDialog = false
+            }
+        )
+    }
+
+    if (showCrewLootDialog) {
+        CrewLootStorageDialog(
+            groups = groups,
+            transactions = crewLoots,
+            initialGroup = selectedCrewLootGroup,
+            onDismiss = {
+                showCrewLootDialog = false
+                selectedCrewLootGroup = null
+            },
+            onChanged = { updated ->
+                CrewLootManager.save(context, updated)
+                crewLoots = updated
+            }
+        )
+    }
+
+    selectedCrewLootGroup?.let { group ->
+        CrewLootTakeDialog(
+            group = group,
+            alreadyTakenKg = crewLoots.filter { it.manifestGroupKey == group.groupKey }.sumOf { it.kg },
+            onDismiss = { selectedCrewLootGroup = null },
+            onSave = { crewName, kg, note ->
+                val tx = CrewLootTransaction(
+                    manifestGroupKey = group.groupKey,
+                    pti = group.summary.pti,
+                    customer = group.summary.customer,
+                    description = group.summary.description,
+                    noPag = group.summary.noPag,
+                    crewName = crewName,
+                    kg = kg,
+                    note = note
+                )
+                val updated = crewLoots + tx
+                CrewLootManager.save(context, updated)
+                crewLoots = updated
+                selectedCrewLootGroup = null
+                Toast.makeText(context, "Loot Crew ${formatLootKg(kg)} KG disimpan", Toast.LENGTH_SHORT).show()
             }
         )
     }
@@ -580,7 +640,91 @@ private fun formatLootPercent(value: Double): String {
 }
 
 @Composable
-private fun ManifestSummaryCard(group: ManifestGroup, onClick: () -> Unit) {
+private fun CrewLootTakeDialog(
+    group: ManifestGroup,
+    alreadyTakenKg: Double,
+    onDismiss: () -> Unit,
+    onSave: (String, Double, String) -> Unit
+) {
+    var crewName by remember { mutableStateOf("") }
+    var kgText by remember { mutableStateOf("") }
+    var note by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    val realKg = group.summary.subTotal.toDoubleOrNull() ?: 0.0
+    val available = (realKg - alreadyTakenKg).coerceAtLeast(0.0)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("📦 Ambil Loot untuk Crew") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("${group.summary.customer} • ${group.summary.description}", fontWeight = FontWeight.Bold)
+                Text("KG Real: ${formatLootKg(realKg)} KG")
+                Text("Sudah diambil: ${formatLootKg(alreadyTakenKg)} KG")
+                Text("Sisa tersedia: ${formatLootKg(available)} KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                Spacer(Modifier.height(8.dp))
+                OutlinedTextField(crewName, { crewName = it }, label = { Text("Nama Crew") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                OutlinedTextField(kgText, { kgText = it }, label = { Text("Jumlah KG") }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal))
+                OutlinedTextField(note, { note = it }, label = { Text("Catatan (opsional)") }, modifier = Modifier.fillMaxWidth())
+                error?.let { Text(it, color = Color(0xFFB00020), fontSize = 12.sp) }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val kg = parseLootTarget(kgText)
+                when {
+                    crewName.isBlank() -> error = "Nama Crew wajib diisi"
+                    kg <= 0.0 -> error = "Jumlah KG tidak valid"
+                    kg > available + 0.0001 -> error = "Jumlah melebihi sisa tersedia ${formatLootKg(available)} KG"
+                    else -> onSave(crewName.trim(), kg, note.trim())
+                }
+            }) { Text("Simpan") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Batal") } }
+    )
+}
+
+@Composable
+private fun CrewLootStorageDialog(
+    groups: List<ManifestGroup>,
+    transactions: List<CrewLootTransaction>,
+    initialGroup: ManifestGroup?,
+    onDismiss: () -> Unit,
+    onChanged: (List<CrewLootTransaction>) -> Unit
+) {
+    var selectedKey by remember { mutableStateOf(initialGroup?.groupKey ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("📦 Simpanan Loot Crew") },
+        text = {
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(rememberScrollState())) {
+                Text("Total tersimpan: ${formatLootKg(transactions.sumOf { it.kg })} KG", fontWeight = FontWeight.Bold, color = Color(0xFF8A4B08))
+                Spacer(Modifier.height(8.dp))
+                if (transactions.isEmpty()) Text("Belum ada Loot Crew.", color = Color.Gray)
+                transactions.sortedByDescending { it.createdAt }.forEach { tx ->
+                    Card(Modifier.fillMaxWidth().padding(vertical = 4.dp), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA))) {
+                        Row(Modifier.fillMaxWidth().padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${tx.crewName} • ${formatLootKg(tx.kg)} KG", fontWeight = FontWeight.Bold)
+                                Text("${tx.customer} • ${tx.description}", fontSize = 12.sp, color = Color.Gray)
+                                if (tx.note.isNotBlank()) Text(tx.note, fontSize = 11.sp, color = Color.Gray)
+                            }
+                            TextButton(onClick = { onChanged(transactions.filterNot { it.id == tx.id }) }) { Text("Hapus") }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
+    )
+}
+
+@Composable
+private fun ManifestSummaryCard(
+    group: ManifestGroup,
+    crewTakenKg: Double,
+    onClick: () -> Unit,
+    onCrew: () -> Unit
+) {
     Card(
         modifier = Modifier.width(340.dp).height(280.dp),
         onClick = onClick,
@@ -588,9 +732,11 @@ private fun ManifestSummaryCard(group: ManifestGroup, onClick: () -> Unit) {
         shape = RoundedCornerShape(14.dp)
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)) {
+            val realKg = group.summary.subTotal.toDoubleOrNull() ?: 0.0
+            val availableKg = (realKg - crewTakenKg).coerceAtLeast(0.0)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("PTI: ${group.summary.pti}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
-                Text("${group.summary.subTotal} KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                Text("${formatLootKg(availableKg)} KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
             }
             Spacer(Modifier.height(6.dp))
             Text("Customer: ${group.summary.customer.ifBlank { "-" }}")
@@ -599,7 +745,16 @@ private fun ManifestSummaryCard(group: ManifestGroup, onClick: () -> Unit) {
             Text("NO PAG: ${group.summary.noPag.ifBlank { "-" }}")
             Text("Data asal: ${group.details.size} baris", fontWeight = FontWeight.SemiBold, color = Color(0xFF6750A4))
             Spacer(Modifier.height(8.dp))
-            Text("Tekan kartu untuk edit", fontSize = 12.sp, color = Color.Gray)
+            HorizontalDivider()
+            Text("KG Real: ${formatLootKg(realKg)} KG", fontWeight = FontWeight.Bold)
+            if (crewTakenKg > 0.0) Text("Sudah diambil Crew: ${formatLootKg(crewTakenKg)} KG", color = Color(0xFF8A4B08))
+            Text("Sisa tersedia: ${formatLootKg(availableKg)} KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+            Spacer(Modifier.height(8.dp))
+            Button(onClick = onCrew, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(20.dp)) {
+                Text("📦 Ambil untuk Crew", fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.height(6.dp))
+            Text("Tekan kartu untuk melihat/edit data asal", fontSize = 12.sp, color = Color.Gray)
         }
     }
 }
