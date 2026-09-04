@@ -46,6 +46,9 @@ import androidx.compose.ui.unit.sp
 import androidx.activity.viewModels
 import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class StowingActivity : ComponentActivity() {
     private val stowingViewModel: StowingViewModel by viewModels()
@@ -88,6 +91,13 @@ fun StowingInputScreen(
     val kgGridState = rememberLazyGridState()
     var scrollToKgIndex by remember { mutableStateOf<Int?>(null) }
     var showBtbPicker by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
+    var flightNumber by remember { mutableStateOf("2") }
+    val backupDateText = remember {
+        SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID"))
+            .format(Date())
+            .uppercase(Locale("id", "ID"))
+    }
 
     LaunchedEffect(scrollToKgIndex) {
         val targetIndex = scrollToKgIndex ?: return@LaunchedEffect
@@ -317,6 +327,47 @@ fun StowingInputScreen(
             context, uri,
             onSuccess = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() },
             onError = { Toast.makeText(context, it, Toast.LENGTH_LONG).show() }
+        )
+    }
+
+    if (showBackupDialog) {
+        AlertDialog(
+            onDismissRequest = { showBackupDialog = false },
+            title = { Text("Backup Manifest") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Tanggal: $backupDateText")
+                    OutlinedTextField(
+                        value = flightNumber,
+                        onValueChange = { value ->
+                            flightNumber = value.filter { it.isDigit() }
+                        },
+                        label = { Text("Nomor Flight") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    Text(
+                        "Nama file: MANIFES $backupDateText FLIGHT ${flightNumber.ifBlank { "-" }}.zip",
+                        fontSize = 12.sp
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val flight = flightNumber.trim()
+                        if (flight.isBlank()) {
+                            Toast.makeText(context, "Nomor Flight wajib diisi", Toast.LENGTH_SHORT).show()
+                        } else {
+                            showBackupDialog = false
+                            backupLauncher.launch("MANIFES $backupDateText FLIGHT $flight.zip")
+                        }
+                    }
+                ) { Text("BUAT BACKUP") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackupDialog = false }) { Text("BATAL") }
+            }
         )
     }
 
@@ -1339,7 +1390,7 @@ fun StowingInputScreen(
             Button(
                 onClick = {
                     if (viewModel.cargoList.isNotEmpty()) {
-                        backupLauncher.launch("Cargo_Backup_${System.currentTimeMillis()}.zip")
+                        showBackupDialog = true
                     } else {
                         Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
                     }
