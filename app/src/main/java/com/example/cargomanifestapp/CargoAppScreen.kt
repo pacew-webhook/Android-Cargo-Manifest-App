@@ -110,9 +110,15 @@ fun CargoAppScreen(
     }
 
     val lootTargetText = if (lootTargetKg > 0.0) formatLootKg(lootTargetKg) else "BELUM DIATUR"
-    val lootProgress = if (lootTargetKg > 0.0) (totalWeight / lootTargetKg * 100.0).coerceAtLeast(0.0) else 0.0
-    val lootTargetReached: Boolean = lootTargetKg.toDouble() > 0.0 &&
-        totalWeight.toDouble().compareTo(lootTargetKg.toDouble()) >= 0
+
+    // Target mengikuti KG yang benar-benar masih tersedia setelah dikurangi Loot Crew.
+    // Data totalWeight tetap dipertahankan sebagai data real/master untuk BTB.
+    val lootProgress = if (lootTargetKg > 0.0) {
+        (totalAvailableWeight / lootTargetKg * 100.0).coerceAtLeast(0.0)
+    } else 0.0
+    val lootTargetReached: Boolean = lootTargetKg > 0.0 &&
+        totalAvailableWeight >= lootTargetKg
+    val targetRemainingKg = (lootTargetKg - totalAvailableWeight).coerceAtLeast(0.0)
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Row(
@@ -175,7 +181,7 @@ fun CargoAppScreen(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        if (lootTargetReached) "✓ TARGET LOOT TERCAPAI" else "Target masih kurang ${formatLootKg(lootTargetKg - totalWeight)} KG",
+                        if (lootTargetReached) "✓ TARGET LOOT TERCAPAI" else "Target masih kurang ${formatLootKg(targetRemainingKg)} KG",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         color = if (lootTargetReached) Color(0xFF2E7D32) else Color(0xFF8A4B08)
