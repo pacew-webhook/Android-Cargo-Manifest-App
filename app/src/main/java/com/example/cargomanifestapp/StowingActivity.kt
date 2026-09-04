@@ -138,15 +138,12 @@ fun StowingInputScreen(
     var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
     var sendingToN8n by remember { mutableStateOf(false) }
 
-    suspend fun processBtbUri(uri: Uri, deleteTemp: Boolean) {
+    suspend fun processBtbUri(uri: Uri) {
         try {
-            val result = if (deleteTemp) {
-                BtbOcrScanner.scanAndDeleteTemp(context, uri)
-            } else {
-                // URI dari Galeri adalah milik aplikasi Galeri/MediaStore.
-                // Jangan dihapus setelah OCR selesai.
-                BtbOcrScanner.scan(context, uri)
-            }
+            // Foto sudah disimpan permanen di storage aplikasi. OCR hanya membaca
+            // file tersebut dan TIDAK boleh menghapusnya karena foto harus ikut
+            // tersimpan pada data Stowing/Manifest.
+            val result = BtbOcrScanner.scan(context, uri)
 
             if (result.weights.isEmpty()) {
                 Toast.makeText(
@@ -185,10 +182,14 @@ fun StowingInputScreen(
             return@rememberLauncherForActivityResult
         }
 
+        // Kamera menulis langsung ke file internal aplikasi. Hubungkan foto
+        // sekarang juga ke form, sehingga foto tetap tersimpan walaupun OCR gagal.
+        scannedPhotoUri = uri.toString()
+        viewModel.attachBtbPhoto(scannedPhotoUri)
         scanBusy = true
         scanScope.launch {
             try {
-                processBtbUri(uri, deleteTemp = true)
+                processBtbUri(uri)
             } finally {
                 scanBusy = false
             }
@@ -203,10 +204,17 @@ fun StowingInputScreen(
     ) { uri ->
         if (uri == null || scanBusy) return@rememberLauncherForActivityResult
 
-        scanBusy = true
         scanScope.launch {
             try {
-                processBtbUri(uri, deleteTemp = false)
+                // Salin ke internal app storage supaya URI Galeri tidak hilang
+                // setelah aplikasi restart atau izin sementara berakhir.
+                val permanentUri = BtbPhotoStorage.copyToAppStorage(context, uri)
+                scannedPhotoUri = permanentUri.toString()
+                viewModel.attachBtbPhoto(scannedPhotoUri)
+                scanBusy = true
+                processBtbUri(permanentUri)
+            } catch (e: Exception) {
+                Toast.makeText(context, "Gagal menyimpan foto BTB: ${e.localizedMessage ?: "error"}", Toast.LENGTH_LONG).show()
             } finally {
                 scanBusy = false
             }

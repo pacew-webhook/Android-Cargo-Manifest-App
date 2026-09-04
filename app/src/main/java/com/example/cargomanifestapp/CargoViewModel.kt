@@ -16,6 +16,7 @@ import org.apache.poi.ss.usermodel.*
 import java.io.File
 import java.io.FileOutputStream
 import org.json.JSONArray
+import org.json.JSONObject
 
 data class ManifestDetailItem(
     val sourceKey: String,
@@ -245,6 +246,25 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun sourceKeyFor(item: CargoItem, index: Int): String =
         "${index}|${item.pti}|${item.customer}|${item.description}|${item.noPag}|${item.pcsQty}|${item.weight}|${item.subTotal}"
+
+    /** Foto BTB yang tersimpan bersama data Stowing ini. */
+    fun getPhotoUrisForItem(context: Context, item: CargoItem): List<String> {
+        return runCatching {
+            val all = JSONObject(context.getSharedPreferences("cargo_photos", Context.MODE_PRIVATE)
+                .getString("items", "{}") ?: "{}")
+            val key = listOf(
+                item.noPag, item.customer, item.description, item.pti,
+                item.pcsQty, item.weight, item.subTotal
+            ).joinToString("\u001F") { it.trim().uppercase() }
+            val photos = all.optJSONArray(key) ?: return@runCatching emptyList()
+            buildList {
+                for (i in 0 until photos.length()) {
+                    photos.optString(i).takeIf { it.isNotBlank() }?.let(::add)
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
 
     private fun loadManifestOverrides(context: Context): Map<String, CargoItem> {
         val json = context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)

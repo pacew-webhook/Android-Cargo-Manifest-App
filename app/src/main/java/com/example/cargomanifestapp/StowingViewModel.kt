@@ -163,8 +163,10 @@ class StowingViewModel : ViewModel() {
     }
 
     private fun cargoKey(item: CargoItem): String =
-        listOf(item.noPag, item.customer, item.description, item.pti)
-            .joinToString("\u001F") { it.trim().uppercase() }
+        listOf(
+            item.noPag, item.customer, item.description, item.pti,
+            item.pcsQty, item.weight, item.subTotal
+        ).joinToString("\u001F") { it.trim().uppercase() }
 
     private fun persistDraft() {
         val context = attachedContext ?: return
@@ -1284,6 +1286,8 @@ class StowingViewModel : ViewModel() {
         pti = ""
         inputKg = ""
         currentKgEntries.clear()
+        currentPhotoUris.clear()
+        editingOriginalKey = null
         editingIndex = null
         expandedCustomer = false
         expandedDescription = false

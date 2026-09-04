@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -29,6 +30,26 @@ object BtbPhotoStorage {
             context,
             "${context.packageName}.provider",
             file
+        )
+    }
+
+
+    /**
+     * Menyalin foto dari Galeri/Google Photos ke storage internal aplikasi.
+     * URI picker eksternal tidak selalu permanen, sehingga file harus disalin
+     * agar foto tetap bisa dibuka dari Manifest Cargo setelah aplikasi restart.
+     */
+    fun copyToAppStorage(context: Context, sourceUri: Uri): Uri {
+        val stamp = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val target = File(photoDir(context), "BTB_$stamp.jpg")
+        context.contentResolver.openInputStream(sourceUri).use { input ->
+            requireNotNull(input) { "Tidak dapat membaca foto dari Galeri" }
+            FileOutputStream(target).use { output -> input.copyTo(output) }
+        }
+        return FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.provider",
+            target
         )
     }
 

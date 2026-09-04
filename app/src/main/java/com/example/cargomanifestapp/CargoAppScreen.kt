@@ -1,6 +1,8 @@
 package com.example.cargomanifestapp
 
 import android.widget.Toast
+import android.net.Uri
+import android.graphics.BitmapFactory
 import android.content.Intent
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
@@ -295,6 +297,7 @@ fun CargoAppScreen(
     selectedGroup?.let { group ->
         ManifestGroupDialog(
             group = group,
+            photoProvider = { item -> viewModel.getPhotoUrisForItem(context, item) },
             onDismiss = { selectedGroup = null },
             onEdit = { detail ->
                 selectedGroup = null
@@ -604,9 +607,13 @@ private fun ManifestSummaryCard(group: ManifestGroup, onClick: () -> Unit) {
 @Composable
 private fun ManifestGroupDialog(
     group: ManifestGroup,
+    photoProvider: (CargoItem) -> List<String>,
     onDismiss: () -> Unit,
     onEdit: (ManifestDetailItem) -> Unit
 ) {
+    val context = LocalContext.current
+    var previewPhotoUri by remember { mutableStateOf<String?>(null) }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Detail Manifest") },
@@ -617,6 +624,7 @@ private fun ManifestGroupDialog(
                 Spacer(Modifier.height(10.dp))
                 group.details.forEach { detail ->
                     val item = detail.item
+                    val photoUris = remember(detail.sourceKey, item) { photoProvider(item) }
                     Card(
                         Modifier.fillMaxWidth().padding(vertical = 4.dp),
                         colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)),
@@ -626,6 +634,15 @@ private fun ManifestGroupDialog(
                             Text("${item.noPag.ifBlank { "Tanpa NO PAG" }}", fontWeight = FontWeight.Bold)
                             Text("PCS: ${item.pcsQty} • KG: ${item.subTotal}")
                             Text("${item.description} • ${item.customer}", fontSize = 12.sp, color = Color.Gray)
+                            if (photoUris.isNotEmpty()) {
+                                Spacer(Modifier.height(6.dp))
+                                OutlinedButton(
+                                    onClick = { previewPhotoUri = photoUris.first() },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("📷 Lihat Foto BTB (${photoUris.size})")
+                                }
+                            }
                             Spacer(Modifier.height(4.dp))
                             OutlinedButton(onClick = { onEdit(detail) }, modifier = Modifier.fillMaxWidth()) {
                                 Text("Edit data ini")
@@ -637,6 +654,32 @@ private fun ManifestGroupDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
     )
+
+    previewPhotoUri?.let { uriText ->
+        val bitmap = remember(uriText) {
+            runCatching {
+                context.contentResolver.openInputStream(Uri.parse(uriText)).use { input ->
+                    if (input != null) BitmapFactory.decodeStream(input) else null
+                }
+            }.getOrNull()
+        }
+        AlertDialog(
+            onDismissRequest = { previewPhotoUri = null },
+            title = { Text("Foto BTB") },
+            text = {
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "Foto BTB",
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 520.dp)
+                    )
+                } else {
+                    Text("Foto BTB tidak dapat dibuka.")
+                }
+            },
+            confirmButton = { TextButton(onClick = { previewPhotoUri = null }) { Text("Tutup") } }
+        )
+    }
 }
 
 @Composable
