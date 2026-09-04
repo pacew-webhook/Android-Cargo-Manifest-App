@@ -6,6 +6,9 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -135,6 +138,18 @@ fun StowingInputScreen(
     var scanBusy by remember { mutableStateOf(false) }
     var stowingSearchQuery by remember { mutableStateOf("") }
     var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
+    // Total Loot Crew dibaca terpisah agar data Stowing asli tetap tidak berubah.
+    var totalCrewLootKg by remember { mutableStateOf(CrewLootManager.load(context).sumOf { it.kg }) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = object : DefaultLifecycleObserver {
+            override fun onResume(owner: LifecycleOwner) {
+                totalCrewLootKg = CrewLootManager.load(context).sumOf { it.kg }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
     var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
     var sendingToN8n by remember { mutableStateOf(false) }
 
@@ -1144,13 +1159,9 @@ fun StowingInputScreen(
 
         // --- DAFTAR CARGO TERGROUPING ---
         // --- DAFTAR CARGO TERGROUPING ---
-        // Total Stowing yang ditampilkan mengikuti SISA TERSEDIA.
-        // Data Cargo/Stowing asli tetap tidak diubah. Pengurangan hanya dari
-        // transaksi Loot Crew, sama seperti perhitungan Total pada Manifest.
-        val grandTotalKgReal = viewModel.cargoList.sumOf { item ->
-            item.subTotal.toDoubleOrNull() ?: 0.0
-        }
-        val totalCrewLootKg = CrewLootManager.load(context).sumOf { it.kg }
+        // Total Stowing yang ditampilkan mengikuti SISA setelah Loot Crew.
+        // Data Cargo/Stowing asli dan data BTB tetap tidak diubah.
+        val grandTotalKgReal = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
         val grandTotalKg = (grandTotalKgReal - totalCrewLootKg).coerceAtLeast(0.0)
         val grandTotalPAG = groupedCargo.size
 
