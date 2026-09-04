@@ -95,8 +95,20 @@ fun CargoAppScreen(
     }
 
     val totalPcs = groups.sumOf { it.summary.pcsQty.toDoubleOrNull()?.toInt() ?: 0 }
+
+    // Total manifest asli tetap dipakai untuk data real/BTB.
     val totalWeight = groups.sumOf { it.summary.subTotal.toDoubleOrNull() ?: 0.0 }
-    val totalWeightText = if (totalWeight % 1.0 == 0.0) totalWeight.toInt().toString() else totalWeight.toString()
+
+    // Header Manifest menampilkan hanya 1 total: SISA TERSEDIA.
+    // Loot Crew adalah transaksi terpisah sehingga data asli tidak berubah.
+    val totalCrewLoot = crewLootTransactions.sumOf { it.kg }
+    val totalAvailableWeight = (totalWeight - totalCrewLoot).coerceAtLeast(0.0)
+    val totalWeightText = if (totalAvailableWeight % 1.0 == 0.0) {
+        totalAvailableWeight.toInt().toString()
+    } else {
+        totalAvailableWeight.toString()
+    }
+
     val lootTargetText = if (lootTargetKg > 0.0) formatLootKg(lootTargetKg) else "BELUM DIATUR"
     val lootProgress = if (lootTargetKg > 0.0) (totalWeight / lootTargetKg * 100.0).coerceAtLeast(0.0) else 0.0
     val lootTargetReached: Boolean = lootTargetKg.toDouble() > 0.0 &&
