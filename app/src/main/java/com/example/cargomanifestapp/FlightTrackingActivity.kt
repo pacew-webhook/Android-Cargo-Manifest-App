@@ -23,7 +23,7 @@ class FlightTrackingActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            CargoRetroTheme {
                 FlightTrackingScreen(onBack = { finish() })
             }
         }

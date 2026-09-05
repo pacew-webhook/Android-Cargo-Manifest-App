@@ -24,7 +24,7 @@ class MainActivity : ComponentActivity() {
             val context = LocalContext.current
             var currentScreen by remember { mutableStateOf<Screen>(Screen.MAIN_MENU) }
 
-            MaterialTheme {
+            CargoRetroTheme {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background

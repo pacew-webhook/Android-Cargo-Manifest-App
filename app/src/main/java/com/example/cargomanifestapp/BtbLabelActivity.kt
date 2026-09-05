@@ -30,7 +30,7 @@ class BtbLabelActivity : ComponentActivity() {
         }
 
         setContent {
-            MaterialTheme {
+            CargoRetroTheme {
                 BtbLabelScreen(
                     data = data,
                     onBack = { finish() },

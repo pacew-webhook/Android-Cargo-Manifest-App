@@ -82,7 +82,7 @@ class JarvisActivity : ComponentActivity() {
             setStatus = { status = it }
             setHeard = { heard = it }
 
-            MaterialTheme {
+            CargoRetroTheme {
                 Scaffold(
                     topBar = {
                         TopAppBar(

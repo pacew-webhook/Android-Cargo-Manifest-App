@@ -64,7 +64,7 @@ class BuktiTimbangActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            MaterialTheme {
+            CargoRetroTheme {
                 BtbScreen(onBackClick = { finish() })
             }
         }

@@ -1,10 +1,13 @@
 package com.example.cargomanifestapp
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FlightTakeoff
@@ -15,13 +18,21 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+/**
+ * HOME baru: Retro / Neo-Brutalism.
+ * Semua navigasi lama dipertahankan persis sama.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainMenuScreen(
@@ -33,171 +44,251 @@ fun MainMenuScreen(
     onNavigateToJarvis: () -> Unit
 ) {
     Scaffold(
+        containerColor = CargoRetroColors.Cream,
         topBar = {
-            TopAppBar(
-                title = {
+            Surface(
+                color = CargoRetroColors.Blue,
+                border = BorderStroke(3.dp, CargoRetroColors.Ink),
+                shadowElevation = 0.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 18.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "Manifest Cargo App",
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        text = "✈ CARGO MANIFEST",
+                        fontWeight = FontWeight.Black,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 19.sp,
+                        color = CargoRetroColors.Ink
                     )
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF673AB7)
-                )
-            )
+                    Spacer(Modifier.weight(1f))
+                    Text(
+                        text = "OPS TERMINAL",
+                        fontWeight = FontWeight.Bold,
+                        fontFamily = FontFamily.Monospace,
+                        fontSize = 11.sp,
+                        color = CargoRetroColors.Ink
+                    )
+                }
+            }
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .background(Color(0xFFF5F5F5))
-                .padding(20.dp),
-            verticalArrangement = Arrangement.Center,
+                .background(CargoRetroColors.Cream)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 18.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // --- LOGO APLIKASI ---
-            Image(
-                painter = painterResource(id = R.drawable.logo_app),
-                contentDescription = "Logo Aplikasi",
+            // Header / identity block
+            Box(
                 modifier = Modifier
-                    .size(150.dp)
-                    .padding(bottom = 12.dp)
-            )
+                    .fillMaxWidth()
+                    .hardShadow()
+                    .border(3.dp, CargoRetroColors.Ink)
+                    .background(CargoRetroColors.Paper)
+                    .padding(16.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(id = R.drawable.logo_app),
+                        contentDescription = "Logo Aplikasi",
+                        modifier = Modifier.size(74.dp)
+                    )
+                    Spacer(Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            text = "CARGO CONTROL",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = CargoRetroColors.Ink
+                        )
+                        Text(
+                            text = "PILIH MODUL OPERASIONAL",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color(0xFF444444)
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(22.dp))
 
             Text(
-                text = "Pilih Menu Utama",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFF333333),
-                modifier = Modifier.padding(bottom = 24.dp)
+                text = ">> MAIN MODULES <<",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                color = CargoRetroColors.Ink,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 10.dp)
             )
 
-            MenuCard(
-                title = "Data Manifest Cargo",
-                subtitle = "Kelola data cargo, PTI, Pcs/Qty, & Weight",
+            RetroMenuCard(
+                title = "MANIFEST CARGO",
+                subtitle = "DATA, TOTAL KG, EXPORT & CREW LOOT",
                 icon = Icons.Default.List,
-                iconBackgroundColor = Color(0xFFE8DEF8),
-                iconTintColor = Color(0xFF673AB7),
+                color = CargoRetroColors.BlueLight,
                 onClick = onNavigateToManifest
             )
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            MenuCard(
-                title = "Data Stowingan Palet",
-                subtitle = "Kelola daftar NO PAG, Stowing Checklist, & Tare",
+            RetroMenuCard(
+                title = "STOWING PALET",
+                subtitle = "NO PAG, CHECKLIST & DATA STOWING",
                 icon = Icons.Default.ShoppingCart,
-                iconBackgroundColor = Color(0xFFD0BCFF),
-                iconTintColor = Color(0xFF381E72),
+                color = CargoRetroColors.Pink,
                 onClick = onNavigateToStowing
             )
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            MenuCard(
-                title = "Pencarian Database Manifest",
-                subtitle = "Baca semua Excel dalam folder dan cari data barang",
+            RetroMenuCard(
+                title = "SEARCH MANIFEST",
+                subtitle = "CARI DATA BARANG DARI DATABASE EXCEL",
                 icon = Icons.Default.List,
-                iconBackgroundColor = Color(0xFFE8DEF8),
-                iconTintColor = Color(0xFF673AB7),
+                color = CargoRetroColors.Green,
                 onClick = onNavigateToManifestSearch
             )
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // 2. Kartu Menu Ketiga: Bukti Timbang Barang
-            MenuCard(
-                title = "Bukti Timbang Barang",
-                subtitle = "Kelola data timbangan, customer, & export BTB",
+            RetroMenuCard(
+                title = "BUKTI TIMBANG / BTB",
+                subtitle = "TIMBANGAN, CUSTOMER & EXPORT BTB",
                 icon = Icons.Default.Edit,
-                iconBackgroundColor = Color(0xFFE8DEF8),
-                iconTintColor = Color(0xFF673AB7),
+                color = CargoRetroColors.Cream,
                 onClick = onNavigateToBuktiTimbang
             )
-
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Flight Tracking berdiri sendiri dan tidak menjadi bagian dari form Cargo Manifest.
-            MenuCard(
-                title = "Flight Tracking",
-                subtitle = "Lacak penerbangan melalui Flightradar24 (opsional)",
-                icon = Icons.Default.FlightTakeoff,
-                iconBackgroundColor = Color(0xFFE3F2FD),
-                iconTintColor = Color(0xFF1565C0),
-                onClick = onNavigateToFlightTracking
+            Text(
+                text = ">> SUPPORT TOOLS <<",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                color = CargoRetroColors.Ink,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, bottom = 10.dp)
             )
 
+            RetroMenuCard(
+                title = "FLIGHT TRACKING",
+                subtitle = "LACAK PENERBANGAN (OPSIONAL)",
+                icon = Icons.Default.FlightTakeoff,
+                color = CargoRetroColors.Cyan,
+                onClick = onNavigateToFlightTracking
+            )
             Spacer(modifier = Modifier.height(16.dp))
 
-            MenuCard(
-                title = "JARVIS Voice Assistant",
-                subtitle = "Kontrol aplikasi dengan perintah suara",
+            RetroMenuCard(
+                title = "JARVIS VOICE",
+                subtitle = "KONTROL APLIKASI DENGAN SUARA",
                 icon = Icons.Default.RecordVoiceOver,
-                iconBackgroundColor = Color(0xFFE8DEF8),
-                iconTintColor = Color(0xFF673AB7),
+                color = CargoRetroColors.Purple,
                 onClick = onNavigateToJarvis
+            )
+
+            Spacer(modifier = Modifier.height(18.dp))
+            Text(
+                text = "CARGO MANIFEST SYSTEM • RETRO OPS UI",
+                fontFamily = FontFamily.Monospace,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFF555555)
             )
         }
     }
 }
 
 @Composable
-fun MenuCard(
+fun RetroMenuCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    iconBackgroundColor: Color,
-    iconTintColor: Color,
+    color: Color,
     onClick: () -> Unit
 ) {
-    Card(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White)
+            .hardShadow()
+            .border(3.dp, CargoRetroColors.Ink)
+            .background(color)
+            .clickable { onClick() }
+            .padding(16.dp)
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(20.dp),
+            modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .background(iconBackgroundColor, shape = RoundedCornerShape(12.dp)),
+                    .size(52.dp)
+                    .border(3.dp, CargoRetroColors.Ink)
+                    .background(CargoRetroColors.Paper),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = title,
-                    tint = iconTintColor,
-                    modifier = Modifier.size(32.dp)
+                    tint = CargoRetroColors.Ink,
+                    modifier = Modifier.size(29.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(14.dp))
 
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = title,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFF1D1B20)
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Black,
+                    fontFamily = FontFamily.Monospace,
+                    color = CargoRetroColors.Ink
                 )
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(3.dp))
                 Text(
                     text = subtitle,
-                    fontSize = 13.sp,
-                    color = Color.Gray
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = FontFamily.Monospace,
+                    color = Color(0xFF2A2A2A)
                 )
             }
+
+            Text(
+                text = ">>",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black,
+                fontFamily = FontFamily.Monospace,
+                color = CargoRetroColors.Ink
+            )
         }
     }
+}
+
+/**
+ * Hard shadow khas Neo-Brutalism.
+ * Shadow sengaja tidak blur agar mirip referensi UI yang dikirim pengguna.
+ */
+fun Modifier.hardShadow(
+    shadowColor: Color = CargoRetroColors.Ink,
+    offset: Float = 7f
+): Modifier = this.drawBehind {
+    val px = offset.dp.toPx()
+    drawRect(
+        color = shadowColor,
+        topLeft = Offset(px, px),
+        size = Size(size.width, size.height)
+    )
 }
