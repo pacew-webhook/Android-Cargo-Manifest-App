@@ -1257,6 +1257,8 @@ object ExcelUtils {
     private fun stowingPagKgValues(item: CargoItem): List<Double> {
         val label = item.weight.trim().uppercase()
 
+        // TIMBANG TOTAL tidak memiliki rincian KG per koli.
+        // Di sheet STOWINGAN PAG cukup tulis satu nilai: TOTAL KG.
         if (label.contains("TIMBANG TOTAL")) {
             val total = parseWeight(item.subTotal)
             return total.takeIf { it > 0.0 }?.let { listOf(it) }.orEmpty()
@@ -1290,15 +1292,15 @@ object ExcelUtils {
 
     /**
      * Kolom PCS/Cly pada Manifest:
-     * - TIMBANG TOTAL : kosong, karena hanya total hasil timbang yang dipakai.
-     * - MANUAL / KOLI × KG : tampilkan jumlah PCS/Koli.
+     * - MANUAL KG     : tampilkan jumlah PCS.
+     * - KOLI × KG     : tampilkan jumlah Koli.
+     * - TIMBANG TOTAL : tampilkan jumlah PCS/Koli.
+     *
+     * Semua metode tetap membawa PCS/Koli ke Manifest.
+     * Yang kosong hanya kolom Weight PCS/CLY untuk MANUAL KG dan TIMBANG TOTAL.
      */
     private fun manifestPcsValue(item: CargoItem): Double? {
-        return if (item.weight.contains("TIMBANG TOTAL", ignoreCase = true)) {
-            null
-        } else {
-            parseWeight(item.pcsQty).takeIf { it > 0.0 }
-        }
+        return parseWeight(item.pcsQty).takeIf { it > 0.0 }
     }
 
     /**
