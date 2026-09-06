@@ -86,6 +86,20 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
     fun fmt(v: Double): String = if (v % 1.0 == 0.0) v.toInt().toString() else v.toString()
     fun totalManual() = weights.filterNotNull().sum()
 
+    // Samakan format NO PAG dan PTI dengan Form Stowing Cargo.
+    // Penyimpanan final selalu menggunakan prefix PAG / KAL.
+    fun normalizePag(value: String): String {
+        var raw = value.trim()
+        while (raw.startsWith("PAG", ignoreCase = true)) raw = raw.substring(3).trim()
+        return if (raw.isBlank()) "" else "PAG $raw"
+    }
+
+    fun normalizePti(value: String): String {
+        var raw = value.trim()
+        while (raw.startsWith("KAL", ignoreCase = true)) raw = raw.substring(3).trim()
+        return if (raw.isBlank()) "" else "KAL$raw"
+    }
+
     fun reset() {
         noPag = ""; customer = ""; description = ""; pti = ""
         pcsText = ""; kgPerText = ""; totalText = ""; inputKg = ""
@@ -103,10 +117,10 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
 
     fun edit(x: StowingPagItem) {
         editingId = x.id
-        noPag = x.noPag
+        noPag = normalizePag(x.noPag)
         customer = x.customer
         description = x.description
-        pti = x.pti
+        pti = normalizePti(x.pti)
         mode = x.mode
         pcsText = x.pcs.toString()
         kgPerText = x.kgPerKoli?.let(::fmt) ?: ""
@@ -145,10 +159,10 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
         val old = editingId?.let { id -> items.firstOrNull { it.id == id } }
         val item = StowingPagItem(
             id = old?.id ?: java.util.UUID.randomUUID().toString(),
-            noPag = noPag.trim().uppercase(Locale.getDefault()),
+            noPag = normalizePag(noPag),
             customer = customer.trim().uppercase(Locale.getDefault()),
             description = description.trim().uppercase(Locale.getDefault()),
-            pti = pti.trim().uppercase(Locale.getDefault()),
+            pti = normalizePti(pti),
             mode = mode,
             pcs = pcs,
             kgPerKoli = if (mode == PagInputMode.KOLI_KG) kgPerText.replace(',', '.').toDoubleOrNull() else null,
@@ -194,8 +208,11 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     UpperField(
-                        noPag, { noPag = it }, "NO PAG", Modifier.weight(1f),
-                        noPagFocus, ImeAction.Next, KeyboardActions(onNext = { customerFocus.requestFocus() })
+                        noPag, { noPag = it.uppercase(Locale.getDefault()) }, "NO PAG", Modifier.weight(1f),
+                        noPagFocus, ImeAction.Next, KeyboardActions(onNext = {
+                            noPag = normalizePag(noPag)
+                            customerFocus.requestFocus()
+                        })
                     )
                     UpperField(
                         customer, { customer = it }, "Customer", Modifier.weight(1f),
@@ -211,8 +228,9 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
                         descriptionFocus, ImeAction.Next, KeyboardActions(onNext = { ptiFocus.requestFocus() })
                     )
                     UpperField(
-                        pti, { pti = it }, "PTI (opsional)", Modifier.weight(1f),
+                        pti, { pti = it.uppercase(Locale.getDefault()) }, "PTI (opsional)", Modifier.weight(1f),
                         ptiFocus, ImeAction.Next, KeyboardActions(onNext = {
+                            pti = normalizePti(pti)
                             if (mode == PagInputMode.MANUAL_KG) manualKgFocus.requestFocus()
                             else firstModeFocus.requestFocus()
                         })
