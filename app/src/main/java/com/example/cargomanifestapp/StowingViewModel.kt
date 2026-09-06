@@ -472,7 +472,7 @@ class StowingViewModel : ViewModel() {
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
     fun updateInputKg(value: String) { inputKg = value; persistDraft() }
-    fun setStowingInputMode(mode: PagInputMode) {
+    fun selectStowingInputMode(mode: PagInputMode) {
         stowingInputMode = mode
         // Data manual tetap dipertahankan saat berpindah metode, supaya user tidak kehilangan input.
         persistDraft()

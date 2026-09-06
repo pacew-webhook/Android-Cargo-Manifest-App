@@ -1112,7 +1112,7 @@ fun StowingInputScreen(
                     ).forEach { (mode, label) ->
                         FilterChip(
                             selected = viewModel.stowingInputMode == mode,
-                            onClick = { viewModel.setStowingInputMode(mode) },
+                            onClick = { viewModel.selectStowingInputMode(mode) },
                             label = { Text(label, maxLines = 1, fontSize = 11.sp) },
                             modifier = Modifier.weight(1f)
                         )
