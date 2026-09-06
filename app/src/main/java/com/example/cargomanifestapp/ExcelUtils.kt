@@ -16,7 +16,7 @@ import java.io.File
 import java.io.FileOutputStream
 
 /**
- * ExcelUtils_V15_DYNAMIC_PAG
+ * ExcelUtils_V16_METHOD_SYNC_COMPACT_PAG
  *
  * Perbaikan utama:
  * 1. Data Manifest dan Stowing Checklist tetap mengikuti cargoList terbaru.
@@ -348,29 +348,6 @@ object ExcelUtils {
             .map { it.value }
     }
 
-    /** Hanya KOLI × KG yang mengisi kolom Weight PCS/CLY pada Manifest. */
-    private fun manifestWeightPerCly(item: CargoItem): Double? {
-        val label = item.weight.trim().uppercase()
-        if (!label.contains("KG/KOLI") && !label.contains("KOLI × KG") && !label.contains("KOLI X KG")) return null
-        return Regex("""([0-9]+(?:[.,][0-9]+)?)\s*KG\s*/\s*KOLI""")
-            .find(label)?.groupValues?.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull()
-    }
-
-    /** Detail yang dipakai sheet STOWINGAN PAG; tidak boleh hilang untuk mode baru. */
-    private fun stowingPagKgValues(item: CargoItem): List<Double> {
-        val label = item.weight.trim().uppercase()
-        val pcs = parseWeight(item.pcsQty).toInt().coerceAtLeast(0)
-        return when {
-            label.contains("TIMBANG TOTAL") -> listOfNotNull(parseWeight(item.subTotal).takeIf { it > 0.0 })
-            label.contains("KG/KOLI") || label.contains("KOLI × KG") || label.contains("KOLI X KG") -> {
-                val kg = manifestWeightPerCly(item) ?: 0.0
-                if (pcs > 0 && kg > 0.0) List(pcs) { kg } else emptyList()
-            }
-            else -> item.weight.split(',', ';', '|', '\n')
-                .mapNotNull { parseWeight(it).takeIf { kg -> kg > 0.0 } }
-        }
-    }
-
     fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
         data class Key(
             val pti: String,
@@ -392,14 +369,11 @@ object ExcelUtils {
             val first = items.first()
             val pcs = items.sumOf { parseWeight(it.pcsQty) }
             val kg = items.sumOf { parseWeight(it.subTotal) }
-            // Weight pada Manifest hanya bermakna untuk KOLI × KG.
-            // Manual KG dan Timbang Total harus kosong di kolom Weight PCS/CLY.
-            // Jika beberapa baris KOLI × KG digabung dan KG/Koli sama, pertahankan nilainya.
-            val koliWeights = items.mapNotNull { manifestWeightPerCly(it) }.distinct()
-            val groupedWeight = if (koliWeights.size == 1 && items.all { manifestWeightPerCly(it) != null }) {
-                val v = koliWeights.first()
-                "${formatNumber(v)} KG/KOLI"
-            } else ""
+            val weights = items.flatMap {
+                it.weight.split(',', ';', '|')
+                    .map { token -> token.trim() }
+                    .filter { token -> token.isNotBlank() }
+            }
 
             val noPags = items
                 .map { it.noPag.trim() }
@@ -410,7 +384,7 @@ object ExcelUtils {
                 id = 0L,
                 noPag = noPags.joinToString(" / "),
                 pcsQty = formatNumber(pcs),
-                weight = groupedWeight,
+                weight = weights.joinToString(", "),
                 subTotal = formatNumber(kg)
             )
         }
@@ -547,10 +521,10 @@ object ExcelUtils {
             val rowIndex = startRow + index
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-            val pcs = parseWeight(item.pcsQty)
+            val pcs = manifestPcsValue(item)
             val subtotal = parseWeight(item.subTotal)
 
-            totalManifestPcs += pcs
+            totalManifestPcs += pcs ?: 0.0
             totalManifestWeight += subtotal
 
             setStyledNumericCell(
@@ -559,18 +533,27 @@ object ExcelUtils {
             setStyledTextCell(
                 row, 1, item.pti, sampleRow?.getCell(1)
             )
-            setStyledNumericCell(
-                row, 2, pcs, sampleRow?.getCell(2)
-            )
-
-            val weightPerClyCell = row.getCell(3) ?: row.createCell(3)
-            val kgPerCly = manifestWeightPerCly(item)
-            if (kgPerCly != null) {
-                weightPerClyCell.setCellValue(kgPerCly)
+            if (pcs != null) {
+                setStyledNumericCell(
+                    row, 2, pcs, sampleRow?.getCell(2)
+                )
             } else {
-                weightPerClyCell.setBlank()
+                val pcsCell = row.getCell(2) ?: row.createCell(2)
+                pcsCell.setBlank()
+                sampleRow?.getCell(2)?.let { pcsCell.cellStyle = it.cellStyle }
             }
-            if (sampleRow != null) weightPerClyCell.cellStyle = sampleRow.getCell(3).cellStyle
+
+            val weightPerClyCell =
+                row.getCell(3) ?: row.createCell(3)
+
+            manifestWeightPerCly(item)?.let { kgPerCly ->
+                weightPerClyCell.setCellValue(kgPerCly)
+            } ?: weightPerClyCell.setBlank()
+
+            if (sampleRow != null) {
+                weightPerClyCell.cellStyle =
+                    sampleRow.getCell(3).cellStyle
+            }
 
             setStyledNumericCell(
                 row, 4, subtotal, sampleRow?.getCell(4)
@@ -833,10 +816,10 @@ object ExcelUtils {
             val rowIndex = startRow + index
             val row = sheet.getRow(rowIndex) ?: sheet.createRow(rowIndex)
 
-            val pcs = parseWeight(item.pcsQty)
+            val pcs = manifestPcsValue(item)
             val subtotal = parseWeight(item.subTotal)
 
-            totalManifestPcs += pcs
+            totalManifestPcs += pcs ?: 0.0
             totalManifestWeight += subtotal
 
             setStyledNumericCell(
@@ -845,18 +828,27 @@ object ExcelUtils {
             setStyledTextCell(
                 row, 1, item.pti, sampleRow?.getCell(1)
             )
-            setStyledNumericCell(
-                row, 2, pcs, sampleRow?.getCell(2)
-            )
-
-            val weightPerClyCell = row.getCell(3) ?: row.createCell(3)
-            val kgPerCly = manifestWeightPerCly(item)
-            if (kgPerCly != null) {
-                weightPerClyCell.setCellValue(kgPerCly)
+            if (pcs != null) {
+                setStyledNumericCell(
+                    row, 2, pcs, sampleRow?.getCell(2)
+                )
             } else {
-                weightPerClyCell.setBlank()
+                val pcsCell = row.getCell(2) ?: row.createCell(2)
+                pcsCell.setBlank()
+                sampleRow?.getCell(2)?.let { pcsCell.cellStyle = it.cellStyle }
             }
-            if (sampleRow != null) weightPerClyCell.cellStyle = sampleRow.getCell(3).cellStyle
+
+            val weightPerClyCell =
+                row.getCell(3) ?: row.createCell(3)
+
+            manifestWeightPerCly(item)?.let { kgPerCly ->
+                weightPerClyCell.setCellValue(kgPerCly)
+            } ?: weightPerClyCell.setBlank()
+
+            if (sampleRow != null) {
+                weightPerClyCell.cellStyle =
+                    sampleRow.getCell(3).cellStyle
+            }
 
             setStyledNumericCell(
                 row, 4, subtotal, sampleRow?.getCell(4)
@@ -1184,8 +1176,12 @@ object ExcelUtils {
                     ?: custRow.createCell(currentStartCol)
                 custCell.setCellValue(item.customer)
 
-                // Semua metode harus menghasilkan representasi untuk sheet STOWINGAN PAG.
-                // KOLI × KG diekspansi menjadi KG berulang; TIMBANG TOTAL ditulis sebagai satu nilai total.
+                // Setiap metode input harus tetap mempunyai representasi di
+                // STOWINGAN PAG:
+                // - MANUAL KG  : pakai rincian KG asli.
+                // - KOLI × KG  : expand KG/Koli sebanyak jumlah koli.
+                // - TIMBANG TOTAL : tampilkan satu nilai total, karena memang
+                //                  tidak memiliki rincian per-koli.
                 val kgValues = stowingPagKgValues(item)
 
                 var currentRow = customerStartRow + 1
@@ -1218,11 +1214,11 @@ object ExcelUtils {
                     }
                 }
 
-                // Keep each cargo input separated. If one input contains more
-                // than five koli, it consumes additional columns; the next input
-                // must start after those columns instead of jumping a fixed 6.
+                // PACK RAPAT: input berikutnya langsung memakai kolom setelah
+                // kolom terakhir input sebelumnya. Tidak lagi lompat minimal 6
+                // kolom, sehingga GF -> GG -> GH dan seterusnya.
                 val columnsUsedByItem = maxOf(1, (kgValues.size + 4) / 5)
-                currentStartCol += maxOf(6, columnsUsedByItem + 1)
+                currentStartCol += columnsUsedByItem
             }
         }
 
@@ -1252,6 +1248,82 @@ object ExcelUtils {
             row.getCell(3)?.setBlank()
             row.getCell(4)?.setBlank()
         }
+    }
+
+    /**
+     * Menghasilkan nilai yang ditulis ke STOWINGAN PAG tanpa kehilangan data
+     * dari metode input baru di Stowing Cargo.
+     */
+    private fun stowingPagKgValues(item: CargoItem): List<Double> {
+        val label = item.weight.trim().uppercase()
+
+        if (label.contains("TIMBANG TOTAL")) {
+            val total = parseWeight(item.subTotal)
+            return total.takeIf { it > 0.0 }?.let { listOf(it) }.orEmpty()
+        }
+
+        val kgPerKoliMatch = Regex(
+            """([0-9]+(?:[.,][0-9]+)?)\s*KG\s*/\s*KOLI"""
+        ).find(label)
+
+        if (kgPerKoliMatch != null) {
+            val kgPerKoli = kgPerKoliMatch.groupValues[1]
+                .replace(',', '.')
+                .toDoubleOrNull()
+                ?: 0.0
+            val koli = parseWeight(item.pcsQty).toInt()
+
+            if (kgPerKoli > 0.0 && koli > 0) {
+                return List(koli) { kgPerKoli }
+            }
+        }
+
+        return item.weight
+            .split(",", ";", "\n", "|")
+            .mapNotNull { token ->
+                token.trim()
+                    .replace(',', '.')
+                    .toDoubleOrNull()
+                    ?.takeIf { it > 0.0 && it.isFinite() }
+            }
+    }
+
+    /**
+     * Kolom PCS/Cly pada Manifest:
+     * - TIMBANG TOTAL : kosong, karena hanya total hasil timbang yang dipakai.
+     * - MANUAL / KOLI × KG : tampilkan jumlah PCS/Koli.
+     */
+    private fun manifestPcsValue(item: CargoItem): Double? {
+        return if (item.weight.contains("TIMBANG TOTAL", ignoreCase = true)) {
+            null
+        } else {
+            parseWeight(item.pcsQty).takeIf { it > 0.0 }
+        }
+    }
+
+    /**
+     * Kolom WEIGHT (Kg) -> Pcs/Cly pada Manifest:
+     * - KOLI × KG  : tampilkan KG per koli.
+     * - MANUAL KG  : kosong (rincian hanya ada di STOWINGAN PAG).
+     * - TIMBANG TOTAL : kosong.
+     */
+    private fun manifestWeightPerCly(item: CargoItem): Double? {
+        val label = item.weight.trim().uppercase()
+        if (label.contains("TIMBANG TOTAL")) return null
+
+        val values = Regex(
+            """([0-9]+(?:[.,][0-9]+)?)\s*KG\s*/\s*KOLI"""
+        ).findAll(label)
+            .mapNotNull {
+                it.groupValues.getOrNull(1)
+                    ?.replace(',', '.')
+                    ?.toDoubleOrNull()
+                    ?.takeIf { value -> value > 0.0 && value.isFinite() }
+            }
+            .distinct()
+            .toList()
+
+        return values.singleOrNull()
     }
 
     /** Copy one of the existing visual PAG blocks for an additional PAG. */
