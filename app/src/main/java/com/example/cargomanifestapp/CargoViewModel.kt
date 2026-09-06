@@ -436,7 +436,18 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 StowingPagStorage.load(appContext).firstOrNull { it.id == id }
             }
 
-            when (pagItem?.mode) {
+            // Fallback tambahan untuk data PAG Prepare lama yang link-nya belum
+            // tersimpan/sempat berubah setelah edit. Label weight dari PAG sudah
+            // cukup untuk mengenali metode input tanpa memaksa rincian KG manual.
+            val weightLabel = item.weight.trim().uppercase()
+            val inferredMode = when {
+                weightLabel.contains("TIMBANG TOTAL") -> PagInputMode.TOTAL
+                weightLabel.contains("KG/KOLI") || weightLabel.contains("KOLI × KG") || weightLabel.contains("KOLI X KG") -> PagInputMode.KOLI_KG
+                else -> null
+            }
+            val effectiveMode = pagItem?.mode ?: inferredMode
+
+            when (effectiveMode) {
                 PagInputMode.TOTAL -> {
                     // TIMBANG TOTAL: PCS dan TOTAL KG valid walaupun rincian KG kosong.
                     if (pcs <= 0) errors += "$label: PCS/Koli harus lebih dari 0"
@@ -446,7 +457,10 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 PagInputMode.KOLI_KG -> {
                     // KOLI × KG: validasi berdasarkan hasil perkalian, bukan rincian manual.
                     if (pcs <= 0) errors += "$label: PCS/Koli harus lebih dari 0"
-                    val kgPerKoli = pagItem.kgPerKoli ?: 0.0
+                    val kgPerKoli = pagItem?.kgPerKoli ?: run {
+                        val match = Regex("""([0-9]+(?:[.,][0-9]+)?)\s*KG\s*/\s*KOLI""").find(item.weight.uppercase())
+                        match?.groupValues?.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull() ?: 0.0
+                    }
                     if (kgPerKoli <= 0.0) {
                         errors += "$label: KG/Koli harus lebih dari 0"
                     } else {

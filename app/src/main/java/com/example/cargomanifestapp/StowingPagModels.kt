@@ -109,16 +109,29 @@ object StowingPagLinkStorage {
 
         // Kompatibilitas data PAG yang sudah masuk Stowing sebelum fitur link ini
         // ditambahkan. Cari berdasarkan identitas cargo, lalu langsung buat link.
-        val total = item.subTotal.replace(',', '.').toDoubleOrNull()
+        val pagItems = StowingPagStorage.load(context)
+        val total = item.subTotal.replace(".", "").replace(',', '.').toDoubleOrNull()
+            ?: item.subTotal.replace(',', '.').toDoubleOrNull()
         val pcs = item.pcsQty.toIntOrNull()
-        val match = StowingPagStorage.load(context).firstOrNull { pag ->
+
+        // 1) Cocokkan identitas lengkap terlebih dahulu. Angka PCS/TOTAL boleh
+        // berubah setelah proses edit, sehingga jangan jadikan angka sebagai syarat
+        // wajib untuk menemukan kembali sumber PAG Prepare.
+        val identityMatches = pagItems.filter { pag ->
             pag.usedInStowing &&
                 pag.noPag.trim().equals(item.noPag.trim(), ignoreCase = true) &&
                 pag.customer.trim().equals(item.customer.trim(), ignoreCase = true) &&
                 pag.description.trim().equals(item.description.trim(), ignoreCase = true) &&
-                pag.pti.trim().equals(item.pti.trim(), ignoreCase = true) &&
+                pag.pti.trim().equals(item.pti.trim(), ignoreCase = true)
+        }
+
+        val match = when {
+            identityMatches.size == 1 -> identityMatches.first()
+            identityMatches.isNotEmpty() -> identityMatches.firstOrNull { pag ->
                 (pcs == null || pag.pcs == pcs) &&
-                (total == null || kotlin.math.abs(pag.totalKg - total) < 0.0001)
+                    (total == null || kotlin.math.abs(pag.totalKg - total) < 0.01)
+            }
+            else -> null
         }
         if (match != null) {
             link(context, match.id, item)
