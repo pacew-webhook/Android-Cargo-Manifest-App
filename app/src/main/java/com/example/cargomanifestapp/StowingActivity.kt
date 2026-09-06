@@ -91,6 +91,7 @@ fun StowingInputScreen(
     val kgGridState = rememberLazyGridState()
     var scrollToKgIndex by remember { mutableStateOf<Int?>(null) }
     var showBtbPicker by remember { mutableStateOf(false) }
+    var showPagPicker by remember { mutableStateOf(false) }
     var showBackupDialog by remember { mutableStateOf(false) }
     var flightNumber by remember { mutableStateOf("2") }
     val backupDateText = remember {
@@ -752,6 +753,37 @@ fun StowingInputScreen(
         )
     }
 
+    if (showPagPicker) {
+        AlertDialog(
+            onDismissRequest = { showPagPicker = false },
+            title = { Text("Ambil Data PAG Prepare", fontWeight = FontWeight.Bold, color = Color(0xFF381E72)) },
+            text = {
+                if (viewModel.pagReferenceList.isEmpty()) Text("Belum ada data PAG Prepare tersimpan.")
+                else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(viewModel.pagReferenceList, key = { it.id }) { pag ->
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            enabled = !pag.usedInStowing,
+                            colors = CardDefaults.cardColors(containerColor = if (pag.usedInStowing) Color(0xFFE8F5E9) else Color(0xFFF3EDF7)),
+                            onClick = {
+                                if (viewModel.applyPagReference(pag)) {
+                                    showPagPicker = false
+                                    Toast.makeText(context, "Data PAG Prepare berhasil diambil. Tekan Simpan untuk memasukkan ke Stowing Cargo.", Toast.LENGTH_LONG).show()
+                                } else Toast.makeText(context, "Data PAG ini sudah masuk Stowing Cargo.", Toast.LENGTH_SHORT).show()
+                            }
+                        ) { Column(Modifier.padding(12.dp)) {
+                            Text("NO PAG: ${pag.noPag}", fontWeight = FontWeight.Bold)
+                            Text("${pag.description} | ${pag.pcs} Koli | ${if (pag.totalKg % 1.0 == 0.0) pag.totalKg.toInt() else pag.totalKg} KG", fontSize = 12.sp)
+                            Text(pag.customer + if (pag.pti.isBlank()) "" else " • ${pag.pti}", fontSize = 11.sp)
+                            if (pag.usedInStowing) Text("✅ Sudah masuk Stowing Cargo", color = Color(0xFF2E7D32), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }}
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showPagPicker = false }) { Text("Tutup") } }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1131,7 +1163,29 @@ fun StowingInputScreen(
                     Text("📋 Ambil Data BTB", fontWeight = FontWeight.Bold)
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedButton(
+                    onClick = {
+                        viewModel.refreshPagReferences()
+                        showPagPicker = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1565C0)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1565C0))
+                ) { Text("📦 Ambil Data PAG Prepare", fontWeight = FontWeight.Bold) }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                viewModel.importedPagSummary?.let { summary ->
+                    Text(
+                        text = summary,
+                        modifier = Modifier.fillMaxWidth().background(Color(0xFFE3F2FD), RoundedCornerShape(8.dp)).padding(10.dp),
+                        color = Color(0xFF0D47A1),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
 
                 // --- RINCIAN INPUT KG ---
                 if (viewModel.currentKgEntries.isNotEmpty()) {

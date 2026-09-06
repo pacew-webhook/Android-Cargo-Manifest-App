@@ -35,6 +35,11 @@ class StowingViewModel : ViewModel() {
     // dari cargoList agar status tetap ada walaupun daftar BTB di-refresh.
     private val usedBtbReferenceIds = mutableStateListOf<String>()
     private var pendingBtbReferenceId: String? = null
+    val pagReferenceList = mutableStateListOf<StowingPagItem>()
+    private var pendingPagReferenceId: String? = null
+    private var importedPagPcs: Int? = null
+    private var importedPagTotal: Double? = null
+    private var importedPagWeightLabel: String? = null
 
     fun attachContext(context: Context) {
         if (attachedContext == null) attachedContext = context.applicationContext
@@ -46,6 +51,7 @@ class StowingViewModel : ViewModel() {
             btbReferenceLoaded = true
             loadBtbReferences()
         }
+        refreshPagReferences()
     }
 
     private fun loadBtbReferences() {
@@ -82,6 +88,40 @@ class StowingViewModel : ViewModel() {
                 )
             }
         }
+    }
+
+
+    fun refreshPagReferences() {
+        val context = attachedContext ?: return
+        pagReferenceList.clear()
+        pagReferenceList.addAll(StowingPagStorage.load(context))
+    }
+
+    fun applyPagReference(item: StowingPagItem): Boolean {
+        if (item.id.isBlank() || item.usedInStowing || item.id == pendingPagReferenceId) return false
+        noPag = item.noPag
+        customer = item.customer
+        description = item.description
+        pti = item.pti
+        currentKgEntries.clear()
+        importedPagPcs = item.pcs
+        importedPagTotal = item.totalKg
+        importedPagWeightLabel = when (item.mode) {
+            PagInputMode.MANUAL_KG -> item.weights.filterNotNull().joinToString(", ") { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() }
+            PagInputMode.KOLI_KG -> item.kgPerKoli?.let { "${if (it % 1.0 == 0.0) it.toInt() else it} KG/KOLI" }
+            PagInputMode.TOTAL -> "TIMBANG TOTAL"
+        }
+        if (item.mode == PagInputMode.MANUAL_KG) currentKgEntries.addAll(item.weights)
+        pendingPagReferenceId = item.id
+        persistDraft()
+        return true
+    }
+
+    private fun markPendingPagAsUsed(context: Context) {
+        val id = pendingPagReferenceId ?: return
+        StowingPagStorage.markUsed(context, id)
+        pendingPagReferenceId = null
+        refreshPagReferences()
     }
 
     private fun loadUsedBtbReferenceIds(context: Context) {
@@ -370,6 +410,12 @@ class StowingViewModel : ViewModel() {
 
     val currentTotalKg: Double
         get() = currentActiveEntries.sum()
+
+    val importedPagSummary: String?
+        get() = if (importedPagPcs != null && importedPagTotal != null) {
+            "Data PAG Prepare: ${importedPagPcs} Koli • ${if (importedPagTotal!! % 1.0 == 0.0) importedPagTotal!!.toInt() else importedPagTotal} KG" +
+                (importedPagWeightLabel?.takeIf { it.isNotBlank() }?.let { " • $it" } ?: "")
+        } else null
 
     // --- SETTER UNTUK INPUT UI ---
     // Saat mengetik, pertahankan spasi yang diketik user (mis. "001 MYI").
@@ -1242,7 +1288,7 @@ class StowingViewModel : ViewModel() {
             onError("Mohon isi NO PAG, Customer dan Description")
             return
         }
-        if (currentActiveEntries.isEmpty()) {
+        if (currentActiveEntries.isEmpty() && importedPagTotal == null) {
             onError("Masukkan minimal 1 nilai KG")
             return
         }
@@ -1262,17 +1308,19 @@ class StowingViewModel : ViewModel() {
             }
         }
 
-        val formattedWeightList = currentActiveEntries.joinToString(", ") {
+        val formattedWeightList = importedPagWeightLabel ?: currentActiveEntries.joinToString(", ") {
             if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
         }
-        val formattedTotalKg = if (currentTotalKg % 1.0 == 0.0) currentTotalKg.toInt().toString() else currentTotalKg.toString()
+        val effectiveTotal = importedPagTotal ?: currentTotalKg
+        val effectivePcs = importedPagPcs ?: currentActiveEntries.size
+        val formattedTotalKg = if (effectiveTotal % 1.0 == 0.0) effectiveTotal.toInt().toString() else effectiveTotal.toString()
 
         val newItem = CargoItem(
             noPag = normalizePag(noPag),
             customer = customer.trim(),
             description = description.trim(),
             pti = normalizePti(pti),
-            pcsQty = currentActiveEntries.size.toString(),
+            pcsQty = effectivePcs.toString(),
             weight = formattedWeightList,
             subTotal = formattedTotalKg
         )
@@ -1293,6 +1341,7 @@ class StowingViewModel : ViewModel() {
         // benar-benar berhasil disimpan. Jika operator batal sebelum Save,
         // BTB tetap bisa dipilih lagi.
         markPendingBtbAsUsed(context)
+        markPendingPagAsUsed(context)
         saveCargoListToPrefs(context)
         savePhotosForItem(newItem)
         clearDraft()
@@ -1321,6 +1370,10 @@ class StowingViewModel : ViewModel() {
         // Jika form dibatalkan/reset sebelum Save, BTB pending belum dianggap
         // selesai dan boleh dipilih kembali.
         pendingBtbReferenceId = null
+        pendingPagReferenceId = null
+        importedPagPcs = null
+        importedPagTotal = null
+        importedPagWeightLabel = null
         noPag = ""
         customer = ""
         description = ""

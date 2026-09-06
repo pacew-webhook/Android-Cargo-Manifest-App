@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
                                     val intent = Intent(context, StowingActivity::class.java)
                                     context.startActivity(intent)
                                 },
+                                onNavigateToStowingPag = {
+                                    context.startActivity(Intent(context, StowingPagActivity::class.java))
+                                },
                                 onNavigateToBuktiTimbang = {
                                     val intent = Intent(context, BuktiTimbangActivity::class.java)
                                     context.startActivity(intent)
@@ -74,6 +77,9 @@ class MainActivity : ComponentActivity() {
                                 onNavigateToStowing = {
                                     val intent = Intent(context, StowingActivity::class.java)
                                     context.startActivity(intent)
+                                },
+                                onNavigateToStowingPag = {
+                                    context.startActivity(Intent(context, StowingPagActivity::class.java))
                                 },
                                 onNavigateToBuktiTimbang = {
                                     val intent = Intent(context, BuktiTimbangActivity::class.java)

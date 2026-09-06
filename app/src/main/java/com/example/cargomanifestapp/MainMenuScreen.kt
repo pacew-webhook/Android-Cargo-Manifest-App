@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.FlightTakeoff
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.sp
 fun MainMenuScreen(
     onNavigateToManifest: () -> Unit,
     onNavigateToStowing: () -> Unit,
+    onNavigateToStowingPag: () -> Unit,
     onNavigateToBuktiTimbang: () -> Unit,
     onNavigateToManifestSearch: () -> Unit,
     onNavigateToFlightTracking: () -> Unit,
@@ -149,6 +151,15 @@ fun MainMenuScreen(
                 icon = Icons.Default.ShoppingCart,
                 color = CargoRetroColors.Pink,
                 onClick = onNavigateToStowing
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+
+            RetroMenuCard(
+                title = "STOWING PAG (PREPARE)",
+                subtitle = "INPUT TIMBANG TOTAL, KOLI × KG & MANUAL KG",
+                icon = Icons.Default.Add,
+                color = CargoRetroColors.Cyan,
+                onClick = onNavigateToStowingPag
             )
             Spacer(modifier = Modifier.height(16.dp))
 
