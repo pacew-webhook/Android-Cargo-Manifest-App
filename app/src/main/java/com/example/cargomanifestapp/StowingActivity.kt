@@ -1,6 +1,7 @@
 package com.example.cargomanifestapp
 
 import android.net.Uri
+import android.content.Intent
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
@@ -1559,7 +1560,17 @@ fun StowingInputScreen(
 
                                 Row {
                                     IconButton(
-                                        onClick = { viewModel.startEditCargoItem(originalIndex, item) },
+                                        onClick = {
+                                            val pagId = viewModel.pagSourceIdForCargo(item)
+                                            if (pagId != null) {
+                                                context.startActivity(
+                                                    Intent(context, StowingPagActivity::class.java)
+                                                        .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
+                                                )
+                                            } else {
+                                                viewModel.startEditCargoItem(originalIndex, item)
+                                            }
+                                        },
                                         modifier = Modifier.size(28.dp)
                                     ) {
                                         Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Data", tint = Color(0xFF0288D1), modifier = Modifier.size(18.dp))

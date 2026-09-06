@@ -97,6 +97,12 @@ class StowingViewModel : ViewModel() {
         pagReferenceList.addAll(StowingPagStorage.load(context))
     }
 
+    /** ID sumber PAG untuk sebuah baris Stowing, null jika bukan dari PAG Prepare. */
+    fun pagSourceIdForCargo(item: CargoItem): String? {
+        val context = attachedContext ?: return null
+        return StowingPagLinkStorage.pagIdForCargo(context, item)
+    }
+
     fun applyPagReference(item: StowingPagItem): Boolean {
         if (item.id.isBlank() || item.usedInStowing || item.id == pendingPagReferenceId) return false
         noPag = item.noPag
@@ -1337,9 +1343,12 @@ class StowingViewModel : ViewModel() {
             onSuccess("Data berhasil disimpan!")
         }
 
-        // BTB baru dianggap "sudah masuk Stowing Cargo" setelah data Cargo
+        // Hubungkan baris Cargo dengan sumber PAG Prepare sebelum pending ID dibersihkan.
+        pendingPagReferenceId?.let { pagId -> StowingPagLinkStorage.link(context, pagId, newItem) }
+
+        // BTB/PAG baru dianggap "sudah masuk Stowing Cargo" setelah data Cargo
         // benar-benar berhasil disimpan. Jika operator batal sebelum Save,
-        // BTB tetap bisa dipilih lagi.
+        // sumber tetap bisa dipilih lagi.
         markPendingBtbAsUsed(context)
         markPendingPagAsUsed(context)
         saveCargoListToPrefs(context)
@@ -1437,6 +1446,7 @@ class StowingViewModel : ViewModel() {
                     prefs.edit().putString("items", array.toString()).apply()
                 }
                 saveCargoListToPrefs(context)
+                StowingPagLinkStorage.clear(context)
                 resetForm()
                 onDeleted("Semua data berhasil dihapus")
             }
@@ -1457,6 +1467,7 @@ class StowingViewModel : ViewModel() {
                             all.remove(key)
                             prefs.edit().putString("items", all.toString()).apply()
                         }
+                        StowingPagLinkStorage.unlinkCargo(context, removedItem)
                         cargoList.removeAt(idx)
                         saveCargoListToPrefs(context)
                         onDeleted("Data berhasil dihapus")

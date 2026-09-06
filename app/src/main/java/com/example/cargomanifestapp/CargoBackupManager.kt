@@ -74,6 +74,9 @@ object CargoBackupManager {
             // Data PAG Prepare ikut dibackup agar sumber import Stowing tetap lengkap.
             put("pagPrepare", context.getSharedPreferences("stowing_pag_prepare", Context.MODE_PRIVATE)
                 .getString("items", "[]") ?: "[]")
+            // Relasi PAG Prepare ↔ Stowing Cargo agar Edit tetap tersinkron setelah Restore.
+            put("pagLinks", context.getSharedPreferences("stowing_pag_links", Context.MODE_PRIVATE)
+                .getString("links", "{}") ?: "{}")
             // Loot Crew ikut dibackup. Data Stowing/BTB tetap master dan tidak dikurangi.
             put("crewLoot", context.getSharedPreferences("crew_loot_storage", Context.MODE_PRIVATE)
                 .getString("transactions", "[]") ?: "[]")
@@ -207,6 +210,9 @@ object CargoBackupManager {
             val pagPrepareRaw = root.optString("pagPrepare", "[]")
             context.getSharedPreferences("stowing_pag_prepare", Context.MODE_PRIVATE).edit()
                 .putString("items", pagPrepareRaw).apply()
+            val pagLinksRaw = root.optString("pagLinks", "{}")
+            context.getSharedPreferences("stowing_pag_links", Context.MODE_PRIVATE).edit()
+                .putString("links", pagLinksRaw).apply()
 
             // Restore Loot Crew dan pengaturan Manifest bila tersedia.
             val crewLootRaw = root.optString("crewLoot", "[]")
