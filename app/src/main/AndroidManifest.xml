@@ -47,6 +47,12 @@
             android:label="Data Stowingan Palet"
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
+        <activity
+            android:name="com.example.cargomanifestapp.StowingPagActivity"
+            android:exported="false"
+            android:label="Stowing PAG Prepare"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />
+
         <!-- Activity Baru untuk Bukti Timbang Barang (BTB) -->
         <activity
             android:name="com.example.cargomanifestapp.BuktiTimbangActivity"
