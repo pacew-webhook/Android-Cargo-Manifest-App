@@ -427,10 +427,53 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
                 .filter { it > 0.0 && it.isFinite() }
             val pcs = item.pcsQty.toIntOrNull() ?: 0
             val subtotal = parseDoubleOrZero(item.subTotal)
-            val sum = weights.sum()
-            if (weights.size != pcs) errors += "$label: ${weights.size} rincian KG tetapi PCS ${item.pcsQty}"
-            if (kotlin.math.abs(sum - subtotal) > 0.01) {
-                errors += "$label: rincian ${formatNumber(sum)} KG ≠ subtotal ${item.subTotal} KG"
+
+            // Data dari PAG Prepare memiliki 3 metode input. Jangan paksa semua
+            // data mempunyai rincian KG satu-per-satu seperti Stowing manual.
+            val appContext = getApplication<Application>()
+            val pagId = StowingPagLinkStorage.pagIdForCargo(appContext, item)
+            val pagItem = pagId?.let { id ->
+                StowingPagStorage.load(appContext).firstOrNull { it.id == id }
+            }
+
+            when (pagItem?.mode) {
+                PagInputMode.TOTAL -> {
+                    // TIMBANG TOTAL: PCS dan TOTAL KG valid walaupun rincian KG kosong.
+                    if (pcs <= 0) errors += "$label: PCS/Koli harus lebih dari 0"
+                    if (subtotal <= 0.0) errors += "$label: Total KG harus lebih dari 0"
+                }
+
+                PagInputMode.KOLI_KG -> {
+                    // KOLI × KG: validasi berdasarkan hasil perkalian, bukan rincian manual.
+                    if (pcs <= 0) errors += "$label: PCS/Koli harus lebih dari 0"
+                    val kgPerKoli = pagItem.kgPerKoli ?: 0.0
+                    if (kgPerKoli <= 0.0) {
+                        errors += "$label: KG/Koli harus lebih dari 0"
+                    } else {
+                        val expected = pcs * kgPerKoli
+                        if (kotlin.math.abs(expected - subtotal) > 0.01) {
+                            errors += "$label: ${formatNumber(pcs.toDouble())} Koli × ${formatNumber(kgPerKoli)} KG ≠ subtotal ${item.subTotal} KG"
+                        }
+                    }
+                }
+
+                PagInputMode.MANUAL_KG -> {
+                    // Sama seperti Stowing Cargo manual: setiap KG wajib dirinci.
+                    val sum = weights.sum()
+                    if (weights.size != pcs) errors += "$label: ${weights.size} rincian KG tetapi PCS ${item.pcsQty}"
+                    if (kotlin.math.abs(sum - subtotal) > 0.01) {
+                        errors += "$label: rincian ${formatNumber(sum)} KG ≠ subtotal ${item.subTotal} KG"
+                    }
+                }
+
+                null -> {
+                    // Data Stowing manual/legacy tetap memakai aturan validasi lama.
+                    val sum = weights.sum()
+                    if (weights.size != pcs) errors += "$label: ${weights.size} rincian KG tetapi PCS ${item.pcsQty}"
+                    if (kotlin.math.abs(sum - subtotal) > 0.01) {
+                        errors += "$label: rincian ${formatNumber(sum)} KG ≠ subtotal ${item.subTotal} KG"
+                    }
+                }
             }
         }
 
