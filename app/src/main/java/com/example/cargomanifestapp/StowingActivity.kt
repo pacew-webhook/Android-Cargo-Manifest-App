@@ -55,6 +55,7 @@ import java.util.Locale
 
 class StowingActivity : ComponentActivity() {
     private val stowingViewModel: StowingViewModel by viewModels()
+    companion object { const val EXTRA_EDIT_CARGO_KEY = "edit_cargo_key" }
 
     override fun onResume() {
         super.onResume()
@@ -71,7 +72,11 @@ class StowingActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    StowingInputScreen(onBack = { finish() }, viewModel = stowingViewModel)
+                    StowingInputScreen(
+                        onBack = { finish() },
+                        viewModel = stowingViewModel,
+                        editCargoKey = intent.getStringExtra(EXTRA_EDIT_CARGO_KEY)
+                    )
                 }
             }
         }
@@ -82,10 +87,14 @@ class StowingActivity : ComponentActivity() {
 @Composable
 fun StowingInputScreen(
     onBack: () -> Unit,
-    viewModel: StowingViewModel = viewModel()
+    viewModel: StowingViewModel = viewModel(),
+    editCargoKey: String? = null
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { viewModel.attachContext(context) }
+    LaunchedEffect(Unit) {
+        viewModel.attachContext(context)
+        editCargoKey?.let { viewModel.startEditCargoByKey(it) }
+    }
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
     val descriptionFocusRequester = remember { FocusRequester() }

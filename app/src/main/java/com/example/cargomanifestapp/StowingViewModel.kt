@@ -212,7 +212,7 @@ class StowingViewModel : ViewModel() {
         pendingBtbReferenceId = null
     }
 
-    private fun cargoKey(item: CargoItem): String =
+    fun cargoKey(item: CargoItem): String =
         listOf(
             item.noPag, item.customer, item.description, item.pti,
             item.pcsQty, item.weight, item.subTotal
@@ -1408,6 +1408,15 @@ class StowingViewModel : ViewModel() {
         savePhotosForItem(newItem)
         clearDraft()
         resetForm()
+    }
+
+    /** Buka editor berdasarkan key sumber dari Manifest tanpa kehilangan mode input asli. */
+    fun startEditCargoByKey(key: String): Boolean {
+        if (key.isBlank()) return false
+        val index = cargoList.indexOfFirst { cargoKey(it) == key }
+        if (index < 0) return false
+        startEditCargoItem(index, cargoList[index])
+        return true
     }
 
     fun startEditCargoItem(indexInOriginalList: Int, item: CargoItem) {

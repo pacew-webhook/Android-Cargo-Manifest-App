@@ -348,6 +348,29 @@ object ExcelUtils {
             .map { it.value }
     }
 
+    /** Hanya KOLI × KG yang mengisi kolom Weight PCS/CLY pada Manifest. */
+    private fun manifestWeightPerCly(item: CargoItem): Double? {
+        val label = item.weight.trim().uppercase()
+        if (!label.contains("KG/KOLI") && !label.contains("KOLI × KG") && !label.contains("KOLI X KG")) return null
+        return Regex("""([0-9]+(?:[.,][0-9]+)?)\s*KG\s*/\s*KOLI""")
+            .find(label)?.groupValues?.getOrNull(1)?.replace(',', '.')?.toDoubleOrNull()
+    }
+
+    /** Detail yang dipakai sheet STOWINGAN PAG; tidak boleh hilang untuk mode baru. */
+    private fun stowingPagKgValues(item: CargoItem): List<Double> {
+        val label = item.weight.trim().uppercase()
+        val pcs = parseWeight(item.pcsQty).toInt().coerceAtLeast(0)
+        return when {
+            label.contains("TIMBANG TOTAL") -> listOfNotNull(parseWeight(item.subTotal).takeIf { it > 0.0 })
+            label.contains("KG/KOLI") || label.contains("KOLI × KG") || label.contains("KOLI X KG") -> {
+                val kg = manifestWeightPerCly(item) ?: 0.0
+                if (pcs > 0 && kg > 0.0) List(pcs) { kg } else emptyList()
+            }
+            else -> item.weight.split(',', ';', '|', '\n')
+                .mapNotNull { parseWeight(it).takeIf { kg -> kg > 0.0 } }
+        }
+    }
+
     fun groupManifestRows(cargoList: List<CargoItem>): List<CargoItem> {
         data class Key(
             val pti: String,
@@ -369,11 +392,14 @@ object ExcelUtils {
             val first = items.first()
             val pcs = items.sumOf { parseWeight(it.pcsQty) }
             val kg = items.sumOf { parseWeight(it.subTotal) }
-            val weights = items.flatMap {
-                it.weight.split(',', ';', '|')
-                    .map { token -> token.trim() }
-                    .filter { token -> token.isNotBlank() }
-            }
+            // Weight pada Manifest hanya bermakna untuk KOLI × KG.
+            // Manual KG dan Timbang Total harus kosong di kolom Weight PCS/CLY.
+            // Jika beberapa baris KOLI × KG digabung dan KG/Koli sama, pertahankan nilainya.
+            val koliWeights = items.mapNotNull { manifestWeightPerCly(it) }.distinct()
+            val groupedWeight = if (koliWeights.size == 1 && items.all { manifestWeightPerCly(it) != null }) {
+                val v = koliWeights.first()
+                "${formatNumber(v)} KG/KOLI"
+            } else ""
 
             val noPags = items
                 .map { it.noPag.trim() }
@@ -384,7 +410,7 @@ object ExcelUtils {
                 id = 0L,
                 noPag = noPags.joinToString(" / "),
                 pcsQty = formatNumber(pcs),
-                weight = weights.joinToString(", "),
+                weight = groupedWeight,
                 subTotal = formatNumber(kg)
             )
         }
@@ -537,15 +563,14 @@ object ExcelUtils {
                 row, 2, pcs, sampleRow?.getCell(2)
             )
 
-            val weightPerClyCell =
-                row.getCell(3) ?: row.createCell(3)
-
-            weightPerClyCell.setBlank()
-
-            if (sampleRow != null) {
-                weightPerClyCell.cellStyle =
-                    sampleRow.getCell(3).cellStyle
+            val weightPerClyCell = row.getCell(3) ?: row.createCell(3)
+            val kgPerCly = manifestWeightPerCly(item)
+            if (kgPerCly != null) {
+                weightPerClyCell.setCellValue(kgPerCly)
+            } else {
+                weightPerClyCell.setBlank()
             }
+            if (sampleRow != null) weightPerClyCell.cellStyle = sampleRow.getCell(3).cellStyle
 
             setStyledNumericCell(
                 row, 4, subtotal, sampleRow?.getCell(4)
@@ -824,15 +849,14 @@ object ExcelUtils {
                 row, 2, pcs, sampleRow?.getCell(2)
             )
 
-            val weightPerClyCell =
-                row.getCell(3) ?: row.createCell(3)
-
-            weightPerClyCell.setBlank()
-
-            if (sampleRow != null) {
-                weightPerClyCell.cellStyle =
-                    sampleRow.getCell(3).cellStyle
+            val weightPerClyCell = row.getCell(3) ?: row.createCell(3)
+            val kgPerCly = manifestWeightPerCly(item)
+            if (kgPerCly != null) {
+                weightPerClyCell.setCellValue(kgPerCly)
+            } else {
+                weightPerClyCell.setBlank()
             }
+            if (sampleRow != null) weightPerClyCell.cellStyle = sampleRow.getCell(3).cellStyle
 
             setStyledNumericCell(
                 row, 4, subtotal, sampleRow?.getCell(4)
@@ -1160,11 +1184,9 @@ object ExcelUtils {
                     ?: custRow.createCell(currentStartCol)
                 custCell.setCellValue(item.customer)
 
-                val kgValues = item.weight
-                    .split(",")
-                    .mapNotNull {
-                        parseWeight(it).takeIf { kg -> kg > 0.0 }
-                    }
+                // Semua metode harus menghasilkan representasi untuk sheet STOWINGAN PAG.
+                // KOLI × KG diekspansi menjadi KG berulang; TIMBANG TOTAL ditulis sebagai satu nilai total.
+                val kgValues = stowingPagKgValues(item)
 
                 var currentRow = customerStartRow + 1
                 var colOffset = 0
