@@ -4,6 +4,8 @@ import android.widget.Toast
 import android.net.Uri
 import android.graphics.BitmapFactory
 import android.content.Intent
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
@@ -55,6 +57,7 @@ fun CargoAppScreen(
     BackHandler { onBackToMenu() }
 
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
     val groups by viewModel.manifestGroups.collectAsState()
     var isSendingToN8n by remember { mutableStateOf(false) }
     var selectedGroup by remember { mutableStateOf<ManifestGroup?>(null) }
@@ -75,7 +78,18 @@ fun CargoAppScreen(
     var wmxGenerating by remember { mutableStateOf(false) }
     val wmxScope = rememberCoroutineScope()
 
+    // Manifest selalu membaca ulang master Stowing saat screen kembali aktif.
+    // Penting setelah user diedit ke sumber asli seperti PAG Prepare/BTB.
     LaunchedEffect(Unit) { viewModel.refreshFromStowingPrefs(context) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.refreshFromStowingPrefs(context)
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
     val totalPcs = groups.sumOf { it.summary.pcsQty.toDoubleOrNull()?.toInt() ?: 0 }
     val totalRealWeight = groups.sumOf { it.summary.subTotal.toDoubleOrNull() ?: 0.0 }
@@ -361,7 +375,20 @@ fun CargoAppScreen(
             onDismiss = { selectedGroup = null },
             onEdit = { detail ->
                 selectedGroup = null
-                selectedDetail = detail
+
+                // Manifest adalah hasil grouping. Saat edit, jangan selalu membuka
+                // dialog edit Manifest karena data bisa berasal dari sumber khusus.
+                // Prioritas: PAG Prepare -> buka sumber asli; selain itu tetap edit
+                // master Stowing normal. Dengan begitu rincian KG PAG tidak hilang.
+                val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
+                if (!pagId.isNullOrBlank()) {
+                    context.startActivity(
+                        Intent(context, StowingPagActivity::class.java)
+                            .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
+                    )
+                } else {
+                    selectedDetail = detail
+                }
             }
         )
     }
