@@ -103,36 +103,60 @@ object StowingPagLinkStorage {
         saveMap(context, map)
     }
 
+    /**
+     * Cari sumber PAG Prepare untuk sebuah CargoItem.
+     *
+     * Jangan hanya mengandalkan fingerprint lengkap (PCS/weight/subtotal), karena
+     * data tersebut memang dapat berubah setelah edit dari Manifest/Stowing.
+     * Identitas bisnis yang stabil adalah NO PAG + CUSTOMER + DESCRIPTION, dengan
+     * PTI sebagai pembeda tambahan jika kedua sisi sama-sama memiliki PTI.
+     */
     fun pagIdForCargo(context: Context, item: CargoItem): String? {
         val key = cargoKey(item)
         loadMap(context).entries.firstOrNull { it.value == key }?.key?.let { return it }
 
-        // Kompatibilitas data PAG yang sudah masuk Stowing sebelum fitur link ini
-        // ditambahkan. Cari berdasarkan identitas cargo, lalu langsung buat link.
+        fun norm(value: String): String = value.trim().uppercase()
+        fun normPag(value: String): String = norm(value).removePrefix("PAG ").trim()
+        fun normPti(value: String): String = norm(value).removePrefix("PTI ").trim()
+        fun parseNumber(value: String): Double? {
+            val clean = value.trim().replace(".", "").replace(',', '.')
+            return clean.toDoubleOrNull() ?: value.trim().replace(',', '.').toDoubleOrNull()
+        }
+
         val pagItems = StowingPagStorage.load(context)
-        val total = item.subTotal.replace(".", "").replace(',', '.').toDoubleOrNull()
-            ?: item.subTotal.replace(',', '.').toDoubleOrNull()
+        val noPag = normPag(item.noPag)
+        val customer = norm(item.customer)
+        val description = norm(item.description)
+        val pti = normPti(item.pti)
         val pcs = item.pcsQty.toIntOrNull()
+        val total = parseNumber(item.subTotal)
 
-        // 1) Cocokkan identitas lengkap terlebih dahulu. Angka PCS/TOTAL boleh
-        // berubah setelah proses edit, sehingga jangan jadikan angka sebagai syarat
-        // wajib untuk menemukan kembali sumber PAG Prepare.
-        val identityMatches = pagItems.filter { pag ->
-            pag.usedInStowing &&
-                pag.noPag.trim().equals(item.noPag.trim(), ignoreCase = true) &&
-                pag.customer.trim().equals(item.customer.trim(), ignoreCase = true) &&
-                pag.description.trim().equals(item.description.trim(), ignoreCase = true) &&
-                pag.pti.trim().equals(item.pti.trim(), ignoreCase = true)
+        // Tahap 1: identitas stabil. usedInStowing tidak dijadikan syarat agar
+        // link lama yang statusnya belum tersimpan tetap dapat dipulihkan.
+        var candidates = pagItems.filter { pag ->
+            normPag(pag.noPag) == noPag &&
+                norm(pag.customer) == customer &&
+                norm(pag.description) == description
         }
 
-        val match = when {
-            identityMatches.size == 1 -> identityMatches.first()
-            identityMatches.isNotEmpty() -> identityMatches.firstOrNull { pag ->
-                (pcs == null || pag.pcs == pcs) &&
-                    (total == null || kotlin.math.abs(pag.totalKg - total) < 0.01)
-            }
-            else -> null
+        // Tahap 2: PTI hanya wajib bila kedua data memilikinya.
+        val ptiMatches = candidates.filter { pag ->
+            val p = normPti(pag.pti)
+            pti.isNotBlank() && p.isNotBlank() && p == pti
         }
+        if (ptiMatches.isNotEmpty()) candidates = ptiMatches
+
+        // Tahap 3: jika masih lebih dari satu, pilih yang paling cocok berdasarkan
+        // PCS/TOTAL. Ini hanya pemecah seri, bukan syarat wajib.
+        val match = candidates.minWithOrNull(
+            compareBy<StowingPagItem> { if (it.usedInStowing) 0 else 1 }
+                .thenBy {
+                    val pcsDiff = if (pcs == null) 0 else kotlin.math.abs(it.pcs - pcs)
+                    val totalDiff = if (total == null) 0.0 else kotlin.math.abs(it.totalKg - total)
+                    pcsDiff.toDouble() + totalDiff
+                }
+        )
+
         if (match != null) {
             link(context, match.id, item)
             return match.id
