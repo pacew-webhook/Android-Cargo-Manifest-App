@@ -36,6 +36,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.text.font.FontWeight
@@ -152,6 +154,7 @@ fun StowingInputScreen(
     var selectedStowingPag by remember { mutableStateOf("SEMUA PAG") }
     var stowingPagDropdownExpanded by remember { mutableStateOf(false) }
     var sendingToN8n by remember { mutableStateOf(false) }
+    var showStowingGroupPage by remember { mutableStateOf(false) }
 
     suspend fun processBtbUri(uri: Uri) {
         try {
@@ -1303,111 +1306,21 @@ fun StowingInputScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // --- DAFTAR CARGO TERGROUPING ---
-        // --- DAFTAR CARGO TERGROUPING ---
-        val grandRealTotalKg = viewModel.cargoList.sumOf { item -> item.subTotal.toDoubleOrNull() ?: 0.0 }
-        // Loot Crew hanya mengurangi tampilan ketersediaan, tidak mengubah data Stowing asli/BTB.
-        val crewLootTotalKg = CrewLootManager.load(context).sumOf { it.kg }
-        val grandTotalKg = (grandRealTotalKg - crewLootTotalKg).coerceAtLeast(0.0)
-        val grandTotalPAG = groupedCargo.size
-
-        val formattedGrandTotal = if (grandTotalKg % 1.0 == 0.0) {
-            grandTotalKg.toLong().toString()
-        } else {
-            grandTotalKg.toString()
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = Color(0xFF381E72)
-                )
-                if (stowingSearchQuery.isNotBlank()) {
-                    Text(
-                        text = "Ditampilkan ${filteredGroupedCargo.size} PAG",
-                        fontSize = 11.sp,
-                        color = Color.Gray
-                    )
-                }
-            }
-
-            if (viewModel.cargoList.isNotEmpty()) {
-                Surface(color = Color(0xFF2E7D32), shape = RoundedCornerShape(16.dp)) {
-                    Text(
-                        text = "Total: $formattedGrandTotal KG",
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                    )
-                }
-            }
-        }
-
-        OutlinedTextField(
-            value = stowingSearchQuery,
-            onValueChange = { stowingSearchQuery = it },
+        // ===== DAFTAR STOWING GROUP =====
+        // Dipisahkan ke halaman khusus agar daftar data dapat dilihat penuh.
+        Button(
+            onClick = { showStowingGroupPage = true },
+            enabled = viewModel.cargoList.isNotEmpty(),
             modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Cari Stowing") },
-            label = { Text("Cari data Stowing") },
-            placeholder = { Text("PAG / Customer / Description / PTI") },
-            trailingIcon = {
-                if (stowingSearchQuery.isNotBlank()) {
-                    TextButton(onClick = { stowingSearchQuery = "" }) {
-                        Text("Hapus")
-                    }
-                }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Color(0xFF381E72),
-                unfocusedBorderColor = Color.LightGray
-            )
-        )
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        ExposedDropdownMenuBox(
-            expanded = stowingPagDropdownExpanded,
-            onExpandedChange = { stowingPagDropdownExpanded = !stowingPagDropdownExpanded },
-            modifier = Modifier.fillMaxWidth()
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF546E7A)),
+            shape = RoundedCornerShape(8.dp)
         ) {
-            OutlinedTextField(
-                value = selectedStowingPag,
-                onValueChange = {},
-                readOnly = true,
-                singleLine = true,
-                label = { Text("Pilih PAG yang ditampilkan") },
-                trailingIcon = {
-                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = stowingPagDropdownExpanded)
-                },
-                modifier = Modifier.menuAnchor().fillMaxWidth(),
-                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(
-                    focusedBorderColor = Color(0xFF381E72),
-                    unfocusedBorderColor = Color.LightGray
-                )
+            Icon(Icons.Default.FileOpen, contentDescription = "Daftar Stowing")
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
+                fontWeight = FontWeight.Bold
             )
-            ExposedDropdownMenu(
-                expanded = stowingPagDropdownExpanded,
-                onDismissRequest = { stowingPagDropdownExpanded = false }
-            ) {
-                stowingPagOptions.forEach { pag ->
-                    DropdownMenuItem(
-                        text = { Text(pag) },
-                        onClick = {
-                            selectedStowingPag = pag
-                            stowingPagDropdownExpanded = false
-                        }
-                    )
-                }
-            }
         }
 
         Spacer(modifier = Modifier.height(8.dp))
@@ -1495,112 +1408,178 @@ fun StowingInputScreen(
             Text("Export Excel ke File", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        if (showStowingGroupPage) {
+            StowingGroupListPage(
+                viewModel = viewModel,
+                onClose = { showStowingGroupPage = false }
+            )
+        }
+    }
+}
 
-        LazyColumn(
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun StowingGroupListPage(
+    viewModel: StowingViewModel,
+    onClose: () -> Unit
+) {
+    val context = LocalContext.current
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedPag by remember { mutableStateOf("SEMUA PAG") }
+    var pagExpanded by remember { mutableStateOf(false) }
+
+    val groupedCargo = remember(viewModel.cargoList.toList()) {
+        viewModel.cargoList.mapIndexed { index, item -> index to item }
+            .groupBy { it.second.noPag }
+    }
+    val pagOptions = remember(groupedCargo) { listOf("SEMUA PAG") + groupedCargo.keys.toList() }
+    val filteredGroups = remember(groupedCargo, searchQuery, selectedPag) {
+        val base = if (selectedPag == "SEMUA PAG") groupedCargo else groupedCargo.filterKeys { it == selectedPag }
+        val q = searchQuery.trim()
+        if (q.isBlank()) base else base.mapNotNull { (pag, entries) ->
+            val filtered = entries.filter { (_, item) ->
+                item.noPag.contains(q, true) || item.customer.contains(q, true) ||
+                    item.description.contains(q, true) || item.pti.contains(q, true) || item.weight.contains(q, true)
+            }
+            when {
+                pag.contains(q, true) -> pag to entries
+                filtered.isNotEmpty() -> pag to filtered
+                else -> null
+            }
+        }.toMap()
+    }
+
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
             modifier = Modifier.fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            color = MaterialTheme.colorScheme.background
         ) {
-            items(filteredGroupedCargo.entries.toList()) { group ->
-                val pagKey = group.key
-                val itemsInGroup = group.value
-
-                val groupTotalKg = itemsInGroup.sumOf { pair -> pair.second.subTotal.toDoubleOrNull() ?: 0.0 }
-                val groupTotalKoli = itemsInGroup.sumOf { pair -> pair.second.pcsQty.toIntOrNull() ?: 0 }
-
-                val formattedGroupKg = if (groupTotalKg % 1.0 == 0.0) {
-                    groupTotalKg.toLong().toString()
-                } else {
-                    groupTotalKg.toString()
+            Column(
+                modifier = Modifier.fillMaxSize().padding(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onClose) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Kembali", tint = Color(0xFF381E72))
+                    }
+                    Text(
+                        text = "Daftar Stowing Group (${groupedCargo.size} PAG)",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 20.sp,
+                        color = Color(0xFF381E72)
+                    )
                 }
 
-                Card(
+                val totalKg = viewModel.cargoList.sumOf { it.subTotal.toDoubleOrNull() ?: 0.0 }
+                val totalText = if (totalKg % 1.0 == 0.0) totalKg.toLong().toString() else totalKg.toString()
+                Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.White),
-                    border = CardDefaults.outlinedCardBorder()
+                    color = Color(0xFFE8F5E9),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(text = "NO PAG: $pagKey", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color(0xFF381E72))
+                    Text(
+                        text = "Total Data: ${viewModel.cargoList.size} • $totalText KG",
+                        modifier = Modifier.padding(10.dp),
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF1B5E20)
+                    )
+                }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = Color.LightGray)
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Cari") },
+                    label = { Text("Cari data Stowing") },
+                    placeholder = { Text("PAG / Customer / Description / PTI") }
+                )
+                Spacer(Modifier.height(8.dp))
+                ExposedDropdownMenuBox(
+                    expanded = pagExpanded,
+                    onExpandedChange = { pagExpanded = !pagExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = selectedPag,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Pilih PAG yang ditampilkan") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(pagExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = pagExpanded, onDismissRequest = { pagExpanded = false }) {
+                        pagOptions.forEach { pag ->
+                            DropdownMenuItem(
+                                text = { Text(pag) },
+                                onClick = { selectedPag = pag; pagExpanded = false }
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
 
-                        itemsInGroup.forEachIndexed { subIndex, pair ->
-                            val originalIndex = pair.first
-                            val item = pair.second
-
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(
-                                        if (viewModel.editingIndex == originalIndex) Color(0xFFFFF3E0) else Color(0xFFF8F9FA),
-                                        shape = RoundedCornerShape(6.dp)
-                                    )
-                                    .padding(8.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "${item.customer} - ${item.pcsQty} Koli (${item.subTotal} KG)",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = Color(0xFF381E72)
-                                    )
-                                    Text(text = "KG: ${item.weight}", fontSize = 11.sp, color = Color.DarkGray)
-                                    if (item.pti.isNotBlank()) {
-                                        Text(
-                                            text = "PTI: ${item.pti}",
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF5E35B1),
-                                            fontWeight = FontWeight.SemiBold
-                                        )
-                                    }
-                                }
-
-                                Row {
-                                    IconButton(
-                                        onClick = {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(filteredGroups.entries.toList()) { group ->
+                        val pagKey = group.key
+                        val entries = group.value
+                        val groupKg = entries.sumOf { it.second.subTotal.toDoubleOrNull() ?: 0.0 }
+                        val groupKgText = if (groupKg % 1.0 == 0.0) groupKg.toLong().toString() else groupKg.toString()
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = Color.White),
+                            shape = RoundedCornerShape(10.dp),
+                            border = CardDefaults.outlinedCardBorder()
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text("NO PAG: $pagKey", fontWeight = FontWeight.Bold, color = Color(0xFF381E72))
+                                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                                entries.forEachIndexed { itemIndex, pair ->
+                                    val originalIndex = pair.first
+                                    val item = pair.second
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().background(Color(0xFFF8F9FA), RoundedCornerShape(6.dp)).padding(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(Modifier.weight(1f)) {
+                                            Text("${item.customer} - ${item.pcsQty} Koli (${item.subTotal} KG)", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color(0xFF381E72))
+                                            Text("KG: ${item.weight}", fontSize = 11.sp, color = Color.DarkGray)
+                                            if (item.pti.isNotBlank()) Text("PTI: ${item.pti}", fontSize = 11.sp, color = Color(0xFF5E35B1), fontWeight = FontWeight.SemiBold)
+                                        }
+                                        IconButton(onClick = {
                                             val pagId = viewModel.pagSourceIdForCargo(item)
                                             if (pagId != null) {
-                                                context.startActivity(
-                                                    Intent(context, StowingPagActivity::class.java)
-                                                        .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
-                                                )
+                                                context.startActivity(Intent(context, StowingPagActivity::class.java).putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId))
                                             } else {
                                                 viewModel.startEditCargoItem(originalIndex, item)
+                                                onClose()
                                             }
-                                        },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Edit, contentDescription = "Edit Data", tint = Color(0xFF0288D1), modifier = Modifier.size(18.dp))
+                                        }) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit", tint = Color(0xFF0288D1))
+                                        }
+                                        IconButton(onClick = { viewModel.showDeleteDialog(DeleteType.CARGO_ITEM, itemIdx = originalIndex) }) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Hapus", tint = Color(0xFFB3261E))
+                                        }
                                     }
-                                    IconButton(
-                                        onClick = { viewModel.showDeleteDialog(DeleteType.CARGO_ITEM, itemIdx = originalIndex) },
-                                        modifier = Modifier.size(28.dp)
-                                    ) {
-                                        Icon(imageVector = Icons.Default.Delete, contentDescription = "Hapus Data", tint = Color(0xFFB3261E), modifier = Modifier.size(18.dp))
-                                    }
+                                    if (itemIndex < entries.lastIndex) Spacer(Modifier.height(4.dp))
+                                }
+                                Spacer(Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().background(Color(0xFFE8F5E9), RoundedCornerShape(6.dp)).padding(horizontal = 10.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Text("TOTAL PAG:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
+                                    Text("$groupKgText KG", fontWeight = FontWeight.ExtraBold, color = Color(0xFF2E7D32))
                                 }
                             }
-
-                            if (subIndex < itemsInGroup.size - 1) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(Color(0xFFE8F5E9), shape = RoundedCornerShape(6.dp))
-                                .padding(horizontal = 10.dp, vertical = 6.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(text = "TOTAL PAG:", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF1B5E20))
-                            Text(text = "$formattedGroupKg KG", fontWeight = FontWeight.ExtraBold, fontSize = 14.sp, color = Color(0xFF2E7D32))
                         }
                     }
                 }
@@ -1608,3 +1587,4 @@ fun StowingInputScreen(
         }
     }
 }
+
