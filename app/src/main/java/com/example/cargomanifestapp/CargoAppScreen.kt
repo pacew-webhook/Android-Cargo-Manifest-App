@@ -5,7 +5,7 @@ import android.net.Uri
 import android.graphics.BitmapFactory
 import android.content.Intent
 import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
