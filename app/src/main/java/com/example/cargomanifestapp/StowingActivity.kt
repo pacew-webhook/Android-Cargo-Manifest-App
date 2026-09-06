@@ -1097,62 +1097,138 @@ fun StowingInputScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // ===== METODE INPUT =====
+                // Default MANUAL KG agar tampilan dan mekanisme lama Stowing Cargo tetap sama.
+                Text("METODE INPUT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    OutlinedTextField(
-                        value = viewModel.inputKg,
-                        onValueChange = { viewModel.updateInputKg(it) },
-                        label = { Text("Input Berat (KG)") },
-                        placeholder = { Text("10") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(
-                            keyboardType = KeyboardType.Number,
-                            imeAction = ImeAction.Done
-                        ),
-                        keyboardActions = KeyboardActions(onDone = {
-                            addKgAndScroll()
-                        }),
-                        modifier = Modifier.weight(1f).focusRequester(kgFocusRequester)
-                    )
-
-                    Button(
-                        onClick = { scanBtbFromCamera() },
-                        enabled = !scanBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
-                    ) {
-                        Text("📷", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text(if (scanBusy) "Scan..." else "Foto BTB")
-                    }
-
-                    Button(
-                        onClick = { scanBtbFromGallery() },
-                        enabled = !scanBusy,
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
-                    ) {
-                        Text("🖼️", fontSize = 18.sp)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Galeri")
-                    }
-
-                    Button(
-                        onClick = {
-                            addKgAndScroll()
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
-                    ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = "Tambah")
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ KG")
+                    listOf(
+                        PagInputMode.TOTAL to "TIMBANG TOTAL",
+                        PagInputMode.KOLI_KG to "KOLI × KG",
+                        PagInputMode.MANUAL_KG to "MANUAL KG"
+                    ).forEach { (mode, label) ->
+                        FilterChip(
+                            selected = viewModel.stowingInputMode == mode,
+                            onClick = { viewModel.setStowingInputMode(mode) },
+                            label = { Text(label, maxLines = 1, fontSize = 11.sp) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                when (viewModel.stowingInputMode) {
+                    PagInputMode.TOTAL -> {
+                        OutlinedTextField(
+                            value = viewModel.modePcsText,
+                            onValueChange = { viewModel.updateModePcsText(it) },
+                            label = { Text("KOLI / PCS") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = viewModel.modeTotalText,
+                            onValueChange = { viewModel.updateModeTotalText(it) },
+                            label = { Text("TOTAL KG") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    PagInputMode.KOLI_KG -> {
+                        OutlinedTextField(
+                            value = viewModel.modePcsText,
+                            onValueChange = { viewModel.updateModePcsText(it) },
+                            label = { Text("KOLI / PCS") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Next),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = viewModel.modeKgPerText,
+                            onValueChange = { viewModel.updateModeKgPerText(it) },
+                            label = { Text("KG / KOLI") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        val pcs = viewModel.modePcsText.toDoubleOrNull() ?: 0.0
+                        val kgPer = viewModel.modeKgPerText.replace(',', '.').toDoubleOrNull() ?: 0.0
+                        val total = pcs * kgPer
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = if (total % 1.0 == 0.0) total.toInt().toString() else total.toString(),
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("TOTAL KG (OTOMATIS)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+
+                    PagInputMode.MANUAL_KG -> {
+                        // Mekanisme lama dipertahankan sepenuhnya: Enter/+KG, slot kosong
+                        // diisi terlebih dahulu, Foto BTB dan Galeri tetap tersedia.
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = viewModel.inputKg,
+                                onValueChange = { viewModel.updateInputKg(it) },
+                                label = { Text("Input Berat (KG)") },
+                                placeholder = { Text("10") },
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Number,
+                                    imeAction = ImeAction.Done
+                                ),
+                                keyboardActions = KeyboardActions(onDone = { addKgAndScroll() }),
+                                modifier = Modifier.weight(1f).focusRequester(kgFocusRequester)
+                            )
+
+                            Button(
+                                onClick = { scanBtbFromCamera() },
+                                enabled = !scanBusy,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                            ) {
+                                Text("📷", fontSize = 18.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(if (scanBusy) "Scan..." else "Foto BTB")
+                            }
+
+                            Button(
+                                onClick = { scanBtbFromGallery() },
+                                enabled = !scanBusy,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1565C0)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 12.dp)
+                            ) {
+                                Text("🖼️", fontSize = 18.sp)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Galeri")
+                            }
+
+                            Button(
+                                onClick = { addKgAndScroll() },
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF381E72)),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 12.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = "Tambah")
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("+ KG")
+                            }
+                        }
+                    }
+                }
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedButton(
@@ -1192,7 +1268,8 @@ fun StowingInputScreen(
                 }
 
                 // --- RINCIAN INPUT KG ---
-                if (viewModel.currentKgEntries.isNotEmpty()) {
+                // Hanya MANUAL KG yang menampilkan rincian satu-per-satu.
+                if (viewModel.stowingInputMode == PagInputMode.MANUAL_KG && viewModel.currentKgEntries.isNotEmpty()) {
                     Text(
                         text = "Rincian Input KG (${viewModel.currentActiveEntries.size} Koli):",
                         fontSize = 12.sp,

@@ -109,6 +109,10 @@ class StowingViewModel : ViewModel() {
         customer = item.customer
         description = item.description
         pti = item.pti
+        stowingInputMode = item.mode
+        modePcsText = item.pcs.toString()
+        modeTotalText = if (item.totalKg % 1.0 == 0.0) item.totalKg.toInt().toString() else item.totalKg.toString()
+        modeKgPerText = item.kgPerKoli?.let { if (it % 1.0 == 0.0) it.toInt().toString() else it.toString() } ?: ""
         currentKgEntries.clear()
         importedPagPcs = item.pcs
         importedPagTotal = item.totalKg
@@ -219,6 +223,8 @@ class StowingViewModel : ViewModel() {
         val obj = JSONObject().apply {
             put("noPag", noPag); put("customer", customer); put("description", description);
             put("pti", pti); put("inputKg", inputKg)
+            put("stowingInputMode", stowingInputMode.name)
+            put("modePcsText", modePcsText); put("modeTotalText", modeTotalText); put("modeKgPerText", modeKgPerText)
             put("weights", JSONArray().apply { currentKgEntries.forEach { put(it ?: JSONObject.NULL) } })
             put("photos", JSONArray().apply { currentPhotoUris.forEach { put(it) } })
         }
@@ -237,6 +243,10 @@ class StowingViewModel : ViewModel() {
             description = obj.optString("description")
             pti = obj.optString("pti")
             inputKg = obj.optString("inputKg")
+            stowingInputMode = runCatching { PagInputMode.valueOf(obj.optString("stowingInputMode", PagInputMode.MANUAL_KG.name)) }.getOrDefault(PagInputMode.MANUAL_KG)
+            modePcsText = obj.optString("modePcsText")
+            modeTotalText = obj.optString("modeTotalText")
+            modeKgPerText = obj.optString("modeKgPerText")
             currentKgEntries.clear()
             val weights = obj.optJSONArray("weights")
             if (weights != null) for (i in 0 until weights.length()) {
@@ -288,6 +298,16 @@ class StowingViewModel : ViewModel() {
     var pti by mutableStateOf("")
         private set
     var inputKg by mutableStateOf("")
+        private set
+
+    // METODE INPUT Stowing Cargo. Default tetap MANUAL KG agar perilaku lama tidak berubah.
+    var stowingInputMode by mutableStateOf(PagInputMode.MANUAL_KG)
+        private set
+    var modePcsText by mutableStateOf("")
+        private set
+    var modeTotalText by mutableStateOf("")
+        private set
+    var modeKgPerText by mutableStateOf("")
         private set
 
     // Jumlah item yang benar-benar berhasil dipindahkan dari dialog scan ke form.
@@ -452,6 +472,14 @@ class StowingViewModel : ViewModel() {
     fun updateExpandedDescription(expanded: Boolean) { expandedDescription = expanded }
     fun updateExpandedPti(expanded: Boolean) { expandedPti = expanded }
     fun updateInputKg(value: String) { inputKg = value; persistDraft() }
+    fun setStowingInputMode(mode: PagInputMode) {
+        stowingInputMode = mode
+        // Data manual tetap dipertahankan saat berpindah metode, supaya user tidak kehilangan input.
+        persistDraft()
+    }
+    fun updateModePcsText(value: String) { modePcsText = value.filter { it.isDigit() }; persistDraft() }
+    fun updateModeTotalText(value: String) { modeTotalText = value.filter { it.isDigit() || it == '.' || it == ',' }; persistDraft() }
+    fun updateModeKgPerText(value: String) { modeKgPerText = value.filter { it.isDigit() || it == '.' || it == ',' }; persistDraft() }
     fun updateExpandedPag(expanded: Boolean) { expandedPag = expanded }
 
     // --- LOCAL STORAGE ---
@@ -1294,8 +1322,21 @@ class StowingViewModel : ViewModel() {
             onError("Mohon isi NO PAG, Customer dan Description")
             return
         }
-        if (currentActiveEntries.isEmpty() && importedPagTotal == null) {
-            onError("Masukkan minimal 1 nilai KG")
+        val directPcs = modePcsText.toIntOrNull()?.takeIf { it > 0 }
+        val directTotal = modeTotalText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }
+        val directKgPer = modeKgPerText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }
+        val hasDirectModeData = when (stowingInputMode) {
+            PagInputMode.MANUAL_KG -> false
+            PagInputMode.TOTAL -> directPcs != null && directTotal != null
+            PagInputMode.KOLI_KG -> directPcs != null && directKgPer != null
+        }
+        if (currentActiveEntries.isEmpty() && importedPagTotal == null && !hasDirectModeData) {
+            val msg = when (stowingInputMode) {
+                PagInputMode.TOTAL -> "Isi KOLI / PCS dan TOTAL KG"
+                PagInputMode.KOLI_KG -> "Isi KOLI / PCS dan KG / KOLI"
+                PagInputMode.MANUAL_KG -> "Masukkan minimal 1 nilai KG"
+            }
+            onError(msg)
             return
         }
 
@@ -1314,11 +1355,23 @@ class StowingViewModel : ViewModel() {
             }
         }
 
-        val formattedWeightList = importedPagWeightLabel ?: currentActiveEntries.joinToString(", ") {
-            if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+        val directMode = if (importedPagTotal != null) null else stowingInputMode
+        val formattedWeightList = when (directMode) {
+            PagInputMode.TOTAL -> "TIMBANG TOTAL"
+            PagInputMode.KOLI_KG -> directKgPer?.let { "${if (it % 1.0 == 0.0) it.toInt() else it} KG/KOLI" } ?: ""
+            PagInputMode.MANUAL_KG, null -> importedPagWeightLabel ?: currentActiveEntries.joinToString(", ") {
+                if (it % 1.0 == 0.0) it.toInt().toString() else it.toString()
+            }
         }
-        val effectiveTotal = importedPagTotal ?: currentTotalKg
-        val effectivePcs = importedPagPcs ?: currentActiveEntries.size
+        val effectiveTotal = when (directMode) {
+            PagInputMode.TOTAL -> directTotal ?: 0.0
+            PagInputMode.KOLI_KG -> (directPcs ?: 0) * (directKgPer ?: 0.0)
+            PagInputMode.MANUAL_KG, null -> importedPagTotal ?: currentTotalKg
+        }
+        val effectivePcs = when (directMode) {
+            PagInputMode.TOTAL, PagInputMode.KOLI_KG -> directPcs ?: 0
+            PagInputMode.MANUAL_KG, null -> importedPagPcs ?: currentActiveEntries.size
+        }
         val formattedTotalKg = if (effectiveTotal % 1.0 == 0.0) effectiveTotal.toInt().toString() else effectiveTotal.toString()
 
         val newItem = CargoItem(
@@ -1367,7 +1420,22 @@ class StowingViewModel : ViewModel() {
         pti = stripPtiPrefix(item.pti)
         inputKg = ""
         currentKgEntries.clear()
-        currentKgEntries.addAll(item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() })
+        modePcsText = item.pcsQty.trim()
+        modeTotalText = item.subTotal.trim()
+        modeKgPerText = ""
+        when {
+            item.weight.contains("TIMBANG TOTAL", ignoreCase = true) -> {
+                stowingInputMode = PagInputMode.TOTAL
+            }
+            item.weight.contains("KG/KOLI", ignoreCase = true) || item.weight.contains("KOLI × KG", ignoreCase = true) || item.weight.contains("KOLI X KG", ignoreCase = true) -> {
+                stowingInputMode = PagInputMode.KOLI_KG
+                modeKgPerText = Regex("([0-9]+(?:[.,][0-9]+)?)").find(item.weight)?.groupValues?.getOrNull(1).orEmpty()
+            }
+            else -> {
+                stowingInputMode = PagInputMode.MANUAL_KG
+                currentKgEntries.addAll(item.weight.split(",").mapNotNull { it.trim().toDoubleOrNull() })
+            }
+        }
     }
 
     fun cancelEdit() {
@@ -1388,6 +1456,10 @@ class StowingViewModel : ViewModel() {
         description = ""
         pti = ""
         inputKg = ""
+        stowingInputMode = PagInputMode.MANUAL_KG
+        modePcsText = ""
+        modeTotalText = ""
+        modeKgPerText = ""
         currentKgEntries.clear()
         currentPhotoUris.clear()
         editingOriginalKey = null
