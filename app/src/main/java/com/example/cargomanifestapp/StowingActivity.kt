@@ -57,6 +57,9 @@ class StowingActivity : ComponentActivity() {
     companion object {
         // Compatibility key used by navigation/edit flows.
         const val EXTRA_EDIT_CARGO_KEY = "edit_cargo_key"
+        // Manifest mengirim index sumber dari saved_cargo_list untuk membuka
+        // form edit Stowing asli tanpa kehilangan metadata metode input.
+        const val EXTRA_EDIT_CARGO_INDEX = EXTRA_EDIT_CARGO_KEY
     }
     private val stowingViewModel: StowingViewModel by viewModels()
 
@@ -89,7 +92,22 @@ fun StowingInputScreen(
     viewModel: StowingViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) { viewModel.attachContext(context) }
+    LaunchedEffect(Unit) {
+        viewModel.attachContext(context)
+
+        // Jika dibuka dari Manifest, edit langsung master Stowing asli.
+        // Ini penting untuk KOLI × KG karena ManifestEditDialog hanya membaca
+        // rincian KG manual dan sebelumnya tidak dapat memulihkan metadata mode.
+        val activity = context as? StowingActivity
+        val editIndex = activity?.intent?.getIntExtra(
+            StowingActivity.EXTRA_EDIT_CARGO_INDEX,
+            -1
+        ) ?: -1
+        if (editIndex >= 0 && editIndex < viewModel.cargoList.size) {
+            viewModel.startEditCargoItem(editIndex, viewModel.cargoList[editIndex])
+            activity?.intent?.removeExtra(StowingActivity.EXTRA_EDIT_CARGO_INDEX)
+        }
+    }
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
     val descriptionFocusRequester = remember { FocusRequester() }

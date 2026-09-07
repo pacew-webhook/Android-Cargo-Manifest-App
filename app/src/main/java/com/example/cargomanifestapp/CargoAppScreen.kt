@@ -387,16 +387,19 @@ fun CargoAppScreen(
                             .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
                     )
                 } else {
-                    // Data Manifest selalu berasal dari master Stowing. Buka sumbernya
-                    // agar mode MANUAL KG / KOLI × KG / TIMBANG TOTAL tetap terhidrasi.
-                    val key = listOf(
-                        detail.item.noPag, detail.item.customer, detail.item.description, detail.item.pti,
-                        detail.item.pcsQty, detail.item.weight, detail.item.subTotal
-                    ).joinToString("\u001F") { it.trim().uppercase() }
-                    context.startActivity(
-                        Intent(context, StowingActivity::class.java)
-                            .putExtra(StowingActivity.EXTRA_EDIT_CARGO_KEY, key)
-                    )
+                    // Data Manifest adalah turunan dari master Stowing Cargo.
+                    // Buka editor sumber asli agar semua mode input (terutama
+                    // KOLI × KG dan TIMBANG TOTAL) dipulihkan oleh mekanisme
+                    // Stowing yang sama, bukan diparsing sebagai daftar KG manual.
+                    val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
+                    if (sourceIndex != null) {
+                        context.startActivity(
+                            Intent(context, StowingActivity::class.java)
+                                .putExtra(StowingActivity.EXTRA_EDIT_CARGO_KEY, sourceIndex)
+                        )
+                    } else {
+                        selectedDetail = detail
+                    }
                 }
             }
         )
