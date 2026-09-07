@@ -54,6 +54,10 @@ import java.util.Date
 import java.util.Locale
 
 class StowingActivity : ComponentActivity() {
+    companion object {
+        // Compatibility key used by navigation/edit flows.
+        const val EXTRA_EDIT_CARGO_KEY = "edit_cargo_key"
+    }
     private val stowingViewModel: StowingViewModel by viewModels()
 
     override fun onResume() {

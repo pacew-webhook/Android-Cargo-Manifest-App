@@ -56,6 +56,8 @@ class StowingPagActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_EDIT_PAG_ID = "edit_pag_prepare_id"
+        // Backward-compatible alias for older navigation code.
+        const val EXTRA_EDIT_CARGO_KEY = "edit_cargo_key"
     }
 }
 
