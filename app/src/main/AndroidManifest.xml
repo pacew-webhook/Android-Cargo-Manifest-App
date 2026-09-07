@@ -48,6 +48,9 @@
             android:theme="@android:style/Theme.Material.Light.NoActionBar" />
 
         <activity
+            android:name="com.example.cargomanifestapp.StowingPagListActivity"
+            android:exported="false" />
+        <activity
             android:name="com.example.cargomanifestapp.StowingPagActivity"
             android:exported="false"
             android:label="Stowing PAG Prepare"
