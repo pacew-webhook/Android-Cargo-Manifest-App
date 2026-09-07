@@ -19,7 +19,9 @@ data class StowingPagItem(
     val kgPerKoli: Double? = null,
     val totalKg: Double,
     val weights: List<Double?> = emptyList(),
-    val usedInStowing: Boolean = false
+    val usedInStowing: Boolean = false,
+    val usedAt: Long? = null,
+    val inactive: Boolean = false
 )
 
 object StowingPagStorage {
@@ -40,7 +42,9 @@ object StowingPagStorage {
                     description = o.optString("description"), pti = o.optString("pti"),
                     mode = runCatching { PagInputMode.valueOf(o.optString("mode")) }.getOrDefault(PagInputMode.TOTAL),
                     pcs = o.optInt("pcs"), kgPerKoli = if (o.has("kgPerKoli") && !o.isNull("kgPerKoli")) o.optDouble("kgPerKoli") else null,
-                    totalKg = o.optDouble("totalKg"), weights = weights, usedInStowing = o.optBoolean("usedInStowing", false)
+                    totalKg = o.optDouble("totalKg"), weights = weights, usedInStowing = o.optBoolean("usedInStowing", false),
+                    usedAt = if (o.has("usedAt") && !o.isNull("usedAt")) o.optLong("usedAt") else null,
+                    inactive = o.optBoolean("inactive", false)
                 ))
             }
         }
@@ -50,14 +54,29 @@ object StowingPagStorage {
         val arr = JSONArray()
         items.forEach { x -> arr.put(JSONObject().apply {
             put("id", x.id); put("noPag", x.noPag); put("customer", x.customer); put("description", x.description); put("pti", x.pti)
-            put("mode", x.mode.name); put("pcs", x.pcs); put("kgPerKoli", x.kgPerKoli ?: JSONObject.NULL); put("totalKg", x.totalKg); put("usedInStowing", x.usedInStowing)
+            put("mode", x.mode.name); put("pcs", x.pcs); put("kgPerKoli", x.kgPerKoli ?: JSONObject.NULL); put("totalKg", x.totalKg); put("usedInStowing", x.usedInStowing); put("usedAt", x.usedAt ?: JSONObject.NULL); put("inactive", x.inactive)
             put("weights", JSONArray().apply { x.weights.forEach { put(it ?: JSONObject.NULL) } })
         }) }
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().putString(KEY, arr.toString()).apply()
     }
 
     fun markUsed(context: Context, id: String) {
-        val items = load(context).map { if (it.id == id) it.copy(usedInStowing = true) else it }
+        val now = System.currentTimeMillis()
+        val items = load(context).map {
+            if (it.id == id) it.copy(usedInStowing = true, usedAt = it.usedAt ?: now, inactive = false) else it
+        }
+        save(context, items)
+    }
+
+    fun markInactive(context: Context, id: String) {
+        val items = load(context).map {
+            if (it.id == id) it.copy(usedInStowing = false, inactive = true) else it
+        }
+        save(context, items)
+    }
+
+    fun markAllActiveAsInactive(context: Context) {
+        val items = load(context).map { if (it.usedInStowing) it.copy(usedInStowing = false, inactive = true) else it }
         save(context, items)
     }
 }
@@ -226,12 +245,18 @@ object StowingPagLinkStorage {
     fun unlinkCargo(context: Context, item: CargoItem) {
         val key = cargoKey(item)
         val map = loadMap(context)
-        val ids = map.filterValues { it == key }.keys
-        ids.forEach { map.remove(it) }
+        val ids = map.filterValues { it == key }.keys.toList()
+        ids.forEach { id ->
+            StowingPagStorage.markInactive(context, id)
+            map.remove(id)
+        }
         saveMap(context, map)
     }
 
     fun clear(context: Context) {
+        // Reset Stowing Cargo means linked PAG Prepare becomes archive/inactive,
+        // never available for import again.
+        StowingPagStorage.markAllActiveAsInactive(context)
         context.getSharedPreferences(PREF, Context.MODE_PRIVATE).edit().clear().apply()
     }
 }

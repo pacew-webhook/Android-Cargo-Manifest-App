@@ -55,7 +55,6 @@ import java.util.Locale
 
 class StowingActivity : ComponentActivity() {
     private val stowingViewModel: StowingViewModel by viewModels()
-    companion object { const val EXTRA_EDIT_CARGO_KEY = "edit_cargo_key" }
 
     override fun onResume() {
         super.onResume()
@@ -72,11 +71,7 @@ class StowingActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    StowingInputScreen(
-                        onBack = { finish() },
-                        viewModel = stowingViewModel,
-                        editCargoKey = intent.getStringExtra(EXTRA_EDIT_CARGO_KEY)
-                    )
+                    StowingInputScreen(onBack = { finish() }, viewModel = stowingViewModel)
                 }
             }
         }
@@ -87,14 +82,10 @@ class StowingActivity : ComponentActivity() {
 @Composable
 fun StowingInputScreen(
     onBack: () -> Unit,
-    viewModel: StowingViewModel = viewModel(),
-    editCargoKey: String? = null
+    viewModel: StowingViewModel = viewModel()
 ) {
     val context = LocalContext.current
-    LaunchedEffect(Unit) {
-        viewModel.attachContext(context)
-        editCargoKey?.let { viewModel.startEditCargoByKey(it) }
-    }
+    LaunchedEffect(Unit) { viewModel.attachContext(context) }
     val scanScope = rememberCoroutineScope()
     val customerFocusRequester = remember { FocusRequester() }
     val descriptionFocusRequester = remember { FocusRequester() }
@@ -776,8 +767,8 @@ fun StowingInputScreen(
                     items(viewModel.pagReferenceList, key = { it.id }) { pag ->
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !pag.usedInStowing,
-                            colors = CardDefaults.cardColors(containerColor = if (pag.usedInStowing) Color(0xFFE8F5E9) else Color(0xFFF3EDF7)),
+                            enabled = !pag.usedInStowing && !pag.inactive,
+                            colors = CardDefaults.cardColors(containerColor = if (pag.inactive) Color(0xFFE0E0E0) else if (pag.usedInStowing) Color(0xFFFFF3CD) else Color(0xFFF3EDF7)),
                             onClick = {
                                 if (viewModel.applyPagReference(pag)) {
                                     showPagPicker = false
@@ -788,7 +779,10 @@ fun StowingInputScreen(
                             Text("NO PAG: ${pag.noPag}", fontWeight = FontWeight.Bold)
                             Text("${pag.description} | ${pag.pcs} Koli | ${if (pag.totalKg % 1.0 == 0.0) pag.totalKg.toInt() else pag.totalKg} KG", fontSize = 12.sp)
                             Text(pag.customer + if (pag.pti.isBlank()) "" else " • ${pag.pti}", fontSize = 11.sp)
-                            if (pag.usedInStowing) Text("✅ Sudah masuk Stowing Cargo", color = Color(0xFF2E7D32), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            when {
+                                pag.inactive -> Text("⚫ SUDAH MASUK • INAKTIF", color = Color.DarkGray, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                pag.usedInStowing -> Text("🟡 SEDANG DIGUNAKAN", color = Color(0xFF9A6700), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }}
                     }
                 }

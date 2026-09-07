@@ -1,6 +1,7 @@
 package com.example.cargomanifestapp
 
 import android.os.Bundle
+import android.content.Intent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -34,6 +35,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
+import java.text.SimpleDateFormat
+import java.util.Date
 
 class StowingPagActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -53,6 +56,54 @@ class StowingPagActivity : ComponentActivity() {
 
     companion object {
         const val EXTRA_EDIT_PAG_ID = "edit_pag_prepare_id"
+    }
+}
+
+class StowingPagListActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { CargoRetroTheme { Surface { StowingPagListScreen(onBack = { finish() }) } } }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StowingPagListScreen(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var items by remember { mutableStateOf(StowingPagStorage.load(context)) }
+    fun dateText(time: Long?): String = time?.let { SimpleDateFormat("dd MMMM yyyy", Locale("id", "ID")).format(Date(it)) } ?: "-"
+    Scaffold(topBar = {
+        TopAppBar(title = { Text("Daftar Stowing PAG Prepare", fontWeight = FontWeight.Bold) }, navigationIcon = {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }
+        })
+    }) { pad ->
+        LazyColumn(Modifier.fillMaxSize().padding(pad).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { Text("Total Data: ${items.size}", fontWeight = FontWeight.SemiBold) }
+            items(items, key = { it.id }) { x ->
+                Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF4F1FA))) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("NO PAG: ${x.noPag}", fontWeight = FontWeight.Bold)
+                        Text("PTI: ${x.pti.ifBlank { "-" }}")
+                        Text("${x.customer} • ${x.description}")
+                        Text("${x.pcs} Koli / PCS • ${if (x.totalKg % 1.0 == 0.0) x.totalKg.toInt() else x.totalKg} KG")
+                        val modeText = when (x.mode) { PagInputMode.TOTAL -> "TIMBANG TOTAL"; PagInputMode.KOLI_KG -> "KOLI × KG"; PagInputMode.MANUAL_KG -> "MANUAL KG" }
+                        Text(modeText, fontSize = 11.sp, color = Color(0xFF555555))
+                        Spacer(Modifier.height(4.dp))
+                        when {
+                            x.inactive -> {
+                                Text("⚫ SUDAH MASUK • INAKTIF", fontWeight = FontWeight.Bold, color = Color.DarkGray)
+                                Text("Terakhir masuk ke Stowing Cargo: ${dateText(x.usedAt)}", fontSize = 12.sp)
+                            }
+                            x.usedInStowing -> {
+                                Text("🟡 SEDANG DIGUNAKAN", fontWeight = FontWeight.Bold, color = Color(0xFF9A6700))
+                                Text("Masuk ke Stowing Cargo: ${dateText(x.usedAt)}", fontSize = 12.sp)
+                            }
+                            else -> Text("🟢 BELUM DIGUNAKAN", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -168,7 +219,9 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
             kgPerKoli = if (mode == PagInputMode.KOLI_KG) kgPerText.replace(',', '.').toDoubleOrNull() else null,
             totalKg = total,
             weights = if (mode == PagInputMode.MANUAL_KG) weights.toList() else emptyList(),
-            usedInStowing = old?.usedInStowing ?: false
+            usedInStowing = old?.usedInStowing ?: false,
+            usedAt = old?.usedAt,
+            inactive = old?.inactive ?: false
         )
 
         items = if (old == null) items + item else items.map { if (it.id == item.id) item else it }
@@ -361,10 +414,15 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
             }
 
             item {
-                HorizontalDivider()
-                Text("Daftar PAG Prepare (${items.size})", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                OutlinedButton(
+                    onClick = { context.startActivity(Intent(context, StowingPagListActivity::class.java)) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("📋 DAFTAR STOWING (${items.size})") }
             }
 
+            /* Daftar dipindahkan ke halaman baru agar form input tetap penuh dan bersih. */
+            item { Spacer(Modifier.height(40.dp)) }
+            /*
             items(items, key = { it.id }) { x ->
                 Card(
                     Modifier.fillMaxWidth(),
@@ -406,6 +464,7 @@ fun StowingPagScreen(onBack: () -> Unit, initialEditId: String? = null) {
                 }
             }
             item { Spacer(Modifier.height(40.dp)) }
+            */
         }
     }
 }
