@@ -1134,7 +1134,6 @@ private fun StowingGroupedTable(
             }
         }
     }
-}
 
 @Composable
 private fun StowingManifestTable(
