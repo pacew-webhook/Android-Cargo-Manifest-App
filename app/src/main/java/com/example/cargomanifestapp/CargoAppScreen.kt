@@ -325,7 +325,6 @@ fun CargoAppScreen(
                     modifier = Modifier.weight(1f),
                     groups = groups,
                     crewLoots = crewLoots,
-                    onGroupClick = { group -> selectedGroup = group },
                     onEdit = openEdit,
                     onCrew = { group, detail ->
                         selectedCrewLootGroup = group
@@ -876,16 +875,16 @@ private fun StowingGroupedTable(
     modifier: Modifier = Modifier,
     groups: List<ManifestGroup>,
     crewLoots: List<CrewLootTransaction>,
-    onGroupClick: (ManifestGroup) -> Unit,
     onEdit: (ManifestDetailItem) -> Unit,
     onCrew: (ManifestGroup, ManifestDetailItem) -> Unit
 ) {
-    // Tampilan group dibuat seperti Pivot Table Excel:
-    // - 1 baris utama = 1 group (PTI + Customer + Description)
-    // - tekan baris/ikon untuk expand atau collapse
-    // - detail data asli ditampilkan tepat di bawah group yang dibuka
-    // - data asli tidak diubah; ini hanya mode tampilan.
+    // Tampilan dibuat seperti Pivot Table Excel:
+    // - Baris grup = ringkasan hasil grouping.
+    // - Baris detail = data asal yang bisa expand/collapse.
+    // - Tabel memakai lebar tetap agar kolom tidak gepeng di layar HP.
+    // - Seluruh tabel bisa digeser horizontal, sedangkan data bisa digeser vertikal.
     var expandedGroups by remember { mutableStateOf<Set<String>>(emptySet()) }
+    val horizontalScrollState = rememberScrollState()
 
     fun toggleGroup(groupKey: String) {
         expandedGroups = if (groupKey in expandedGroups) {
@@ -895,183 +894,234 @@ private fun StowingGroupedTable(
         }
     }
 
+    // Total lebar tabel sengaja dibuat lebih lebar dari layar HP.
+    // Pengguna dapat swipe kiri/kanan untuk melihat kolom yang berada di ujung.
+    val tableWidth = 1040.dp
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(Modifier.fillMaxSize()) {
+            // Petunjuk kecil agar pengguna tahu tabel dapat digeser.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFF6A4FA3))
-                    .padding(vertical = 10.dp, horizontal = 6.dp),
+                    .background(Color(0xFFF7F2FA))
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TableCell("No", 0.45f, true, Color.White, Alignment.CenterHorizontally)
-                TableCell("Group / PTI", 1.25f, true, Color.White)
-                TableCell("Pcs", 0.75f, true, Color.White, Alignment.CenterHorizontally)
-                TableCell("Weight", 0.85f, true, Color.White, Alignment.CenterHorizontally)
-                TableCell("Sub Total", 0.95f, true, Color.White, Alignment.CenterHorizontally)
-                TableCell("Description", 1.45f, true, Color.White)
-                TableCell("Customer", 1.15f, true, Color.White)
-                TableCell("NO PAG", 1.15f, true, Color.White)
-                TableCell("Data", 1.25f, true, Color.White, Alignment.CenterHorizontally)
+                Text(
+                    "Geser tabel ← → untuk melihat semua kolom",
+                    modifier = Modifier.weight(1f),
+                    fontSize = 10.sp,
+                    color = Color(0xFF6A4FA3)
+                )
+                Text(
+                    "Tap ▶ / ▼ untuk buka detail",
+                    fontSize = 10.sp,
+                    color = Color(0xFF777777)
+                )
             }
 
-            Column(
-                Modifier
+            // Satu horizontalScroll dipakai untuk header + isi supaya posisi kolom
+            // selalu sejajar saat pengguna menggeser tabel.
+            Row(
+                modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
+                    .horizontalScroll(horizontalScrollState)
             ) {
-                groups.forEachIndexed { index, group ->
-                    val summary = group.summary
-                    val expanded = group.groupKey in expandedGroups
-                    val crewTakenKg = group.details.sumOf { detail ->
-                        val rowKey = "${group.groupKey}|${detail.sourceKey}"
-                        crewLoots.filter { it.manifestGroupKey == rowKey }.sumOf { it.kg }
-                    }
-                    val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
-                    val weightPerKoli = if (
-                        summary.weight.contains("KG/KOLI", ignoreCase = true) ||
-                        summary.weight.contains("KOLI × KG", ignoreCase = true) ||
-                        summary.weight.contains("KOLI X KG", ignoreCase = true)
-                    ) {
-                        Regex("([0-9]+(?:[.,][0-9]+)?)")
-                            .find(summary.weight)?.groupValues?.getOrNull(1).orEmpty()
-                    } else {
-                        ""
-                    }
-
-                    // ===== GROUP / PARENT ROW =====
+                Column(Modifier.width(tableWidth)) {
+                    // HEADER
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(rowColor)
-                            .clickable { toggleGroup(group.groupKey) }
-                            .padding(vertical = 8.dp, horizontal = 6.dp),
+                            .background(Color(0xFF6A4FA3))
+                            .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = if (expanded) "▼ ${index + 1}" else "▶ ${index + 1}",
-                            modifier = Modifier
-                                .weight(0.45f)
-                                .padding(horizontal = 4.dp),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        TableCell(summary.pti.ifBlank { "-" }, 1.25f, bold = true)
-                        TableCell(summary.pcsQty.ifBlank { "0" }, 0.75f, textAlign = Alignment.CenterHorizontally)
-                        TableCell(weightPerKoli, 0.85f, textAlign = Alignment.CenterHorizontally)
-                        TableCell(summary.subTotal.ifBlank { "0" }, 0.95f, bold = true, textAlign = Alignment.CenterHorizontally)
-                        TableCell(summary.description.ifBlank { "-" }, 1.45f)
-                        TableCell(summary.customer.ifBlank { "-" }, 1.15f)
-                        TableCell(summary.noPag.ifBlank { "-" }, 1.15f)
-                        Column(
-                            Modifier.weight(1.25f),
-                            horizontalAlignment = Alignment.CenterHorizontally
-                        ) {
-                            Text(
-                                "${group.details.size} input",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                "${formatLootKg(crewTakenKg)} KG crew",
-                                fontSize = 10.sp,
-                                color = Color(0xFF2E7D32)
-                            )
-                            TextButton(
-                                onClick = { onGroupClick(group) },
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                            ) {
-                                Text(
-                                    "Detail",
-                                    color = Color(0xFF168AC0),
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
-                                )
-                            }
-                        }
+                        TableCellFixed("", 42.dp, true, Color.White, Alignment.CenterHorizontally)
+                        TableCellFixed("PTI", 86.dp, true, Color.White)
+                        TableCellFixed("PCS", 72.dp, true, Color.White, Alignment.CenterHorizontally)
+                        TableCellFixed("WEIGHT", 92.dp, true, Color.White, Alignment.CenterHorizontally)
+                        TableCellFixed("SUB TOTAL", 105.dp, true, Color.White, Alignment.CenterHorizontally)
+                        TableCellFixed("DESCRIPTION", 150.dp, true, Color.White)
+                        TableCellFixed("CUSTOMER", 125.dp, true, Color.White)
+                        TableCellFixed("NO PAG", 105.dp, true, Color.White)
+                        TableCellFixed("DATA / AKSI", 263.dp, true, Color.White, Alignment.CenterHorizontally)
                     }
-                    HorizontalDivider()
 
-                    // ===== DETAIL / CHILD ROWS =====
-                    if (expanded) {
-                        group.details.forEachIndexed { detailIndex, detail ->
-                            val item = detail.item
-                            val rowKey = "${group.groupKey}|${detail.sourceKey}"
-                            val detailCrewKg = crewLoots
-                                .filter { it.manifestGroupKey == rowKey }
-                                .sumOf { it.kg }
-                            val detailWeight = if (
-                                item.weight.contains("KG/KOLI", ignoreCase = true) ||
-                                item.weight.contains("KOLI × KG", ignoreCase = true) ||
-                                item.weight.contains("KOLI X KG", ignoreCase = true)
-                            ) {
-                                Regex("([0-9]+(?:[.,][0-9]+)?)")
-                                    .find(item.weight)?.groupValues?.getOrNull(1).orEmpty()
-                            } else {
-                                ""
+                    // BODY VERTICAL SCROLL
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        groups.forEachIndexed { index, group ->
+                            val summary = group.summary
+                            val expanded = group.groupKey in expandedGroups
+                            val crewTakenKg = group.details.sumOf { detail ->
+                                val rowKey = "${group.groupKey}|${detail.sourceKey}"
+                                crewLoots.filter { it.manifestGroupKey == rowKey }.sumOf { it.kg }
                             }
+                            val rowColor = if (index % 2 == 0) Color(0xFFF3F0F7) else Color.White
+                            val childColor = Color(0xFFFBF9FD)
 
+                            // BARIS GROUP / SUMMARY
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .background(Color(0xFFFAF8FC))
-                                    .padding(vertical = 7.dp, horizontal = 6.dp),
+                                    .background(rowColor)
+                                    .clickable { toggleGroup(group.groupKey) }
+                                    .padding(vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(
-                                    text = "  ↳ ${detailIndex + 1}",
-                                    modifier = Modifier
-                                        .weight(0.45f)
-                                        .padding(horizontal = 4.dp),
-                                    fontSize = 11.sp,
-                                    color = Color(0xFF6A4FA3),
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                TableCellFixed(
+                                    if (expanded) "▼" else "▶",
+                                    42.dp,
+                                    bold = true,
+                                    textColor = Color(0xFF5A3E8A),
+                                    textAlign = Alignment.CenterHorizontally
                                 )
-                                TableCell(item.pti.ifBlank { "-" }, 1.25f, textColor = Color(0xFF55505D))
-                                TableCell(item.pcsQty.ifBlank { "0" }, 0.75f, textAlign = Alignment.CenterHorizontally, textColor = Color(0xFF55505D))
-                                TableCell(detailWeight, 0.85f, textAlign = Alignment.CenterHorizontally, textColor = Color(0xFF55505D))
-                                TableCell(item.subTotal.ifBlank { "0" }, 0.95f, textAlign = Alignment.CenterHorizontally, textColor = Color(0xFF55505D))
-                                TableCell(item.description.ifBlank { "-" }, 1.45f, textColor = Color(0xFF55505D))
-                                TableCell(item.customer.ifBlank { "-" }, 1.15f, textColor = Color(0xFF55505D))
-                                TableCell(item.noPag.ifBlank { "-" }, 1.15f, textColor = Color(0xFF55505D))
-                                Row(
-                                    Modifier.weight(1.25f),
-                                    horizontalArrangement = Arrangement.spacedBy(0.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                TableCellFixed(summary.pti.ifBlank { "-" }, 86.dp, bold = true)
+                                TableCellFixed(summary.pcsQty.ifBlank { "0" }, 72.dp, bold = true, textAlign = Alignment.CenterHorizontally)
+
+                                val weightPerKoli = if (
+                                    summary.weight.contains("KG/KOLI", ignoreCase = true) ||
+                                    summary.weight.contains("KOLI × KG", ignoreCase = true) ||
+                                    summary.weight.contains("KOLI X KG", ignoreCase = true)
                                 ) {
-                                    TextButton(
-                                        onClick = { onEdit(detail) },
-                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
-                                    ) {
+                                    Regex("([0-9]+(?:[.,][0-9]+)?)")
+                                        .find(summary.weight)?.groupValues?.getOrNull(1).orEmpty()
+                                } else ""
+                                TableCellFixed(weightPerKoli, 92.dp, bold = true, textAlign = Alignment.CenterHorizontally)
+                                TableCellFixed(summary.subTotal.ifBlank { "0" }, 105.dp, bold = true, textAlign = Alignment.CenterHorizontally)
+                                TableCellFixed(summary.description.ifBlank { "-" }, 150.dp, bold = true)
+                                TableCellFixed(summary.customer.ifBlank { "-" }, 125.dp, bold = true)
+                                TableCellFixed(summary.noPag.ifBlank { "-" }, 105.dp, bold = true)
+
+                                Column(
+                                    Modifier.width(263.dp).padding(horizontal = 6.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            "Edit",
-                                            color = Color(0xFF168AC0),
-                                            fontWeight = FontWeight.Bold,
+                                            "${group.details.size} input",
                                             fontSize = 11.sp,
-                                            maxLines = 1
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            "${formatLootKg(crewTakenKg)} KG crew",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF2E7D32)
                                         )
                                     }
-                                    TextButton(
-                                        onClick = { onCrew(group, detail) },
-                                        contentPadding = PaddingValues(horizontal = 3.dp, vertical = 0.dp)
+                                    Text(
+                                        if (expanded) "Tutup detail ▲" else "Buka detail ▼",
+                                        fontSize = 10.sp,
+                                        color = Color(0xFF168AC0),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            // DETAIL DATA ASAL
+                            if (expanded) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .background(childColor)
+                                        .padding(start = 8.dp, end = 8.dp, top = 6.dp, bottom = 6.dp)
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .background(Color(0xFFE9E1F4))
+                                            .padding(vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            if (detailCrewKg > 0.0) "Crew ✓" else "Crew",
-                                            color = Color(0xFF2E7D32),
-                                            fontWeight = FontWeight.Bold,
+                                            "DATA ASAL • ${group.details.size} INPUT",
+                                            modifier = Modifier.padding(horizontal = 8.dp),
                                             fontSize = 11.sp,
-                                            maxLines = 1
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color(0xFF5A3E8A)
                                         )
+                                    }
+
+                                    group.details.forEachIndexed { detailIndex, detail ->
+                                        val item = detail.item
+                                        val rowKey = "${group.groupKey}|${detail.sourceKey}"
+                                        val crewTakenForDetail = crewLoots
+                                            .filter { it.manifestGroupKey == rowKey }
+                                            .sumOf { it.kg }
+                                        val detailRowColor = if (detailIndex % 2 == 0) Color.White else Color(0xFFF6F3F8)
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(detailRowColor)
+                                                .padding(vertical = 7.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            TableCellFixed("↳ ${detailIndex + 1}", 42.dp, textColor = Color(0xFF777777))
+                                            TableCellFixed(item.pti.ifBlank { "-" }, 86.dp)
+                                            TableCellFixed(item.pcsQty.ifBlank { "0" }, 72.dp, textAlign = Alignment.CenterHorizontally)
+
+                                            val detailWeightPerKoli = if (
+                                                item.weight.contains("KG/KOLI", ignoreCase = true) ||
+                                                item.weight.contains("KOLI × KG", ignoreCase = true) ||
+                                                item.weight.contains("KOLI X KG", ignoreCase = true)
+                                            ) {
+                                                Regex("([0-9]+(?:[.,][0-9]+)?)")
+                                                    .find(item.weight)?.groupValues?.getOrNull(1).orEmpty()
+                                            } else ""
+                                            TableCellFixed(detailWeightPerKoli, 92.dp, textAlign = Alignment.CenterHorizontally)
+                                            TableCellFixed(item.subTotal.ifBlank { "0" }, 105.dp, textAlign = Alignment.CenterHorizontally)
+                                            TableCellFixed(item.description.ifBlank { "-" }, 150.dp)
+                                            TableCellFixed(item.customer.ifBlank { "-" }, 125.dp)
+                                            TableCellFixed(item.noPag.ifBlank { "-" }, 105.dp)
+
+                                            Row(
+                                                Modifier.width(263.dp),
+                                                horizontalArrangement = Arrangement.Center,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                TextButton(
+                                                    onClick = { onEdit(detail) },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                ) {
+                                                    Text(
+                                                        "Edit",
+                                                        color = Color(0xFF168AC0),
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                                TextButton(
+                                                    onClick = { onCrew(group, detail) },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                                                ) {
+                                                    Text(
+                                                        if (crewTakenForDetail > 0.0) "Crew ✓" else "Crew",
+                                                        color = Color(0xFF2E7D32),
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        fontSize = 12.sp
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        HorizontalDivider(color = Color(0xFFD7D0DE))
                                     }
                                 }
                             }
-                            HorizontalDivider(color = Color(0xFFE5E0E8))
+
+                            HorizontalDivider(color = Color(0xFFCFC8D5))
                         }
                     }
                 }
@@ -1190,6 +1240,33 @@ private fun StowingManifestTable(
             }
         }
     }
+}
+
+@Composable
+private fun TableCellFixed(
+    text: String,
+    width: androidx.compose.ui.unit.Dp,
+    bold: Boolean = false,
+    textColor: Color = Color(0xFF202124),
+    textAlign: Alignment.Horizontal = Alignment.Start
+) {
+    Text(
+        text = text,
+        modifier = Modifier
+            .width(width)
+            .padding(horizontal = 5.dp),
+        fontSize = 12.sp,
+        lineHeight = 14.sp,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        color = textColor,
+        maxLines = 2,
+        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+        textAlign = when (textAlign) {
+            Alignment.CenterHorizontally -> androidx.compose.ui.text.style.TextAlign.Center
+            Alignment.End -> androidx.compose.ui.text.style.TextAlign.End
+            else -> androidx.compose.ui.text.style.TextAlign.Start
+        }
+    )
 }
 
 @Composable
