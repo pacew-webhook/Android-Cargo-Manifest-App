@@ -51,6 +51,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
+private enum class StowingDataView {
+    PER_INPUT,
+    GROUPED
+}
+
 @Composable
 fun CargoAppScreen(
     viewModel: CargoViewModel,
@@ -64,6 +69,7 @@ fun CargoAppScreen(
     var isSendingToN8n by remember { mutableStateOf(false) }
     var selectedGroup by remember { mutableStateOf<ManifestGroup?>(null) }
     var selectedDetail by remember { mutableStateOf<ManifestDetailItem?>(null) }
+    var stowingDataView by remember { mutableStateOf(StowingDataView.PER_INPUT) }
     var validationErrors by remember { mutableStateOf<List<String>?>(null) }
     var lootTargetKg by remember { mutableStateOf(viewModel.getLootTargetKg(context)) }
     var showLootTargetDialog by remember { mutableStateOf(false) }
@@ -266,43 +272,62 @@ fun CargoAppScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("Data dari Form Stowing Cargo (${groups.sumOf { it.details.size }})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
+        Text("Data dari Form Stowing Cargo", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
         Spacer(Modifier.height(6.dp))
+
+        StowingDataViewSelector(
+            selected = stowingDataView,
+            inputCount = groups.sumOf { it.details.size },
+            groupCount = groups.size,
+            onSelected = { stowingDataView = it }
+        )
+        Spacer(Modifier.height(8.dp))
 
         if (groups.isEmpty()) {
             Card(Modifier.fillMaxWidth().weight(1f), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)), shape = RoundedCornerShape(14.dp)) {
                 Text("Belum ada data. Silakan input data melalui Form Stowing Cargo.", Modifier.padding(16.dp), color = Color.Gray)
             }
         } else {
-            StowingManifestTable(
-                modifier = Modifier.weight(1f),
-                groups = groups,
-                crewLoots = crewLoots,
-                onRowClick = { group -> selectedGroup = group },
-                onEdit = { detail ->
-                    val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
-                    if (!pagId.isNullOrBlank()) {
+            val openEdit: (ManifestDetailItem) -> Unit = { detail ->
+                val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
+                if (!pagId.isNullOrBlank()) {
+                    context.startActivity(
+                        Intent(context, StowingPagActivity::class.java)
+                            .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
+                    )
+                } else {
+                    val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
+                    if (sourceIndex != null) {
                         context.startActivity(
-                            Intent(context, StowingPagActivity::class.java)
-                                .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
+                            Intent(context, StowingActivity::class.java)
+                                .putExtra(StowingActivity.EXTRA_EDIT_CARGO_KEY, sourceIndex)
                         )
                     } else {
-                        val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
-                        if (sourceIndex != null) {
-                            context.startActivity(
-                                Intent(context, StowingActivity::class.java)
-                                    .putExtra(StowingActivity.EXTRA_EDIT_CARGO_KEY, sourceIndex)
-                            )
-                        } else {
-                            selectedDetail = detail
-                        }
+                        selectedDetail = detail
                     }
-                },
-                onCrew = { group, detail ->
-                    selectedCrewLootGroup = group
-                    selectedCrewLootDetail = detail
                 }
-            )
+            }
+
+            if (stowingDataView == StowingDataView.PER_INPUT) {
+                StowingManifestTable(
+                    modifier = Modifier.weight(1f),
+                    groups = groups,
+                    crewLoots = crewLoots,
+                    onRowClick = { group -> selectedGroup = group },
+                    onEdit = openEdit,
+                    onCrew = { group, detail ->
+                        selectedCrewLootGroup = group
+                        selectedCrewLootDetail = detail
+                    }
+                )
+            } else {
+                StowingGroupedTable(
+                    modifier = Modifier.weight(1f),
+                    groups = groups,
+                    crewLoots = crewLoots,
+                    onGroupClick = { group -> selectedGroup = group }
+                )
+            }
         }
     }
 
@@ -783,6 +808,150 @@ private fun CrewLootStorageDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
     )
+}
+
+@Composable
+private fun StowingDataViewSelector(
+    selected: StowingDataView,
+    inputCount: Int,
+    groupCount: Int,
+    onSelected: (StowingDataView) -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        val inputSelected = selected == StowingDataView.PER_INPUT
+        val groupSelected = selected == StowingDataView.GROUPED
+
+        if (inputSelected) {
+            Button(
+                onClick = { onSelected(StowingDataView.PER_INPUT) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text("Per Input ($inputCount)", maxLines = 1)
+            }
+        } else {
+            OutlinedButton(
+                onClick = { onSelected(StowingDataView.PER_INPUT) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text("Per Input ($inputCount)", maxLines = 1)
+            }
+        }
+
+        if (groupSelected) {
+            Button(
+                onClick = { onSelected(StowingDataView.GROUPED) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text("Sudah Group ($groupCount)", maxLines = 1)
+            }
+        } else {
+            OutlinedButton(
+                onClick = { onSelected(StowingDataView.GROUPED) },
+                modifier = Modifier.weight(1f),
+                shape = RoundedCornerShape(18.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+            ) {
+                Text("Sudah Group ($groupCount)", maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun StowingGroupedTable(
+    modifier: Modifier = Modifier,
+    groups: List<ManifestGroup>,
+    crewLoots: List<CrewLootTransaction>,
+    onGroupClick: (ManifestGroup) -> Unit
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.fillMaxSize()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFF6A4FA3))
+                    .padding(vertical = 10.dp, horizontal = 6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TableCell("No", 0.45f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("PTI", 0.95f, true, Color.White)
+                TableCell("Pcs/Cly", 0.85f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Weight (Kg)", 0.95f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Sub Total", 1.0f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Description", 1.65f, true, Color.White)
+                TableCell("Customers", 1.25f, true, Color.White)
+                TableCell("NO PAG", 1.35f, true, Color.White)
+                TableCell("Data", 1.15f, true, Color.White, Alignment.CenterHorizontally)
+            }
+
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                groups.forEachIndexed { index, group ->
+                    val summary = group.summary
+                    val crewTakenKg = group.details.sumOf { detail ->
+                        val rowKey = "${group.groupKey}|${detail.sourceKey}"
+                        crewLoots.filter { it.manifestGroupKey == rowKey }.sumOf { it.kg }
+                    }
+                    val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(rowColor)
+                            .clickable { onGroupClick(group) }
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TableCell((index + 1).toString(), 0.45f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(summary.pti.ifBlank { "-" }, 0.95f)
+                        TableCell(summary.pcsQty.ifBlank { "0" }, 0.85f, textAlign = Alignment.CenterHorizontally)
+                        val weightPerKoli = if (summary.weight.contains("KG/KOLI", ignoreCase = true) ||
+                            summary.weight.contains("KOLI × KG", ignoreCase = true) ||
+                            summary.weight.contains("KOLI X KG", ignoreCase = true)) {
+                            Regex("([0-9]+(?:[.,][0-9]+)?)").find(summary.weight)?.groupValues?.getOrNull(1).orEmpty()
+                        } else {
+                            ""
+                        }
+                        TableCell(weightPerKoli, 0.95f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(summary.subTotal.ifBlank { "0" }, 1.0f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(summary.description.ifBlank { "-" }, 1.65f)
+                        TableCell(summary.customer.ifBlank { "-" }, 1.25f)
+                        TableCell(summary.noPag.ifBlank { "-" }, 1.35f)
+                        Column(
+                            Modifier.weight(1.15f),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("${group.details.size} input", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("${formatLootKg(crewTakenKg)} KG crew", fontSize = 10.sp, color = Color(0xFF2E7D32))
+                            TextButton(
+                                onClick = { onGroupClick(group) },
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp)
+                            ) {
+                                Text("Detail", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
 }
 
 @Composable
