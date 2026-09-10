@@ -339,8 +339,10 @@ fun CargoAppScreen(
             CrewLootTakeDialog(
                 group = group,
                 detail = detail,
+                // Gunakan kunci gabungan agar loot dihitung PER BARIS/detail,
+                // tanpa membutuhkan field baru pada CrewLootTransaction.
                 alreadyTakenKg = crewLoots.filter {
-                    it.manifestDetailKey == detail.sourceKey
+                    it.manifestGroupKey == "${group.groupKey}|${detail.sourceKey}"
                 }.sumOf { it.kg },
                 onDismiss = {
                     selectedCrewLootGroup = null
@@ -349,8 +351,9 @@ fun CargoAppScreen(
                 onSave = { crewName, kg, note ->
                     val item = detail.item
                     val tx = CrewLootTransaction(
-                        manifestGroupKey = group.groupKey,
-                        manifestDetailKey = detail.sourceKey,
+                        // Simpan identitas baris pada manifestGroupKey agar kompatibel
+                        // dengan CrewLootTransaction versi lama.
+                        manifestGroupKey = "${group.groupKey}|${detail.sourceKey}",
                         pti = item.pti,
                         customer = item.customer,
                         description = item.description,
@@ -837,7 +840,7 @@ private fun StowingManifestTable(
                     // Status Crew harus per BARIS/detail, bukan per group.
                     // Satu group dapat berisi beberapa baris manifest.
                     val crewTakenKg = crewLoots
-                        .filter { it.manifestDetailKey == detail.sourceKey }
+                        .filter { it.manifestGroupKey == "${group.groupKey}|${detail.sourceKey}" }
                         .sumOf { it.kg }
                     val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
 
