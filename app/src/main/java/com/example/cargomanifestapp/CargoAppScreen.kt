@@ -792,29 +792,28 @@ private fun StowingManifestTable(
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
-            val tableWidth = 1260.dp
+        Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
-                    .width(tableWidth)
+                    .fillMaxWidth()
                     .background(Color(0xFF6A4FA3))
-                    .padding(vertical = 10.dp, horizontal = 8.dp),
+                    .padding(vertical = 10.dp, horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TableCell("No", 55.dp, true, Color.White)
-                TableCell("PTI", 120.dp, true, Color.White)
-                TableCell("Pcs/Cly", 95.dp, true, Color.White)
-                TableCell("Weight (Kg)", 120.dp, true, Color.White)
-                TableCell("Sub Total", 120.dp, true, Color.White)
-                TableCell("Description", 220.dp, true, Color.White)
-                TableCell("Customers", 150.dp, true, Color.White)
-                TableCell("NO PAG", 180.dp, true, Color.White)
-                TableCell("Aksi", 200.dp, true, Color.White)
+                TableCell("No", 0.45f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("PTI", 0.95f, true, Color.White)
+                TableCell("Pcs/Cly", 0.85f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Weight (Kg)", 0.95f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Sub Total", 1.0f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Description", 1.65f, true, Color.White)
+                TableCell("Customers", 1.25f, true, Color.White)
+                TableCell("NO PAG", 1.35f, true, Color.White)
+                TableCell("Aksi", 1.45f, true, Color.White, Alignment.CenterHorizontally)
             }
 
             Column(
                 Modifier
-                    .width(tableWidth)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
                 rows.forEachIndexed { index, (group, detail) ->
@@ -832,9 +831,9 @@ private fun StowingManifestTable(
                             .padding(vertical = 8.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TableCell((index + 1).toString(), 55.dp)
-                        TableCell(item.pti.ifBlank { "-" }, 120.dp)
-                        TableCell(item.pcsQty.ifBlank { "0" }, 95.dp)
+                        TableCell((index + 1).toString(), 0.45f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.pti.ifBlank { "-" }, 0.95f)
+                        TableCell(item.pcsQty.ifBlank { "0" }, 0.85f, textAlign = Alignment.CenterHorizontally)
                         // Weight (Kg) pada tabel Manifest hanya menampilkan KG/KOLI.
                         // Metode TIMBANG TOTAL dan MANUAL KG sengaja dikosongkan.
                         val weightPerKoli = if (item.weight.contains("KG/KOLI", ignoreCase = true) ||
@@ -844,14 +843,14 @@ private fun StowingManifestTable(
                         } else {
                             ""
                         }
-                        TableCell(weightPerKoli, 120.dp)
-                        TableCell(item.subTotal.ifBlank { "0" }, 120.dp)
-                        TableCell(item.description.ifBlank { "-" }, 220.dp)
-                        TableCell(item.customer.ifBlank { "-" }, 150.dp)
-                        TableCell(item.noPag.ifBlank { "-" }, 180.dp)
+                        TableCell(weightPerKoli, 0.95f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.subTotal.ifBlank { "0" }, 1.0f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.description.ifBlank { "-" }, 1.65f)
+                        TableCell(item.customer.ifBlank { "-" }, 1.25f)
+                        TableCell(item.noPag.ifBlank { "-" }, 1.35f)
 
                         Row(
-                            Modifier.width(200.dp),
+                            Modifier.weight(1.45f),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -891,17 +890,23 @@ private fun StowingManifestTable(
 @Composable
 private fun RowScope.TableCell(
     text: String,
-    width: androidx.compose.ui.unit.Dp,
+    weight: Float,
     bold: Boolean = false,
-    textColor: Color = Color(0xFF202124)
+    textColor: Color = Color(0xFF202124),
+    textAlign: Alignment.Horizontal = Alignment.Start
 ) {
     Text(
         text = text,
-        modifier = Modifier.width(width).padding(horizontal = 4.dp),
-        fontSize = 14.sp,
+        modifier = Modifier.weight(weight).padding(horizontal = 4.dp),
+        fontSize = 13.sp,
         fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
         color = textColor,
-        maxLines = 2
+        maxLines = 2,
+        textAlign = when (textAlign) {
+            Alignment.CenterHorizontally -> androidx.compose.ui.text.style.TextAlign.Center
+            Alignment.End -> androidx.compose.ui.text.style.TextAlign.End
+            else -> androidx.compose.ui.text.style.TextAlign.Start
+        }
     )
 }
 
