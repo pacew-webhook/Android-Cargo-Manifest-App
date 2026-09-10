@@ -336,14 +336,11 @@ fun CargoAppScreen(
 
     selectedCrewLootGroup?.let { group ->
         selectedCrewLootDetail?.let { detail ->
+            val rowKey = "${group.groupKey}|${detail.sourceKey}"
             CrewLootTakeDialog(
                 group = group,
                 detail = detail,
-                // Gunakan kunci gabungan agar loot dihitung PER BARIS/detail,
-                // tanpa membutuhkan field baru pada CrewLootTransaction.
-                alreadyTakenKg = crewLoots.filter {
-                    it.manifestGroupKey == "${group.groupKey}|${detail.sourceKey}"
-                }.sumOf { it.kg },
+                alreadyTakenKg = crewLoots.filter { it.manifestGroupKey == rowKey }.sumOf { it.kg },
                 onDismiss = {
                     selectedCrewLootGroup = null
                     selectedCrewLootDetail = null
@@ -351,9 +348,7 @@ fun CargoAppScreen(
                 onSave = { crewName, kg, note ->
                     val item = detail.item
                     val tx = CrewLootTransaction(
-                        // Simpan identitas baris pada manifestGroupKey agar kompatibel
-                        // dengan CrewLootTransaction versi lama.
-                        manifestGroupKey = "${group.groupKey}|${detail.sourceKey}",
+                        manifestGroupKey = rowKey,
                         pti = item.pti,
                         customer = item.customer,
                         description = item.description,
@@ -827,7 +822,7 @@ private fun StowingManifestTable(
                 TableCell("Description", 1.65f, true, Color.White)
                 TableCell("Customers", 1.25f, true, Color.White)
                 TableCell("NO PAG", 1.35f, true, Color.White)
-                TableCell("Aksi", 2.35f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Aksi", 3.2f, true, Color.White, Alignment.CenterHorizontally)
             }
 
             Column(
@@ -837,10 +832,9 @@ private fun StowingManifestTable(
             ) {
                 rows.forEachIndexed { index, (group, detail) ->
                     val item = detail.item
-                    // Status Crew harus per BARIS/detail, bukan per group.
-                    // Satu group dapat berisi beberapa baris manifest.
+                    val rowKey = "${group.groupKey}|${detail.sourceKey}"
                     val crewTakenKg = crewLoots
-                        .filter { it.manifestGroupKey == "${group.groupKey}|${detail.sourceKey}" }
+                        .filter { it.manifestGroupKey == rowKey }
                         .sumOf { it.kg }
                     val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
 
@@ -871,21 +865,27 @@ private fun StowingManifestTable(
                         TableCell(item.noPag.ifBlank { "-" }, 1.35f)
 
                         Row(
-                            Modifier.weight(1.45f),
+                            Modifier.weight(3.2f),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            TextButton(onClick = { onEdit(detail) }) {
-                                Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
+                            TextButton(
+                                onClick = { onEdit(detail) },
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+                            ) {
+                                Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold, maxLines = 1)
                             }
-                            // Tombol Crew tetap tersedia di sebelah tombol Edit.
-                            // Jika group sudah pernah diambil Crew, tampilkan tanda ✓
-                            // tetapi tombol tetap bisa ditekan untuk transaksi berikutnya.
-                            TextButton(onClick = { onCrew(group, detail) }) {
+                            // Crew selalu aktif. Tanda ✓ hanya menunjukkan bahwa baris ini
+                            // sudah pernah diambil, bukan berarti pengambilan berikutnya dilarang.
+                            TextButton(
+                                onClick = { onCrew(group, detail) },
+                                contentPadding = PaddingValues(horizontal = 5.dp, vertical = 0.dp)
+                            ) {
                                 Text(
                                     if (crewTakenKg > 0.0) "Crew ✓" else "Crew",
                                     color = Color(0xFF2E7D32),
-                                    fontWeight = FontWeight.Bold
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -934,7 +934,7 @@ private fun ManifestSummaryCard(
         shape = RoundedCornerShape(14.dp)
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)) {
-            val realKg = group.summary.subTotal.toDoubleOrNull() ?: 0.0
+            val realKg = detail.item.subTotal.toDoubleOrNull() ?: 0.0
             val availableKg = (realKg - crewTakenKg).coerceAtLeast(0.0)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("PTI: ${group.summary.pti}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
