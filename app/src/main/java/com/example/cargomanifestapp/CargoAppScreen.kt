@@ -781,112 +781,39 @@ private fun StowingManifestTable(
     onCrew: (ManifestGroup) -> Unit
 ) {
     // Satu baris = satu data asli dari Form Stowing Cargo.
-    // Kolom mengikuti field yang digunakan pada template_manifest.xlsx.
+    // Kolom mengikuti field yang digunakan pada template_manifest.xlsx:
+    // PTI, Pcs/Cly, Weight, Sub Total, Description, Customers, NO PAG.
     val rows = groups.flatMap { group ->
         group.details.map { detail -> group to detail }
     }
-
-    val headers = listOf(
-        "No", "PTI", "Pcs/Cly", "Weight (Kg)", "Sub Total",
-        "Description", "Customers", "NO PAG", "Aksi"
-    )
-
-    // Lebar setiap kolom dihitung dari isi terpanjang pada kolom tersebut,
-    // bukan memakai bobot/width yang sama. Tabel tetap dapat di-scroll horizontal.
-    val columnValues = remember(rows) {
-        val values = Array(headers.size) { mutableListOf<String>() }
-        values[0].addAll(rows.indices.map { (it + 1).toString() })
-        values[1].addAll(rows.map { (_, detail) -> detail.item.pti.ifBlank { "-" } })
-        values[2].addAll(rows.map { (_, detail) -> detail.item.pcsQty.ifBlank { "0" } })
-        values[3].addAll(rows.map { (_, detail) ->
-            val weight = detail.item.weight
-            if (weight.contains("KG/KOLI", ignoreCase = true) ||
-                weight.contains("KOLI × KG", ignoreCase = true) ||
-                weight.contains("KOLI X KG", ignoreCase = true)
-            ) {
-                Regex("([0-9]+(?:[.,][0-9]+)?)").find(weight)?.groupValues?.getOrNull(1).orEmpty()
-            } else ""
-        })
-        values[4].addAll(rows.map { (_, detail) -> detail.item.subTotal.ifBlank { "0" } })
-        values[5].addAll(rows.map { (_, detail) -> detail.item.description.ifBlank { "-" } })
-        values[6].addAll(rows.map { (_, detail) -> detail.item.customer.ifBlank { "-" } })
-        values[7].addAll(rows.map { (_, detail) -> detail.item.noPag.ifBlank { "-" } })
-        values[8].addAll(listOf("Edit", "✓ Crew", "Crew"))
-        values
-    }
-
-    val textMeasurer = androidx.compose.ui.text.rememberTextMeasurer()
-    val density = LocalDensity.current
-    val normalStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp)
-    val headerStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
-
-    val columnWidths = remember(columnValues) {
-        with(density) {
-            columnValues.mapIndexed { index, values ->
-                val maxTextWidth = values.maxOfOrNull { value ->
-                    textMeasurer.measure(
-                        text = value.ifBlank { " " },
-                        style = if (index == 8) headerStyle else normalStyle,
-                        maxLines = 2
-                    ).size.width.toDp()
-                } ?: 0.dp
-
-                // Padding kiri/kanan + sedikit ruang agar teks tidak menempel.
-                val extra = if (index == 8) 24.dp else 20.dp
-                (maxTextWidth + extra).coerceAtLeast(
-                    when (index) {
-                        0 -> 44.dp
-                        1 -> 72.dp
-                        2 -> 72.dp
-                        3 -> 92.dp
-                        4 -> 88.dp
-                        5 -> 100.dp
-                        6 -> 90.dp
-                        7 -> 90.dp
-                        else -> 84.dp
-                    }
-                )
-            }
-        }
-    }
-
-    val tableWidth = columnWidths.fold(0.dp) { total, width ->
-        total + width
-    }
-    val horizontalScrollState = rememberScrollState()
 
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .horizontalScroll(horizontalScrollState)
-                .widthIn(min = tableWidth)
-        ) {
+        Column(Modifier.fillMaxSize()) {
             Row(
                 modifier = Modifier
-                    .width(tableWidth)
+                    .fillMaxWidth()
                     .background(Color(0xFF6A4FA3))
-                    .padding(vertical = 10.dp, horizontal = 0.dp),
+                    .padding(vertical = 10.dp, horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                headers.forEachIndexed { index, header ->
-                    TableCell(
-                        text = header,
-                        width = columnWidths[index],
-                        bold = true,
-                        textColor = Color.White,
-                        textAlign = if (index in listOf(0, 2, 3, 4, 8)) Alignment.CenterHorizontally else Alignment.Start
-                    )
-                }
+                TableCell("No", 0.45f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("PTI", 0.95f, true, Color.White)
+                TableCell("Pcs/Cly", 0.85f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Weight (Kg)", 0.95f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Sub Total", 1.0f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Description", 1.65f, true, Color.White)
+                TableCell("Customers", 1.25f, true, Color.White)
+                TableCell("NO PAG", 1.35f, true, Color.White)
+                TableCell("Aksi", 2.35f, true, Color.White, Alignment.CenterHorizontally)
             }
 
             Column(
                 Modifier
-                    .width(tableWidth)
+                    .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
             ) {
                 rows.forEachIndexed { index, (group, detail) ->
@@ -896,58 +823,53 @@ private fun StowingManifestTable(
                         .sumOf { it.kg }
                     val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
 
-                    val weightPerKoli = if (item.weight.contains("KG/KOLI", ignoreCase = true) ||
-                        item.weight.contains("KOLI × KG", ignoreCase = true) ||
-                        item.weight.contains("KOLI X KG", ignoreCase = true)) {
-                        Regex("([0-9]+(?:[.,][0-9]+)?)").find(item.weight)?.groupValues?.getOrNull(1).orEmpty()
-                    } else ""
-
                     Row(
                         modifier = Modifier
-                            .width(tableWidth)
+                            .fillMaxWidth()
                             .background(rowColor)
                             .clickable { onRowClick(group) }
-                            .padding(vertical = 8.dp),
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TableCell((index + 1).toString(), columnWidths[0], textAlign = Alignment.CenterHorizontally)
-                        TableCell(item.pti.ifBlank { "-" }, columnWidths[1])
-                        TableCell(item.pcsQty.ifBlank { "0" }, columnWidths[2], textAlign = Alignment.CenterHorizontally)
-                        TableCell(weightPerKoli, columnWidths[3], textAlign = Alignment.CenterHorizontally)
-                        TableCell(item.subTotal.ifBlank { "0" }, columnWidths[4], textAlign = Alignment.CenterHorizontally)
-                        TableCell(item.description.ifBlank { "-" }, columnWidths[5])
-                        TableCell(item.customer.ifBlank { "-" }, columnWidths[6])
-                        TableCell(item.noPag.ifBlank { "-" }, columnWidths[7])
+                        TableCell((index + 1).toString(), 0.45f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.pti.ifBlank { "-" }, 0.95f)
+                        TableCell(item.pcsQty.ifBlank { "0" }, 0.85f, textAlign = Alignment.CenterHorizontally)
+                        // Weight (Kg) pada tabel Manifest hanya menampilkan KG/KOLI.
+                        // Metode TIMBANG TOTAL dan MANUAL KG sengaja dikosongkan.
+                        val weightPerKoli = if (item.weight.contains("KG/KOLI", ignoreCase = true) ||
+                            item.weight.contains("KOLI × KG", ignoreCase = true) ||
+                            item.weight.contains("KOLI X KG", ignoreCase = true)) {
+                            Regex("([0-9]+(?:[.,][0-9]+)?)").find(item.weight)?.groupValues?.getOrNull(1).orEmpty()
+                        } else {
+                            ""
+                        }
+                        TableCell(weightPerKoli, 0.95f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.subTotal.ifBlank { "0" }, 1.0f, textAlign = Alignment.CenterHorizontally)
+                        TableCell(item.description.ifBlank { "-" }, 1.65f)
+                        TableCell(item.customer.ifBlank { "-" }, 1.25f)
+                        TableCell(item.noPag.ifBlank { "-" }, 1.35f)
 
-                        Box(
-                            modifier = Modifier.width(columnWidths[8]),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            Modifier.weight(1.45f),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                horizontalArrangement = Arrangement.spacedBy(2.dp),
-                                verticalAlignment = Alignment.CenterVertically
+                            TextButton(onClick = { onEdit(detail) }) {
+                                Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
+                            }
+                            // Tombol Crew selalu ditampilkan tepat di sebelah tombol Edit.
+                            // Jika data group sudah pernah diambil Crew, tombol tetap tersedia
+                            // agar transaksi Crew berikutnya tetap bisa dilakukan.
+                            TextButton(
+                                onClick = { onCrew(group) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
                             ) {
-                                TextButton(onClick = { onEdit(detail) }) {
-                                    Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
-                                }
-                                if (crewTakenKg > 0.0) {
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFFE8F5E9)
-                                    ) {
-                                        Text(
-                                            "✓ Crew",
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                            color = Color(0xFF2E7D32),
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = 12.sp
-                                        )
-                                    }
-                                } else {
-                                    TextButton(onClick = { onCrew(group) }) {
-                                        Text("Crew", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                                    }
-                                }
+                                Text(
+                                    if (crewTakenKg > 0.0) "Crew ✓" else "Crew",
+                                    color = Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1
+                                )
                             }
                         }
                     }
@@ -959,16 +881,16 @@ private fun StowingManifestTable(
 }
 
 @Composable
-private fun TableCell(
+private fun RowScope.TableCell(
     text: String,
-    width: androidx.compose.ui.unit.Dp,
+    weight: Float,
     bold: Boolean = false,
     textColor: Color = Color(0xFF202124),
     textAlign: Alignment.Horizontal = Alignment.Start
 ) {
     Text(
         text = text,
-        modifier = Modifier.width(width).padding(horizontal = 4.dp),
+        modifier = Modifier.weight(weight).padding(horizontal = 4.dp),
         fontSize = 13.sp,
         fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
         color = textColor,
