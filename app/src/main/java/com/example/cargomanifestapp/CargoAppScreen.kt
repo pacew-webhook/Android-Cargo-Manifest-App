@@ -850,7 +850,9 @@ private fun StowingManifestTable(
         }
     }
 
-    val tableWidth = columnWidths.sum()
+    val tableWidth = columnWidths.fold(0.dp) { total, width ->
+        total + width
+    }
     val horizontalScrollState = rememberScrollState()
 
     Card(
