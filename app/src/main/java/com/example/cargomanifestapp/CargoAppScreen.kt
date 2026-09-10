@@ -925,22 +925,21 @@ private fun StowingGroupedTable(
                 )
             }
 
-            // Satu horizontalScroll dipakai untuk header + isi supaya posisi kolom
-            // selalu sejajar saat pengguna menggeser tabel.
+            // HEADER STICKY:
+            // Header sengaja diletakkan DI LUAR area verticalScroll.
+            // Dengan begitu judul kolom selalu terlihat saat daftar group
+            // digeser ke bawah. Header dan body menggunakan ScrollState
+            // horizontal yang sama agar kolom tetap sejajar saat digeser kiri/kanan.
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(horizontalScrollState)
+                    .zIndex(2f)
+                    .background(Color(0xFF6A4FA3))
+                    .padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(Modifier.width(tableWidth)) {
-                    // HEADER
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(Color(0xFF6A4FA3))
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Row(Modifier.width(tableWidth)) {
                         TableCellFixed("", 42.dp, true, Color.White, Alignment.CenterHorizontally)
                         TableCellFixed("PTI", 86.dp, true, Color.White)
                         TableCellFixed("PCS", 72.dp, true, Color.White, Alignment.CenterHorizontally)
@@ -950,15 +949,22 @@ private fun StowingGroupedTable(
                         TableCellFixed("CUSTOMER", 125.dp, true, Color.White)
                         TableCellFixed("NO PAG", 105.dp, true, Color.White)
                         TableCellFixed("DATA / AKSI", 263.dp, true, Color.White, Alignment.CenterHorizontally)
-                    }
+                }
+            }
 
-                    // BODY VERTICAL SCROLL
-                    Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                            .verticalScroll(rememberScrollState())
-                    ) {
+            // BODY: hanya bagian ini yang melakukan verticalScroll.
+            // Header di atas tetap menempel (sticky) selama body digeser vertikal.
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .horizontalScroll(horizontalScrollState)
+            ) {
+                Column(
+                    Modifier
+                        .width(tableWidth)
+                        .verticalScroll(rememberScrollState())
+                ) {
                         groups.forEachIndexed { index, group ->
                             val summary = group.summary
                             val expanded = group.groupKey in expandedGroups
