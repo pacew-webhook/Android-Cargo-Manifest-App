@@ -808,7 +808,7 @@ private fun StowingManifestTable(
                 TableCell("Description", 1.65f, true, Color.White)
                 TableCell("Customers", 1.25f, true, Color.White)
                 TableCell("NO PAG", 1.35f, true, Color.White)
-                TableCell("Aksi", 2.35f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Aksi", 3.2f, true, Color.White, Alignment.CenterHorizontally)
             }
 
             Column(
@@ -850,22 +850,33 @@ private fun StowingManifestTable(
                         TableCell(item.noPag.ifBlank { "-" }, 1.35f)
 
                         Row(
-                            Modifier.weight(1.45f),
+                            Modifier.weight(3.2f),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(onClick = { onEdit(detail) }) {
                                 Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
                             }
-                            // Tombol Crew tetap tersedia di sebelah tombol Edit.
-                            // Jika group sudah pernah diambil Crew, tampilkan tanda ✓
-                            // tetapi tombol tetap bisa ditekan untuk transaksi berikutnya.
-                            TextButton(onClick = { onCrew(group) }) {
-                                Text(
-                                    if (crewTakenKg > 0.0) "Crew ✓" else "Crew",
-                                    color = Color(0xFF2E7D32),
-                                    fontWeight = FontWeight.Bold
-                                )
+                            if (crewTakenKg > 0.0) {
+                                // Penanda visual bahwa data pada group ini sudah pernah
+                                // diambil untuk Crew. crewTakenKg dihitung dari transaksi
+                                // Crew yang sudah tersimpan, jadi tidak mengubah data cargo.
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = Color(0xFFE8F5E9)
+                                ) {
+                                    Text(
+                                        "✓ Crew",
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
+                                        color = Color(0xFF2E7D32),
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                }
+                            } else {
+                                TextButton(onClick = { onCrew(group) }) {
+                                    Text("Crew", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
