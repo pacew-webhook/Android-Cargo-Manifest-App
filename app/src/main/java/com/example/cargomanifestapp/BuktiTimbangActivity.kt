@@ -82,6 +82,11 @@ fun BtbScreen(onBackClick: () -> Unit) {
     var trademarks by remember { mutableStateOf("") }
     var jenisBarang by remember { mutableStateOf("") }
     var inputBeratText by remember { mutableStateOf("") }
+    var btbInputMode by remember { mutableStateOf(PagInputMode.MANUAL_KG) }
+    var modePcsText by remember { mutableStateOf("") }
+    var modeTotalText by remember { mutableStateOf("") }
+    var modeKgPerText by remember { mutableStateOf("") }
+    var jumlahKoliInput by remember { mutableStateOf<Int?>(null) }
     var daftarTimbangan by remember { mutableStateOf<List<Double>>(emptyList()) }
     // Disiapkan untuk foto BTB/galeri. Tetap kosong jika fitur foto belum digunakan.
     val photoUris = remember { mutableStateListOf<Uri>() }
@@ -139,6 +144,8 @@ fun BtbScreen(onBackClick: () -> Unit) {
                 put("usedInStowing", btb.id in usedBtbIds)
                 put("jenisBarang", btb.jenisBarang)
                 put("weights", org.json.JSONArray().apply { btb.daftarTimbangan.forEach { put(it) } })
+                put("inputMode", btb.inputMode.name)
+                put("jumlahKoliInput", btb.jumlahKoliInput ?: org.json.JSONObject.NULL)
             })
         }
         context.getSharedPreferences("btb_reference", Context.MODE_PRIVATE)
@@ -167,7 +174,10 @@ fun BtbScreen(onBackClick: () -> Unit) {
                     customerName = obj.optString("customerName"),
                     trademarks = obj.optString("trademarks"),
                     jenisBarang = obj.optString("jenisBarang"),
-                    daftarTimbangan = weights
+                    daftarTimbangan = weights,
+                    inputMode = runCatching { PagInputMode.valueOf(obj.optString("inputMode", PagInputMode.MANUAL_KG.name)) }
+                        .getOrDefault(PagInputMode.MANUAL_KG),
+                    jumlahKoliInput = if (obj.has("jumlahKoliInput") && !obj.isNull("jumlahKoliInput")) obj.optInt("jumlahKoliInput").takeIf { it > 0 } else null
                 ))
             }
         }
@@ -199,6 +209,11 @@ fun BtbScreen(onBackClick: () -> Unit) {
         trademarks = ""
         jenisBarang = ""
         inputBeratText = ""
+        btbInputMode = PagInputMode.MANUAL_KG
+        modePcsText = ""
+        modeTotalText = ""
+        modeKgPerText = ""
+        jumlahKoliInput = null
         daftarTimbangan = emptyList()
         editingId = null
     }
@@ -242,6 +257,28 @@ fun BtbScreen(onBackClick: () -> Unit) {
             beratFocus.requestFocus()
         } else {
             Toast.makeText(context, "Masukkan berat angka yang valid", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun buildWeightsFromSelectedMode(): List<Double>? {
+        return when (btbInputMode) {
+            PagInputMode.MANUAL_KG -> daftarTimbangan.takeIf { it.isNotEmpty() }
+            PagInputMode.TOTAL -> {
+                val pcs = modePcsText.toIntOrNull()?.takeIf { it > 0 }
+                val total = modeTotalText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }
+                if (pcs != null && total != null) {
+                    jumlahKoliInput = pcs
+                    listOf(total)
+                } else null
+            }
+            PagInputMode.KOLI_KG -> {
+                val pcs = modePcsText.toIntOrNull()?.takeIf { it > 0 }
+                val kgPer = modeKgPerText.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0.0 }
+                if (pcs != null && kgPer != null) {
+                    jumlahKoliInput = pcs
+                    List(pcs) { kgPer }
+                } else null
+            }
         }
     }
 
@@ -384,53 +421,114 @@ fun BtbScreen(onBackClick: () -> Unit) {
                             modifier = Modifier.fillMaxWidth().focusRequester(barangFocus)
                         )
 
+                        Text("METODE INPUT", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            OutlinedTextField(
-                                value = inputBeratText,
-                                onValueChange = { inputBeratText = it },
-                                label = { Text("Input Berat (KG)") },
-                                singleLine = true,
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                                keyboardActions = KeyboardActions(onDone = { tambahBerat() }),
-                                modifier = Modifier.weight(1f).focusRequester(beratFocus)
-                            )
-                            Button(
-                                onClick = { tambahBerat() },
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92)),
-                                modifier = Modifier.height(56.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("+ KG", fontWeight = FontWeight.Bold)
+                            listOf(
+                                PagInputMode.TOTAL to "TIMBANG TOTAL",
+                                PagInputMode.KOLI_KG to "KOLI × KG",
+                                PagInputMode.MANUAL_KG to "MANUAL KG"
+                            ).forEach { (mode, label) ->
+                                FilterChip(
+                                    selected = btbInputMode == mode,
+                                    onClick = {
+                                        btbInputMode = mode
+                                        if (mode == PagInputMode.MANUAL_KG) jumlahKoliInput = null
+                                    },
+                                    label = { Text(label, maxLines = 1, fontSize = 10.sp) },
+                                    modifier = Modifier.weight(1f)
+                                )
                             }
-                            Button(
-                                onClick = {
-                                    // Activity OCR sudah didaftarkan khusus untuk modul BTB.
-                                    // Jika perangkat tidak dapat menjalankannya, jangan biarkan
-                                    // aplikasi force close; tampilkan pesan dan tetap di form BTB.
-                                    try {
-                                        scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(
-                                            context,
-                                            "OCR timbangan tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}",
-                                            Toast.LENGTH_LONG
-                                        ).show()
-                                    }
-                                },
-                                modifier = Modifier.height(56.dp),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("📷", fontSize = 20.sp)
+                        }
+
+                        when (btbInputMode) {
+                            PagInputMode.TOTAL -> {
+                                OutlinedTextField(
+                                    value = modePcsText,
+                                    onValueChange = { modePcsText = it.filter(Char::isDigit) },
+                                    label = { Text("KOLI / PCS") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = modeTotalText,
+                                    onValueChange = { modeTotalText = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
+                                    label = { Text("TOTAL KG") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            PagInputMode.KOLI_KG -> {
+                                OutlinedTextField(
+                                    value = modePcsText,
+                                    onValueChange = { modePcsText = it.filter(Char::isDigit) },
+                                    label = { Text("KOLI / PCS") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                OutlinedTextField(
+                                    value = modeKgPerText,
+                                    onValueChange = { modeKgPerText = it.filter { c -> c.isDigit() || c == '.' || c == ',' } },
+                                    label = { Text("KG / KOLI") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                val pcs = modePcsText.toIntOrNull() ?: 0
+                                val kgPer = modeKgPerText.replace(',', '.').toDoubleOrNull() ?: 0.0
+                                val total = pcs * kgPer
+                                OutlinedTextField(
+                                    value = if (total > 0) total.toCleanString() else "",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    label = { Text("TOTAL KG (OTOMATIS)") },
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                            }
+                            PagInputMode.MANUAL_KG -> {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    OutlinedTextField(
+                                        value = inputBeratText,
+                                        onValueChange = { inputBeratText = it },
+                                        label = { Text("Input Berat (KG)") },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
+                                        keyboardActions = KeyboardActions(onDone = { tambahBerat() }),
+                                        modifier = Modifier.weight(1f).focusRequester(beratFocus)
+                                    )
+                                    Button(
+                                        onClick = { tambahBerat() },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF311B92)),
+                                        modifier = Modifier.height(56.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) { Text("+ KG", fontWeight = FontWeight.Bold) }
+                                    Button(
+                                        onClick = {
+                                            try {
+                                                scaleOcrLauncher.launch(Intent(context, ScaleOcrActivity::class.java))
+                                            } catch (e: Exception) {
+                                                Toast.makeText(context, "OCR timbangan tidak dapat dibuka: ${e.localizedMessage ?: "Error tidak diketahui"}", Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                        modifier = Modifier.height(56.dp),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) { Text("📷", fontSize = 20.sp) }
+                                }
                             }
                         }
 
                         if (daftarTimbangan.isNotEmpty()) {
                             Text(
-                                "Rincian Timbangan (${daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
+                                "Rincian Timbangan (${jumlahKoliInput ?: daftarTimbangan.size} Koli) | Total: ${daftarTimbangan.sum().toCleanString()} KG",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
                                 color = Color(0xFF2E7D32)
@@ -456,8 +554,14 @@ fun BtbScreen(onBackClick: () -> Unit) {
 
                         Button(
                             onClick = {
-                                if (customerName.isEmpty() || daftarTimbangan.isEmpty()) {
-                                    Toast.makeText(context, "Customer dan Timbangan wajib diisi!", Toast.LENGTH_SHORT).show()
+                                val weightsToSave = buildWeightsFromSelectedMode()
+                                if (customerName.isEmpty() || weightsToSave.isNullOrEmpty()) {
+                                    val msg = when (btbInputMode) {
+                                        PagInputMode.TOTAL -> "Isi KOLI / PCS dan TOTAL KG"
+                                        PagInputMode.KOLI_KG -> "Isi KOLI / PCS dan KG / KOLI"
+                                        PagInputMode.MANUAL_KG -> "Customer dan Timbangan wajib diisi!"
+                                    }
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
                                     return@Button
                                 }
 
@@ -467,7 +571,9 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                     customerName = customerName,
                                     trademarks = trademarks,
                                     jenisBarang = jenisBarang,
-                                    daftarTimbangan = daftarTimbangan
+                                    daftarTimbangan = weightsToSave,
+                                    inputMode = btbInputMode,
+                                    jumlahKoliInput = jumlahKoliInput
                                 )
 
                                 if (editingId != null) {
@@ -527,6 +633,7 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 )
                             }
                             Text("Tgl: ${btb.hariTanggal} | Barang: ${btb.jenisBarang.ifEmpty { "-" }}", fontSize = 12.sp, color = Color.Gray)
+                            Text("Metode: ${when (btb.inputMode) { PagInputMode.TOTAL -> "TIMBANG TOTAL"; PagInputMode.KOLI_KG -> "KOLI × KG"; PagInputMode.MANUAL_KG -> "MANUAL KG" }}", fontSize = 11.sp, color = Color(0xFF6A1B9A))
                             Text("Koli: ${btb.jumlahKoli} | Total: ${btb.totalBerat.toCleanString()} KG", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
                         }
                         Row {
@@ -534,6 +641,25 @@ fun BtbScreen(onBackClick: () -> Unit) {
                                 customerName = btb.customerName
                                 trademarks = btb.trademarks
                                 jenisBarang = btb.jenisBarang
+                                btbInputMode = btb.inputMode
+                                jumlahKoliInput = btb.jumlahKoliInput
+                                when (btb.inputMode) {
+                                    PagInputMode.TOTAL -> {
+                                        modePcsText = btb.jumlahKoli.toString()
+                                        modeTotalText = btb.totalBerat.toCleanString()
+                                        modeKgPerText = ""
+                                    }
+                                    PagInputMode.KOLI_KG -> {
+                                        modePcsText = btb.jumlahKoli.toString()
+                                        modeKgPerText = btb.daftarTimbangan.firstOrNull()?.toCleanString().orEmpty()
+                                        modeTotalText = ""
+                                    }
+                                    PagInputMode.MANUAL_KG -> {
+                                        modePcsText = ""
+                                        modeTotalText = ""
+                                        modeKgPerText = ""
+                                    }
+                                }
                                 daftarTimbangan = btb.daftarTimbangan
                                 editingId = btb.id
                                 customerFocus.requestFocus()

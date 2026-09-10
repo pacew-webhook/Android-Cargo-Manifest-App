@@ -87,6 +87,8 @@ object BtbLabelUtils {
         root.put("weights", org.json.JSONArray().apply {
             data.daftarTimbangan.forEach { put(it) }
         })
+        root.put("inputMode", data.inputMode.name)
+        root.put("jumlahKoliInput", data.jumlahKoliInput ?: org.json.JSONObject.NULL)
         return root.toString()
     }
 
@@ -106,7 +108,10 @@ object BtbLabelUtils {
                 customerName = root.optString("customerName"),
                 trademarks = root.optString("trademarks"),
                 jenisBarang = root.optString("jenisBarang"),
-                daftarTimbangan = weights
+                daftarTimbangan = weights,
+                inputMode = runCatching { PagInputMode.valueOf(root.optString("inputMode", PagInputMode.MANUAL_KG.name)) }
+                    .getOrDefault(PagInputMode.MANUAL_KG),
+                jumlahKoliInput = if (root.has("jumlahKoliInput") && !root.isNull("jumlahKoliInput")) root.optInt("jumlahKoliInput").takeIf { it > 0 } else null
             )
         } catch (_: Exception) {
             null

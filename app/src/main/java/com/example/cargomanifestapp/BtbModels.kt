@@ -29,12 +29,16 @@ data class BtbFormData(
     val trademarks: String = "",
     val jenisBarang: String = "",
     val photoUris: List<String> = emptyList(),
-    val daftarTimbangan: List<Double> = emptyList()
+    val daftarTimbangan: List<Double> = emptyList(),
+    // Metode input mengikuti Form Stowing: TOTAL, KOLI x KG, atau MANUAL KG.
+    val inputMode: PagInputMode = PagInputMode.MANUAL_KG,
+    // Dipakai untuk metode TOTAL/KOLI x KG agar jumlah koli tidak hilang.
+    val jumlahKoliInput: Int? = null
 ) {
     val totalBerat: Double get() = daftarTimbangan.sum()
     val pembulatanTimbangan: List<Double> get() = daftarTimbangan.map { roundWeight(it) }
     val totalBeratPembulatan: Double get() = pembulatanTimbangan.sum()
-    val jumlahKoli: Int get() = daftarTimbangan.size
+    val jumlahKoli: Int get() = jumlahKoliInput ?: daftarTimbangan.size
 }
 
 /** Aturan BTB: pecahan < .50 turun, >= .50 naik ke kilogram berikutnya. */

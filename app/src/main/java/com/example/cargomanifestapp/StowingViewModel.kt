@@ -87,7 +87,10 @@ class StowingViewModel : ViewModel() {
                         customerName = obj.optString("customerName"),
                         trademarks = obj.optString("trademarks"),
                         jenisBarang = obj.optString("jenisBarang"),
-                        daftarTimbangan = weights
+                        daftarTimbangan = weights,
+                        inputMode = runCatching { PagInputMode.valueOf(obj.optString("inputMode", PagInputMode.MANUAL_KG.name)) }
+                            .getOrDefault(PagInputMode.MANUAL_KG),
+                        jumlahKoliInput = if (obj.has("jumlahKoliInput") && !obj.isNull("jumlahKoliInput")) obj.optInt("jumlahKoliInput").takeIf { it > 0 } else null
                     )
                 )
             }
