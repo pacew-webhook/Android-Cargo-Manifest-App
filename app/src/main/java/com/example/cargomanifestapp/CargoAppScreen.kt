@@ -273,6 +273,7 @@ fun CargoAppScreen(
             }
         } else {
             StowingManifestTable(
+                modifier = Modifier.weight(1f),
                 groups = groups,
                 onEdit = { detail ->
                     val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
@@ -771,6 +772,7 @@ private fun CrewLootStorageDialog(
 
 @Composable
 private fun StowingManifestTable(
+    modifier: Modifier = Modifier,
     groups: List<ManifestGroup>,
     onEdit: (ManifestDetailItem) -> Unit,
     onDelete: (ManifestDetailItem) -> Unit
@@ -779,7 +781,7 @@ private fun StowingManifestTable(
     var pendingDelete by remember { mutableStateOf<ManifestDetailItem?>(null) }
 
     Card(
-        modifier = Modifier.fillMaxWidth().weight(1f),
+        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
