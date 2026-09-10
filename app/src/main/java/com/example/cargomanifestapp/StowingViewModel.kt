@@ -1,11 +1,14 @@
 package com.example.cargomanifestapp
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.FileProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import org.json.JSONArray
@@ -14,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Job
+import java.io.File
 import org.apache.poi.ss.usermodel.DataFormatter
 import org.apache.poi.ss.usermodel.WorkbookFactory
 
@@ -1553,4 +1557,61 @@ class StowingViewModel : ViewModel() {
         }
         dismissDeleteDialog()
     }
+
+    /**
+     * Export Excel dengan metode yang sama seperti Manifest Cargo: file dibuat
+     * di cache aplikasi lalu dibuka melalui ACTION_VIEW. Dengan demikian Android
+     * menampilkan dialog "Buka dengan" (Excel/penampil XLSX) seperti di Manifest.
+     */
+    fun exportToExcelLikeManifest(context: Context) {
+        if (cargoList.isEmpty()) {
+            Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val file = File(context.cacheDir, "Cargo_Manifest_Output.xlsx")
+                ExcelUtils.writeCombinedCargoWorkbookToFile(
+                    context,
+                    file,
+                    cargoList.toList()
+                )
+
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.provider",
+                    file
+                )
+
+                withContext(Dispatchers.Main) {
+                    val intent = Intent(Intent.ACTION_VIEW).apply {
+                        setDataAndType(
+                            uri,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: Exception) {
+                        Toast.makeText(
+                            context,
+                            "Tidak ada aplikasi untuk membuka file Excel",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(
+                        context,
+                        "Gagal Export: ${e.localizedMessage}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
 }

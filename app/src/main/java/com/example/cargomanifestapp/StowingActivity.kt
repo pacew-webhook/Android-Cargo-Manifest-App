@@ -318,19 +318,6 @@ fun StowingInputScreen(
         )
     }
 
-    val exportLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    ) { uri ->
-        uri?.let {
-            try {
-                ExcelUtils.writeCombinedCargoWorkbook(context, it, viewModel.cargoList)
-                Toast.makeText(context, "Export Berhasil!", Toast.LENGTH_LONG).show()
-            } catch (e: Exception) {
-                Toast.makeText(context, "Gagal Export: ${e.message}", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
     val backupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
@@ -1491,23 +1478,13 @@ fun StowingInputScreen(
 
         Button(
             onClick = {
-                if (viewModel.cargoList.isNotEmpty()) {
-                    exportLauncher.launch("Cargo_Manifest_${System.currentTimeMillis()}.xlsx")
-                } else {
-                    Toast.makeText(context, "Data Kosong", Toast.LENGTH_SHORT).show()
-                }
+                viewModel.exportToExcelLikeManifest(context)
             },
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
             shape = RoundedCornerShape(8.dp)
         ) {
-            Icon(
-                imageVector = Icons.Default.Share,
-                contentDescription = "Export Excel",
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("Export Excel ke File", fontWeight = FontWeight.Bold)
+            Text("Export Excel", fontWeight = FontWeight.Bold)
         }
 
         if (showStowingGroupPage) {
