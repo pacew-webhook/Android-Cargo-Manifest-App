@@ -934,7 +934,7 @@ private fun ManifestSummaryCard(
         shape = RoundedCornerShape(14.dp)
     ) {
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(14.dp)) {
-            val realKg = detail.item.subTotal.toDoubleOrNull() ?: 0.0
+            val realKg = group.summary.subTotal.toDoubleOrNull() ?: 0.0
             val availableKg = (realKg - crewTakenKg).coerceAtLeast(0.0)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                 Text("PTI: ${group.summary.pti}", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
