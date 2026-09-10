@@ -73,6 +73,7 @@ fun CargoAppScreen(
     var showWmxPreview by remember { mutableStateOf(false) }
     var showCrewLootDialog by remember { mutableStateOf(false) }
     var selectedCrewLootGroup by remember { mutableStateOf<ManifestGroup?>(null) }
+    var selectedCrewLootDetail by remember { mutableStateOf<ManifestDetailItem?>(null) }
     var crewLoots by remember { mutableStateOf(CrewLootManager.load(context)) }
     var wmxBitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
     var wmxSenders by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
@@ -297,7 +298,10 @@ fun CargoAppScreen(
                         }
                     }
                 },
-                onCrew = { group -> selectedCrewLootGroup = group }
+                onCrew = { group, detail ->
+                    selectedCrewLootGroup = group
+                    selectedCrewLootDetail = detail
+                }
             )
         }
     }
@@ -331,28 +335,39 @@ fun CargoAppScreen(
     }
 
     selectedCrewLootGroup?.let { group ->
-        CrewLootTakeDialog(
-            group = group,
-            alreadyTakenKg = crewLoots.filter { it.manifestGroupKey == group.groupKey }.sumOf { it.kg },
-            onDismiss = { selectedCrewLootGroup = null },
-            onSave = { crewName, kg, note ->
-                val tx = CrewLootTransaction(
-                    manifestGroupKey = group.groupKey,
-                    pti = group.summary.pti,
-                    customer = group.summary.customer,
-                    description = group.summary.description,
-                    noPag = group.summary.noPag,
-                    crewName = crewName,
-                    kg = kg,
-                    note = note
-                )
-                val updated = crewLoots + tx
-                CrewLootManager.save(context, updated)
-                crewLoots = updated
-                selectedCrewLootGroup = null
-                Toast.makeText(context, "Loot Crew ${formatLootKg(kg)} KG disimpan", Toast.LENGTH_SHORT).show()
-            }
-        )
+        selectedCrewLootDetail?.let { detail ->
+            CrewLootTakeDialog(
+                group = group,
+                detail = detail,
+                alreadyTakenKg = crewLoots.filter {
+                    it.manifestDetailKey == detail.sourceKey
+                }.sumOf { it.kg },
+                onDismiss = {
+                    selectedCrewLootGroup = null
+                    selectedCrewLootDetail = null
+                },
+                onSave = { crewName, kg, note ->
+                    val item = detail.item
+                    val tx = CrewLootTransaction(
+                        manifestGroupKey = group.groupKey,
+                        manifestDetailKey = detail.sourceKey,
+                        pti = item.pti,
+                        customer = item.customer,
+                        description = item.description,
+                        noPag = item.noPag,
+                        crewName = crewName,
+                        kg = kg,
+                        note = note
+                    )
+                    val updated = crewLoots + tx
+                    CrewLootManager.save(context, updated)
+                    crewLoots = updated
+                    selectedCrewLootGroup = null
+                    selectedCrewLootDetail = null
+                    Toast.makeText(context, "Loot Crew ${formatLootKg(kg)} KG disimpan", Toast.LENGTH_SHORT).show()
+                }
+            )
+        }
     }
 
     if (showCustomerPriorityDialog) {
@@ -695,6 +710,7 @@ private fun formatLootPercent(value: Double): String {
 @Composable
 private fun CrewLootTakeDialog(
     group: ManifestGroup,
+    detail: ManifestDetailItem,
     alreadyTakenKg: Double,
     onDismiss: () -> Unit,
     onSave: (String, Double, String) -> Unit
@@ -703,14 +719,14 @@ private fun CrewLootTakeDialog(
     var kgText by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
-    val realKg = group.summary.subTotal.toDoubleOrNull() ?: 0.0
+    val realKg = detail.item.subTotal.toDoubleOrNull() ?: 0.0
     val available = (realKg - alreadyTakenKg).coerceAtLeast(0.0)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("📦 Ambil Loot untuk Crew") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("${group.summary.customer} • ${group.summary.description}", fontWeight = FontWeight.Bold)
+                Text("${detail.item.customer} • ${detail.item.description}", fontWeight = FontWeight.Bold)
                 Text("KG Real: ${formatLootKg(realKg)} KG")
                 Text("Sudah diambil: ${formatLootKg(alreadyTakenKg)} KG")
                 Text("Sisa tersedia: ${formatLootKg(available)} KG", fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
@@ -778,7 +794,7 @@ private fun StowingManifestTable(
     crewLoots: List<CrewLootTransaction>,
     onRowClick: (ManifestGroup) -> Unit,
     onEdit: (ManifestDetailItem) -> Unit,
-    onCrew: (ManifestGroup) -> Unit
+    onCrew: (ManifestGroup, ManifestDetailItem) -> Unit
 ) {
     // Satu baris = satu data asli dari Form Stowing Cargo.
     // Kolom mengikuti field yang digunakan pada template_manifest.xlsx:
@@ -808,7 +824,7 @@ private fun StowingManifestTable(
                 TableCell("Description", 1.65f, true, Color.White)
                 TableCell("Customers", 1.25f, true, Color.White)
                 TableCell("NO PAG", 1.35f, true, Color.White)
-                TableCell("Aksi", 3.2f, true, Color.White, Alignment.CenterHorizontally)
+                TableCell("Aksi", 2.35f, true, Color.White, Alignment.CenterHorizontally)
             }
 
             Column(
@@ -818,8 +834,10 @@ private fun StowingManifestTable(
             ) {
                 rows.forEachIndexed { index, (group, detail) ->
                     val item = detail.item
+                    // Status Crew harus per BARIS/detail, bukan per group.
+                    // Satu group dapat berisi beberapa baris manifest.
                     val crewTakenKg = crewLoots
-                        .filter { it.manifestGroupKey == group.groupKey }
+                        .filter { it.manifestDetailKey == detail.sourceKey }
                         .sumOf { it.kg }
                     val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
 
@@ -850,33 +868,22 @@ private fun StowingManifestTable(
                         TableCell(item.noPag.ifBlank { "-" }, 1.35f)
 
                         Row(
-                            Modifier.weight(3.2f),
+                            Modifier.weight(1.45f),
                             horizontalArrangement = Arrangement.spacedBy(2.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             TextButton(onClick = { onEdit(detail) }) {
                                 Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
                             }
-                            if (crewTakenKg > 0.0) {
-                                // Penanda visual bahwa data pada group ini sudah pernah
-                                // diambil untuk Crew. crewTakenKg dihitung dari transaksi
-                                // Crew yang sudah tersimpan, jadi tidak mengubah data cargo.
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = Color(0xFFE8F5E9)
-                                ) {
-                                    Text(
-                                        "✓ Crew",
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp),
-                                        color = Color(0xFF2E7D32),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp
-                                    )
-                                }
-                            } else {
-                                TextButton(onClick = { onCrew(group) }) {
-                                    Text("Crew", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
-                                }
+                            // Tombol Crew tetap tersedia di sebelah tombol Edit.
+                            // Jika group sudah pernah diambil Crew, tampilkan tanda ✓
+                            // tetapi tombol tetap bisa ditekan untuk transaksi berikutnya.
+                            TextButton(onClick = { onCrew(group, detail) }) {
+                                Text(
+                                    if (crewTakenKg > 0.0) "Crew ✓" else "Crew",
+                                    color = Color(0xFF2E7D32),
+                                    fontWeight = FontWeight.Bold
+                                )
                             }
                         }
                     }
