@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -263,28 +264,39 @@ fun CargoAppScreen(
         }
 
         Spacer(Modifier.height(12.dp))
-        Text("Data dari Form Stowing Cargo (${groups.size})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
+        Text("Data dari Form Stowing Cargo (${groups.sumOf { it.details.size }})", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF3F207A))
         Spacer(Modifier.height(6.dp))
 
         if (groups.isEmpty()) {
-            Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)), shape = RoundedCornerShape(14.dp)) {
+            Card(Modifier.fillMaxWidth().weight(1f), colors = CardDefaults.cardColors(containerColor = Color(0xFFF7F2FA)), shape = RoundedCornerShape(14.dp)) {
                 Text("Belum ada data. Silakan input data melalui Form Stowing Cargo.", Modifier.padding(16.dp), color = Color.Gray)
             }
         } else {
-            LazyRow(
-                Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
-                contentPadding = PaddingValues(horizontal = 2.dp)
-            ) {
-                items(groups, key = { it.groupKey }) { group ->
-                    ManifestSummaryCard(
-                        group = group,
-                        crewTakenKg = crewLoots.filter { it.manifestGroupKey == group.groupKey }.sumOf { it.kg },
-                        onClick = { selectedGroup = group },
-                        onCrew = { selectedCrewLootGroup = group }
-                    )
+            StowingManifestTable(
+                groups = groups,
+                onEdit = { detail ->
+                    val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
+                    if (!pagId.isNullOrBlank()) {
+                        context.startActivity(
+                            Intent(context, StowingPagActivity::class.java)
+                                .putExtra(StowingPagActivity.EXTRA_EDIT_PAG_ID, pagId)
+                        )
+                    } else {
+                        val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
+                        if (sourceIndex != null) {
+                            context.startActivity(
+                                Intent(context, StowingActivity::class.java)
+                                    .putExtra(StowingActivity.EXTRA_EDIT_CARGO_KEY, sourceIndex)
+                            )
+                        } else {
+                            selectedDetail = detail
+                        }
+                    }
+                },
+                onDelete = { detail ->
+                    viewModel.deleteStowingManifestRow(context, detail)
                 }
-            }
+            )
         }
     }
 
@@ -754,6 +766,94 @@ private fun CrewLootStorageDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Tutup") } }
+    )
+}
+
+@Composable
+private fun StowingManifestTable(
+    groups: List<ManifestGroup>,
+    onEdit: (ManifestDetailItem) -> Unit,
+    onDelete: (ManifestDetailItem) -> Unit
+) {
+    val rows = groups.flatMap { it.details }
+    var pendingDelete by remember { mutableStateOf<ManifestDetailItem?>(null) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth().weight(1f),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White)
+    ) {
+        Column(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
+            val tableWidth = 760.dp
+            Row(
+                modifier = Modifier.width(tableWidth).background(Color(0xFF6A4FA3)).padding(vertical = 12.dp, horizontal = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TableCell("No", 56.dp, true, Color.White)
+                TableCell("PTI", 150.dp, true, Color.White)
+                TableCell("Pcs", 90.dp, true, Color.White)
+                TableCell("SubTotal", 130.dp, true, Color.White)
+                TableCell("Aksi", 300.dp, true, Color.White)
+            }
+
+            Column(Modifier.width(tableWidth).verticalScroll(rememberScrollState())) {
+                rows.forEachIndexed { index, detail ->
+                    val item = detail.item
+                    val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
+                    Row(
+                        modifier = Modifier.fillMaxWidth().background(rowColor).padding(vertical = 10.dp, horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TableCell((index + 1).toString(), 56.dp)
+                        TableCell(item.pti.ifBlank { "-" }, 150.dp)
+                        TableCell(item.pcsQty.ifBlank { "0" }, 90.dp)
+                        TableCell(item.subTotal.ifBlank { "0" }, 130.dp)
+                        Row(Modifier.width(300.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { onEdit(detail) }) {
+                                Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
+                            }
+                            TextButton(onClick = { pendingDelete = detail }) {
+                                Text("Hapus", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                }
+            }
+        }
+    }
+
+    pendingDelete?.let { detail ->
+        AlertDialog(
+            onDismissRequest = { pendingDelete = null },
+            title = { Text("Hapus Data Stowing?") },
+            text = {
+                Text("PTI ${detail.item.pti}, ${detail.item.pcsQty} pcs, subtotal ${detail.item.subTotal} akan dihapus dari Form Stowing Cargo dan Manifest.")
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete(detail)
+                    pendingDelete = null
+                }) { Text("Hapus", color = Color(0xFFC62828), fontWeight = FontWeight.Bold) }
+            },
+            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Batal") } }
+        )
+    }
+}
+
+@Composable
+private fun RowScope.TableCell(
+    text: String,
+    width: androidx.compose.ui.unit.Dp,
+    bold: Boolean = false,
+    textColor: Color = Color(0xFF202124)
+) {
+    Text(
+        text = text,
+        modifier = Modifier.width(width).padding(horizontal = 4.dp),
+        fontSize = 15.sp,
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        color = textColor
     )
 }
 

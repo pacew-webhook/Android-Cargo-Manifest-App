@@ -583,6 +583,84 @@ class CargoViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Menghapus satu baris dari master Form Stowing lalu membangun ulang Manifest.
+     * Manifest tidak memiliki master data sendiri, sehingga penghapusan dari tabel
+     * Manifest harus menghapus sumber Stowing agar kedua tampilan tetap sinkron.
+     */
+    fun deleteStowingManifestRow(context: Context, detail: ManifestDetailItem) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val raw = stowingSource.value.toMutableList()
+            val sourceIndex = detail.sourceKey.substringBefore('|').toIntOrNull()
+            val targetIndex = when {
+                sourceIndex != null && sourceIndex in raw.indices -> sourceIndex
+                else -> raw.indexOfFirst {
+                    it.pti == detail.item.pti &&
+                        it.customer == detail.item.customer &&
+                        it.description == detail.item.description &&
+                        it.noPag == detail.item.noPag &&
+                        it.pcsQty == detail.item.pcsQty &&
+                        it.subTotal == detail.item.subTotal
+                }
+            }
+
+            if (targetIndex < 0) return@launch
+
+            raw.removeAt(targetIndex)
+            val jsonArray = JSONArray()
+            raw.forEach { item ->
+                jsonArray.put(JSONObject().apply {
+                    put("noPag", item.noPag)
+                    put("customer", item.customer)
+                    put("description", item.description)
+                    put("pti", item.pti)
+                    put("pcsQty", item.pcsQty)
+                    put("weight", item.weight)
+                    put("subTotal", item.subTotal)
+                })
+            }
+
+            context.getSharedPreferences("stowing_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putString("saved_cargo_list", jsonArray.toString())
+                .apply()
+
+            // Rekunci override Manifest karena sourceKey diawali index baris Stowing.
+            // Baris setelah target bergeser satu posisi setelah penghapusan.
+            val oldOverrides = manifestOverrides.value
+            val rekeyedOverrides = mutableMapOf<String, CargoItem>()
+            oldOverrides.forEach { (oldKey, item) ->
+                val oldIndex = oldKey.substringBefore('|').toIntOrNull()
+                if (oldIndex == targetIndex) return@forEach
+                val newIndex = if (oldIndex != null && oldIndex > targetIndex) oldIndex - 1 else oldIndex
+                val newKey = if (newIndex != null) sourceKeyFor(item, newIndex) else oldKey
+                rekeyedOverrides[newKey] = item
+            }
+            manifestOverrides.value = rekeyedOverrides
+
+            val overrideArray = JSONArray()
+            rekeyedOverrides.forEach { (key, item) ->
+                overrideArray.put(JSONObject().apply {
+                    put("sourceKey", key)
+                    put("noPag", item.noPag)
+                    put("customer", item.customer)
+                    put("description", item.description)
+                    put("pti", item.pti)
+                    put("pcsQty", item.pcsQty)
+                    put("weight", item.weight)
+                    put("subTotal", item.subTotal)
+                })
+            }
+            context.getSharedPreferences(manifestOverridePrefsName, Context.MODE_PRIVATE)
+                .edit().putString("items", overrideArray.toString()).apply()
+
+            refreshFromStowingPrefs(context)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(getApplication(), "Data Stowing berhasil dihapus", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     fun updateCargo(item: CargoItem) {
         viewModelScope.launch(Dispatchers.IO) {
             dao.updateCargo(item)
