@@ -177,10 +177,39 @@ class StowingViewModel : ViewModel() {
         val id = btb.id.trim()
         if (id.isBlank() || isBtbAlreadyUsed(id)) return false
 
+        // BTB harus masuk ke Stowing dengan metode yang SAMA seperti saat dibuat.
+        // Sebelumnya semua BTB dipaksa menjadi MANUAL KG karena hanya daftar
+        // timbangan yang dipindahkan. Akibatnya TIMBANG TOTAL (mis. 20 koli /
+        // 850 KG) berubah menjadi 1 koli / 850 KG.
+        noPag = ""
         if (btb.trademarks.isNotBlank()) updateCustomer(btb.trademarks)
         if (btb.jenisBarang.isNotBlank()) updateDescription(btb.jenisBarang)
-        if (btb.daftarTimbangan.isNotEmpty()) {
-            currentKgEntries.addAll(btb.daftarTimbangan)
+
+        // Batalkan data PAG import sebelumnya agar sumber BTB tidak tercampur
+        // dengan metadata PAG yang sedang pending.
+        pendingPagReferenceId = null
+        importedPagPcs = null
+        importedPagTotal = null
+        importedPagWeightLabel = null
+
+        stowingInputMode = btb.inputMode
+        modePcsText = btb.jumlahKoli.toString()
+        modeTotalText = ""
+        modeKgPerText = ""
+        currentKgEntries.clear()
+
+        when (btb.inputMode) {
+            PagInputMode.TOTAL -> {
+                // daftarTimbangan pada BTB TOTAL sengaja menyimpan satu nilai:
+                // TOTAL KG. Jumlah koli tetap berasal dari jumlahKoliInput.
+                modeTotalText = btb.totalBerat.toCleanString()
+            }
+            PagInputMode.KOLI_KG -> {
+                modeKgPerText = btb.daftarTimbangan.firstOrNull()?.toCleanString().orEmpty()
+            }
+            PagInputMode.MANUAL_KG -> {
+                currentKgEntries.addAll(btb.daftarTimbangan)
+            }
         }
 
         // Tandai sebagai pending. Belum permanen sampai Save berhasil.

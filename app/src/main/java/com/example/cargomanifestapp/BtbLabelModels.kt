@@ -22,7 +22,9 @@ data class BtbLabelItem(
     val trademarks: String,
     val jenisBarang: String,
     val beratAsli: Double,
-    val beratPembulatan: Double
+    val beratPembulatan: Double,
+    val jumlahKoli: Int,
+    val inputMode: PagInputMode
 ) {
     val labelId: String
         get() = "$btbId-L${labelNumber.toString().padStart(2, '0')}"
@@ -43,8 +45,16 @@ data class BtbLabelItem(
 }
 
 object BtbLabelUtils {
-    fun createLabels(data: BtbFormData): List<BtbLabelItem> =
-        data.daftarTimbangan.mapIndexed { index, weight ->
+    fun createLabels(data: BtbFormData): List<BtbLabelItem> {
+        // MANUAL dan KOLI × KG mempunyai rincian per koli, sehingga satu
+        // label dibuat untuk setiap nilai berat. TIMBANG TOTAL hanya mempunyai
+        // satu angka total, jadi jangan menggandakan label secara palsu; satu
+        // label mewakili seluruh kiriman dan mencantumkan jumlah kolinya.
+        val weights = when (data.inputMode) {
+            PagInputMode.TOTAL -> listOf(data.totalBerat)
+            PagInputMode.KOLI_KG, PagInputMode.MANUAL_KG -> data.daftarTimbangan
+        }
+        return weights.mapIndexed { index, weight ->
             BtbLabelItem(
                 btbId = data.id,
                 labelNumber = index + 1,
@@ -53,9 +63,12 @@ object BtbLabelUtils {
                 trademarks = data.trademarks,
                 jenisBarang = data.jenisBarang,
                 beratAsli = weight,
-                beratPembulatan = roundWeight(weight)
+                beratPembulatan = roundWeight(weight),
+                jumlahKoli = if (data.inputMode == PagInputMode.TOTAL) data.jumlahKoli else 1,
+                inputMode = data.inputMode
             )
         }
+    }
 
     fun extractTrademarkName(value: String): String {
         val raw = value.trim()
@@ -262,12 +275,18 @@ object BtbLabelPdfWriter {
         drawLabel(canvas, "Tujuan/Destination", LEFT + 7f, gridTop + 23f, body)
         drawValue(canvas, "WMX", LEFT + 7f, gridTop + 55f, bodyBold)
         drawLabel(canvas, "Jumlah Kiriman/Ttl. No. of Pcs", colX + 7f, gridTop + 23f, body)
-        drawValue(canvas, "${totalLabels} PCS", colX + 7f, gridTop + 55f, bodyBold)
+        drawValue(canvas, "${if (label.inputMode == PagInputMode.TOTAL) label.jumlahKoli else totalLabels} PCS", colX + 7f, gridTop + 55f, bodyBold)
 
         // Row 2: Transit / weight.
         drawLabel(canvas, "Stn. Transit/Transfer Points", LEFT + 7f, row1Bottom + 23f, body)
         drawValue(canvas, "-", LEFT + 7f, row1Bottom + 55f, bodyBold)
-        drawLabel(canvas, "Berat tiap koli/weight of this piece", colX + 7f, row1Bottom + 23f, body)
+        drawLabel(
+            canvas,
+            if (label.inputMode == PagInputMode.TOTAL) "Berat total/total weight" else "Berat tiap koli/weight of this piece",
+            colX + 7f,
+            row1Bottom + 23f,
+            body
+        )
         drawValue(
             canvas,
             String.format(Locale.US, "%.0f KG", label.beratPembulatan),
