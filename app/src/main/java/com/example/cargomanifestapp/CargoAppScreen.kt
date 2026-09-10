@@ -857,18 +857,14 @@ private fun StowingManifestTable(
                             TextButton(onClick = { onEdit(detail) }) {
                                 Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
                             }
-                            // Tombol Crew selalu ditampilkan tepat di sebelah tombol Edit.
-                            // Jika data group sudah pernah diambil Crew, tombol tetap tersedia
-                            // agar transaksi Crew berikutnya tetap bisa dilakukan.
-                            TextButton(
-                                onClick = { onCrew(group) },
-                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp)
-                            ) {
+                            // Tombol Crew tetap tersedia di sebelah tombol Edit.
+                            // Jika group sudah pernah diambil Crew, tampilkan tanda ✓
+                            // tetapi tombol tetap bisa ditekan untuk transaksi berikutnya.
+                            TextButton(onClick = { onCrew(group) }) {
                                 Text(
                                     if (crewTakenKg > 0.0) "Crew ✓" else "Crew",
                                     color = Color(0xFF2E7D32),
-                                    fontWeight = FontWeight.Bold,
-                                    maxLines = 1
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }
