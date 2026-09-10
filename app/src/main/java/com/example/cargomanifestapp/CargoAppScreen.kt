@@ -17,6 +17,7 @@ import java.io.FileOutputStream
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.ui.input.pointer.pointerInput
@@ -28,8 +29,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -275,6 +276,8 @@ fun CargoAppScreen(
             StowingManifestTable(
                 modifier = Modifier.weight(1f),
                 groups = groups,
+                crewLoots = crewLoots,
+                onRowClick = { group -> selectedGroup = group },
                 onEdit = { detail ->
                     val pagId = StowingPagLinkStorage.pagIdForCargo(context, detail.item)
                     if (!pagId.isNullOrBlank()) {
@@ -294,9 +297,7 @@ fun CargoAppScreen(
                         }
                     }
                 },
-                onDelete = { detail ->
-                    viewModel.deleteStowingManifestRow(context, detail)
-                }
+                onCrew = { group -> selectedCrewLootGroup = group }
             )
         }
     }
@@ -774,11 +775,17 @@ private fun CrewLootStorageDialog(
 private fun StowingManifestTable(
     modifier: Modifier = Modifier,
     groups: List<ManifestGroup>,
+    crewLoots: List<CrewLootTransaction>,
+    onRowClick: (ManifestGroup) -> Unit,
     onEdit: (ManifestDetailItem) -> Unit,
-    onDelete: (ManifestDetailItem) -> Unit
+    onCrew: (ManifestGroup) -> Unit
 ) {
-    val rows = groups.flatMap { it.details }
-    var pendingDelete by remember { mutableStateOf<ManifestDetailItem?>(null) }
+    // Satu baris = satu data asli dari Form Stowing Cargo.
+    // Kolom mengikuti field yang digunakan pada template_manifest.xlsx:
+    // PTI, Pcs/Cly, Weight, Sub Total, Description, Customers, NO PAG.
+    val rows = groups.flatMap { group ->
+        group.details.map { detail -> group to detail }
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -786,36 +793,64 @@ private fun StowingManifestTable(
         colors = CardDefaults.cardColors(containerColor = Color.White)
     ) {
         Column(Modifier.fillMaxSize().horizontalScroll(rememberScrollState())) {
-            val tableWidth = 760.dp
+            val tableWidth = 1260.dp
             Row(
-                modifier = Modifier.width(tableWidth).background(Color(0xFF6A4FA3)).padding(vertical = 12.dp, horizontal = 10.dp),
+                modifier = Modifier
+                    .width(tableWidth)
+                    .background(Color(0xFF6A4FA3))
+                    .padding(vertical = 10.dp, horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                TableCell("No", 56.dp, true, Color.White)
-                TableCell("PTI", 150.dp, true, Color.White)
-                TableCell("Pcs", 90.dp, true, Color.White)
-                TableCell("SubTotal", 130.dp, true, Color.White)
-                TableCell("Aksi", 300.dp, true, Color.White)
+                TableCell("No", 55.dp, true, Color.White)
+                TableCell("PTI", 120.dp, true, Color.White)
+                TableCell("Pcs/Cly", 95.dp, true, Color.White)
+                TableCell("Weight (Kg)", 120.dp, true, Color.White)
+                TableCell("Sub Total", 120.dp, true, Color.White)
+                TableCell("Description", 220.dp, true, Color.White)
+                TableCell("Customers", 150.dp, true, Color.White)
+                TableCell("NO PAG", 180.dp, true, Color.White)
+                TableCell("Aksi", 200.dp, true, Color.White)
             }
 
-            Column(Modifier.width(tableWidth).verticalScroll(rememberScrollState())) {
-                rows.forEachIndexed { index, detail ->
+            Column(
+                Modifier
+                    .width(tableWidth)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                rows.forEachIndexed { index, (group, detail) ->
                     val item = detail.item
+                    val crewTakenKg = crewLoots
+                        .filter { it.manifestGroupKey == group.groupKey }
+                        .sumOf { it.kg }
                     val rowColor = if (index % 2 == 0) Color(0xFFF2F0F5) else Color.White
+
                     Row(
-                        modifier = Modifier.fillMaxWidth().background(rowColor).padding(vertical = 10.dp, horizontal = 10.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(rowColor)
+                            .clickable { onRowClick(group) }
+                            .padding(vertical = 8.dp, horizontal = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        TableCell((index + 1).toString(), 56.dp)
-                        TableCell(item.pti.ifBlank { "-" }, 150.dp)
-                        TableCell(item.pcsQty.ifBlank { "0" }, 90.dp)
-                        TableCell(item.subTotal.ifBlank { "0" }, 130.dp)
-                        Row(Modifier.width(300.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TableCell((index + 1).toString(), 55.dp)
+                        TableCell(item.pti.ifBlank { "-" }, 120.dp)
+                        TableCell(item.pcsQty.ifBlank { "0" }, 95.dp)
+                        TableCell(item.weight.ifBlank { "0" }, 120.dp)
+                        TableCell(item.subTotal.ifBlank { "0" }, 120.dp)
+                        TableCell(item.description.ifBlank { "-" }, 220.dp)
+                        TableCell(item.customer.ifBlank { "-" }, 150.dp)
+                        TableCell(item.noPag.ifBlank { "-" }, 180.dp)
+
+                        Row(
+                            Modifier.width(200.dp),
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             TextButton(onClick = { onEdit(detail) }) {
                                 Text("Edit", color = Color(0xFF168AC0), fontWeight = FontWeight.Bold)
                             }
-                            TextButton(onClick = { pendingDelete = detail }) {
-                                Text("Hapus", color = Color(0xFFC62828), fontWeight = FontWeight.Bold)
+                            TextButton(onClick = { onCrew(group) }) {
+                                Text("Crew", color = Color(0xFF2E7D32), fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -823,23 +858,6 @@ private fun StowingManifestTable(
                 }
             }
         }
-    }
-
-    pendingDelete?.let { detail ->
-        AlertDialog(
-            onDismissRequest = { pendingDelete = null },
-            title = { Text("Hapus Data Stowing?") },
-            text = {
-                Text("PTI ${detail.item.pti}, ${detail.item.pcsQty} pcs, subtotal ${detail.item.subTotal} akan dihapus dari Form Stowing Cargo dan Manifest.")
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    onDelete(detail)
-                    pendingDelete = null
-                }) { Text("Hapus", color = Color(0xFFC62828), fontWeight = FontWeight.Bold) }
-            },
-            dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Batal") } }
-        )
     }
 }
 
@@ -853,9 +871,10 @@ private fun RowScope.TableCell(
     Text(
         text = text,
         modifier = Modifier.width(width).padding(horizontal = 4.dp),
-        fontSize = 15.sp,
+        fontSize = 14.sp,
         fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
-        color = textColor
+        color = textColor,
+        maxLines = 2
     )
 }
 
